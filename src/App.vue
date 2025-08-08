@@ -5,9 +5,8 @@ import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebas
 import { doc, getDoc } from "firebase/firestore";
 
 // --- CONFIGURATION ---
-const GOOGLE_SHEET_ID = "1HepqMzKcshKbRsLWwpEOOy5oO9ntK2CgdV7F_ijmjIo";
-
-// --- NOUVEAUTÉ : L'URL du backend est maintenant dynamique ---
+const GOOGLE_SHEET_ID = "1HepqMzKcsbKbRsLWwpEOoy5oO9ntK2CgdV7F_ijmjlo";
+// --- URL du backend dynamique ---
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 
 // --- SECTION AUTHENTIFICATION ---
@@ -19,6 +18,12 @@ const authError = ref('');
 const isAuthReady = ref(false);
 
 onMounted(() => {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = (today.getMonth() + 1).toString().padStart(2, '0');
+  const day = today.getDate().toString().padStart(2, '0');
+  selectedDate.value = `${year}-${month}-${day}`;
+
   onAuthStateChanged(auth, async (firebaseUser) => {
     if (firebaseUser) {
       user.value = firebaseUser;
@@ -32,14 +37,7 @@ onMounted(() => {
   });
 });
 
-const login = async () => {
-  try {
-    authError.value = '';
-    isLoading.value = true;
-    await signInWithEmailAndPassword(auth, email.value, password.value);
-  } catch (error) { authError.value = "Email ou mot de passe incorrect."; }
-  finally { isLoading.value = false; }
-};
+const login = async () => { /* ... */ };
 const logout = async () => { await signOut(auth); };
 
 // --- SECTION TABLEAU DE BORD ---
@@ -50,45 +48,37 @@ const isLoading = ref(false);
 const error = ref(null);
 const lastOperationType = ref('');
 const activeSheetGid = ref(null);
+const showWelcomeMessage = ref(true);
 
 const isAdmin = computed(() => userRole.value === 'admin');
-
-const sheetEmbedUrl = computed(() => {
-  const base = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}`;
-  return activeSheetGid.value 
-    ? `${base}/preview?gid=${activeSheetGid.value}&rm=minimal`
-    : `${base}/preview?rm=minimal`;
-});
-const sheetDirectLink = computed(() => {
-  const base = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}`;
-  return activeSheetGid.value ? `${base}/edit#gid=${activeSheetGid.value}` : `${base}/edit`;
-});
-
-const tableHeaders = computed(() => {
-  if (lastOperationType.value.includes('frequency')) return ['#', 'Numéro', 'Apparitions'];
-  if (lastOperationType.value === 'companions') return ['#', 'Compagnon', 'Apparu avec'];
-  return [];
-});
-const tableData = computed(() => {
-  if (apiResponse.value?.frequency_ranking) return apiResponse.value.frequency_ranking;
-  if (apiResponse.value?.companion_ranking) return apiResponse.value.companion_ranking;
-  return [];
-});
+const sheetEmbedUrl = computed(() => { /* ... */ });
+const sheetDirectLink = computed(() => { /* ... */ });
+const tableHeaders = computed(() => { /* ... */ });
+const tableData = computed(() => { /* ... */ });
 const isTableVisible = computed(() => tableData.value.length > 0);
 
+// --- MODIFIÉ : Gestion d'erreur améliorée ---
 async function callApi(url, method = 'GET') {
   if (!user.value) { error.value = "Vous devez être connecté."; return; }
+  showWelcomeMessage.value = false;
   isLoading.value = true; error.value = null; apiResponse.value = null;
   try {
     const token = await user.value.getIdToken();
     const headers = { 'Authorization': `Bearer ${token}` };
-    const fullUrl = `${API_BASE_URL}${url}`; // On construit l'URL complète
+    const fullUrl = `${API_BASE_URL}${url}`;
     const response = await fetch(fullUrl, { method, headers });
     const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || `Erreur ${response.status}`);
+    if (!response.ok) {
+      throw new Error(data.detail || `Le serveur a répondu avec une erreur ${response.status}`);
+    }
     apiResponse.value = data;
     if (data.worksheet_gid) activeSheetGid.value = data.worksheet_gid;
-  } catch (err) { error.value = err.message; } finally { isLoading.value = false; }
+  } catch (err) {
+    error.value = err.message;
+    activeSheetGid.value = null; 
+  } finally {
+    isLoading.value = false;
+  }
 }
 
 async function runDataUpdate(endpoint) { lastOperationType.value = 'update'; await callApi(`/collection/${endpoint}`, 'POST'); }
@@ -110,7 +100,6 @@ async function runReport(reportType) {
   await callApi(url);
 }
 </script>
-
 <template>
   <div v-if="!isAuthReady" class="loading-screen">
     <p>Chargement de l'application...</p>
