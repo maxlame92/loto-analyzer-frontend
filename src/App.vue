@@ -50,11 +50,8 @@ const activeSheetGid = ref(null);
 
 const isAdmin = computed(() => userRole.value === 'admin');
 
-// --- MODIFICATION CHIRURGICALE N°1 : Logique de l'URL ---
 const sheetEmbedUrl = computed(() => {
   const base = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}`;
-  // On utilise /preview?rm=minimal pour une vue propre, adaptée à l'intégration.
-  // Ce format est plus fiable que /edit pour les iframes.
   return activeSheetGid.value 
     ? `${base}/preview?gid=${activeSheetGid.value}&rm=minimal`
     : `${base}/preview?rm=minimal`;
@@ -63,7 +60,6 @@ const sheetDirectLink = computed(() => {
   const base = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}`;
   return activeSheetGid.value ? `${base}/edit#gid=${activeSheetGid.value}` : `${base}/edit`;
 });
-// --- FIN DE LA MODIFICATION ---
 
 const tableHeaders = computed(() => {
   if (lastOperationType.value.includes('frequency')) return ['#', 'Numéro', 'Apparitions'];
@@ -76,9 +72,6 @@ const tableData = computed(() => {
   return [];
 });
 const isTableVisible = computed(() => tableData.value.length > 0);
-
-// --- MODIFICATIONS POUR LE DÉPLOIEMENT ---
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 
 async function callApi(url, method = 'GET') {
   if (!user.value) { error.value = "Vous devez être connecté."; return; }
@@ -93,6 +86,10 @@ async function callApi(url, method = 'GET') {
     if (data.worksheet_gid) activeSheetGid.value = data.worksheet_gid;
   } catch (err) { error.value = err.message; } finally { isLoading.value = false; }
 }
+
+// --- MODIFICATIONS POUR LE DÉPLOIEMENT ---
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
+
 async function runDataUpdate(endpoint) { 
   lastOperationType.value = 'update'; 
   await callApi(`${API_BASE_URL}/collection/${endpoint}`, 'POST'); 
@@ -114,6 +111,7 @@ async function runReport(reportType) {
   lastOperationType.value = reportType;
   await callApi(url);
 }
+// --- FIN DES MODIFICATIONS ---
 </script>
 
 <template>
@@ -193,7 +191,6 @@ async function runReport(reportType) {
              <a :href="sheetDirectLink" target="_blank" class="external-link">Ouvrir l'onglet ↗</a>
           </div>
 
-          <!-- MODIFICATION CHIRURGICALE N°2 : Ajout de :key -->
           <div class="sheet-container">
             <iframe :key="sheetEmbedUrl" :src="sheetEmbedUrl">Chargement...</iframe>
           </div>
