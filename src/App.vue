@@ -5,7 +5,7 @@ import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebas
 import { doc, getDoc } from "firebase/firestore";
 
 // --- CONFIGURATION ---
-const GOOGLE_SHEET_ID = "1HepqMzKcshKbRsLWwpEOOy5oO9ntK2CgdV7F_ijmjIo";
+const GOOGLE_SHEET_ID = "1HepqMzKcsbKbRsLWwpEOoy5oO9ntK2CgdV7F_ijmjlo";
 
 // --- SECTION AUTHENTIFICATION ---
 const user = ref(null);
@@ -50,11 +50,8 @@ const activeSheetGid = ref(null);
 
 const isAdmin = computed(() => userRole.value === 'admin');
 
-// --- MODIFICATION CHIRURGICALE N°1 : Logique de l'URL ---
 const sheetEmbedUrl = computed(() => {
   const base = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}`;
-  // On utilise /preview?rm=minimal pour une vue propre, adaptée à l'intégration.
-  // Ce format est plus fiable que /edit pour les iframes.
   return activeSheetGid.value 
     ? `${base}/preview?gid=${activeSheetGid.value}&rm=minimal`
     : `${base}/preview?rm=minimal`;
@@ -63,7 +60,6 @@ const sheetDirectLink = computed(() => {
   const base = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}`;
   return activeSheetGid.value ? `${base}/edit#gid=${activeSheetGid.value}` : `${base}/edit`;
 });
-// --- FIN DE LA MODIFICATION ---
 
 const tableHeaders = computed(() => {
   if (lastOperationType.value.includes('frequency')) return ['#', 'Numéro', 'Apparitions'];
@@ -90,24 +86,32 @@ async function callApi(url, method = 'GET') {
     if (data.worksheet_gid) activeSheetGid.value = data.worksheet_gid;
   } catch (err) { error.value = err.message; } finally { isLoading.value = false; }
 }
-async function runDataUpdate(endpoint) { lastOperationType.value = 'update'; await callApi(`http://127.0.0.1:8000/collection/${endpoint}`, 'POST'); }
+
+// --- MODIFICATIONS POUR LE DÉPLOIEMENT ---
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
+
+async function runDataUpdate(endpoint) { 
+  lastOperationType.value = 'update'; 
+  await callApi(`${API_BASE_URL}/collection/${endpoint}`, 'POST'); 
+}
 async function runVisualAnalysis(endpoint) {
   if (!selectedDate.value) { error.value = "Veuillez sélectionner une date."; return; }
   lastOperationType.value = 'visual';
-  await callApi(`http://127.0.0.1:8000/analysis/${endpoint}/${selectedDate.value}`, 'POST');
+  await callApi(`${API_BASE_URL}/analysis/${endpoint}/${selectedDate.value}`, 'POST');
 }
 async function runReport(reportType) {
   if (!selectedDate.value) { error.value = "Veuillez sélectionner une date."; return; }
   let url = '';
-  if (reportType === 'weekly-frequency') url = `http://127.0.0.1:8000/analysis/weekly-frequency/${selectedDate.value}`;
-  else if (reportType === 'daily-frequency') url = `http://127.0.0.1:8000/analysis/daily-frequency/${selectedDate.value}`;
+  if (reportType === 'weekly-frequency') url = `${API_BASE_URL}/analysis/weekly-frequency/${selectedDate.value}`;
+  else if (reportType === 'daily-frequency') url = `${API_BASE_URL}/analysis/daily-frequency/${selectedDate.value}`;
   else if (reportType === 'companions') {
     if (!selectedNumber.value) { error.value = "Veuillez entrer un numéro."; return; }
-    url = `http://127.0.0.1:8000/analysis/companions/${selectedNumber.value}?week_date_str=${selectedDate.value}`;
+    url = `${API_BASE_URL}/analysis/companions/${selectedNumber.value}?week_date_str=${selectedDate.value}`;
   }
   lastOperationType.value = reportType;
   await callApi(url);
 }
+// --- FIN DES MODIFICATIONS ---
 </script>
 
 <template>
@@ -187,7 +191,6 @@ async function runReport(reportType) {
              <a :href="sheetDirectLink" target="_blank" class="external-link">Ouvrir l'onglet ↗</a>
           </div>
 
-          <!-- MODIFICATION CHIRURGICALE N°2 : Ajout de :key -->
           <div class="sheet-container">
             <iframe :key="sheetEmbedUrl" :src="sheetEmbedUrl">Chargement...</iframe>
           </div>
