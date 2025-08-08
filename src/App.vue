@@ -7,6 +7,9 @@ import { doc, getDoc } from "firebase/firestore";
 // --- CONFIGURATION ---
 const GOOGLE_SHEET_ID = "1HepqMzKcshKbRsLWwpEOOy5oO9ntK2CgdV7F_ijmjIo";
 
+// --- NOUVEAUTÉ : L'URL du backend est maintenant dynamique ---
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
+
 // --- SECTION AUTHENTIFICATION ---
 const user = ref(null);
 const userRole = ref('');
@@ -79,7 +82,8 @@ async function callApi(url, method = 'GET') {
   try {
     const token = await user.value.getIdToken();
     const headers = { 'Authorization': `Bearer ${token}` };
-    const response = await fetch(url, { method, headers });
+    const fullUrl = `${API_BASE_URL}${url}`; // On construit l'URL complète
+    const response = await fetch(fullUrl, { method, headers });
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || `Erreur ${response.status}`);
     apiResponse.value = data;
@@ -87,31 +91,24 @@ async function callApi(url, method = 'GET') {
   } catch (err) { error.value = err.message; } finally { isLoading.value = false; }
 }
 
-// --- MODIFICATIONS POUR LE DÉPLOIEMENT ---
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
-
-async function runDataUpdate(endpoint) { 
-  lastOperationType.value = 'update'; 
-  await callApi(`${API_BASE_URL}/collection/${endpoint}`, 'POST'); 
-}
+async function runDataUpdate(endpoint) { lastOperationType.value = 'update'; await callApi(`/collection/${endpoint}`, 'POST'); }
 async function runVisualAnalysis(endpoint) {
   if (!selectedDate.value) { error.value = "Veuillez sélectionner une date."; return; }
   lastOperationType.value = 'visual';
-  await callApi(`${API_BASE_URL}/analysis/${endpoint}/${selectedDate.value}`, 'POST');
+  await callApi(`/analysis/${endpoint}/${selectedDate.value}`, 'POST');
 }
 async function runReport(reportType) {
   if (!selectedDate.value) { error.value = "Veuillez sélectionner une date."; return; }
   let url = '';
-  if (reportType === 'weekly-frequency') url = `${API_BASE_URL}/analysis/weekly-frequency/${selectedDate.value}`;
-  else if (reportType === 'daily-frequency') url = `${API_BASE_URL}/analysis/daily-frequency/${selectedDate.value}`;
+  if (reportType === 'weekly-frequency') url = `/analysis/weekly-frequency/${selectedDate.value}`;
+  else if (reportType === 'daily-frequency') url = `/analysis/daily-frequency/${selectedDate.value}`;
   else if (reportType === 'companions') {
     if (!selectedNumber.value) { error.value = "Veuillez entrer un numéro."; return; }
-    url = `${API_BASE_URL}/analysis/companions/${selectedNumber.value}?week_date_str=${selectedDate.value}`;
+    url = `/analysis/companions/${selectedNumber.value}?week_date_str=${selectedDate.value}`;
   }
   lastOperationType.value = reportType;
   await callApi(url);
 }
-// --- FIN DES MODIFICATIONS ---
 </script>
 
 <template>
