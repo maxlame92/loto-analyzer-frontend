@@ -5,8 +5,7 @@ import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebas
 import { doc, getDoc } from "firebase/firestore";
 
 // --- CONFIGURATION ---
-const GOOGLE_SHEET_ID =  "1HepqMzKcshKbRsLWwpEOOy5oO9ntK2CgdV7F_ijmjIo";
-// URL dynamique pour le backend
+const GOOGLE_SHEET_ID = "1HepqMzKcshKbRsLWwpEOOy5oO9ntK2CgdV7F_ijmjIo";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 
 // --- SECTION AUTHENTIFICATION ---
@@ -23,6 +22,14 @@ onMounted(() => {
   const month = (today.getMonth() + 1).toString().padStart(2, '0');
   const day = today.getDate().toString().padStart(2, '0');
   selectedDate.value = `${year}-${month}-${day}`;
+  endDate.value = `${year}-${month}-${day}`; // Initialise la date de fin à aujourd'hui
+  
+  const oneMonthAgo = new Date();
+  oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+  const startYear = oneMonthAgo.getFullYear();
+  const startMonth = (oneMonthAgo.getMonth() + 1).toString().padStart(2, '0');
+  const startDay = oneMonthAgo.getDate().toString().padStart(2, '0');
+  startDate.value = `${startYear}-${startMonth}-${startDay}`; // Initialise la date de début à il y a un mois
 
   onAuthStateChanged(auth, async (firebaseUser) => {
     if (firebaseUser) {
@@ -50,6 +57,8 @@ const logout = async () => { await signOut(auth); };
 // --- SECTION TABLEAU DE BORD ---
 const selectedDate = ref('');
 const selectedNumber = ref('');
+const startDate = ref(''); // NOUVEAU
+const endDate = ref('');   // NOUVEAU
 const apiResponse = ref(null);
 const isLoading = ref(false);
 const error = ref(null);
@@ -58,7 +67,6 @@ const activeSheetGid = ref(null);
 const showWelcomeMessage = ref(true);
 
 const isAdmin = computed(() => userRole.value === 'admin');
-// --- MODIFIÉ : On ne garde que le lien direct ---
 const sheetDirectLink = computed(() => {
   const base = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}`;
   return activeSheetGid.value ? `${base}/edit#gid=${activeSheetGid.value}` : `${base}/edit`;
@@ -117,6 +125,17 @@ async function runReport(reportType) {
   lastOperationType.value = reportType;
   await callApi(url);
 }
+
+// --- NOUVELLE FONCTION ---
+async function runRangeAnalysis() {
+  if (!startDate.value || !endDate.value) {
+    error.value = "Veuillez sélectionner une date de début ET de fin.";
+    return;
+  }
+  lastOperationType.value = 'frequency';
+  const url = `/analysis/frequency-by-range?start_date=${startDate.value}&end_date=${endDate.value}`;
+  await callApi(url);
+}
 </script>
 
 <template>
@@ -162,13 +181,24 @@ async function runReport(reportType) {
         </section>
 
         <section class="card">
-          <h2>Paramètres d'Analyse</h2>
+          <h2>Analyse par Semaine</h2>
+          <label>Sélectionnez un jour dans la semaine :</label>
           <input type="date" v-model="selectedDate" />
           <input type="number" v-model="selectedNumber" placeholder="N° pour analyse compagnons" />
         </section>
 
+        <!-- NOUVELLE SECTION -->
         <section class="card">
-          <h2>Analyse Visuelle (Modifie le Sheet)</h2>
+          <h2>Analyse sur Période Spécifique</h2>
+          <label>Date de début :</label>
+          <input type="date" v-model="startDate" />
+          <label>Date de fin :</label>
+          <input type="date" v-model="endDate" />
+          <button @click="runRangeAnalysis" :disabled="isLoading || !startDate || !endDate">Lancer Analyse par Période</button>
+        </section>
+
+        <section class="card">
+          <h2>Analyse Visuelle (par Semaine)</h2>
           <div class="button-group-vertical">
             <button @click="runVisualAnalysis('highlight-day')" :disabled="isLoading || !selectedDate">Surligner ce Jour</button>
             <button @click="runVisualAnalysis('process-entire-week')" :disabled="isLoading || !selectedDate">Traiter Toute la Semaine</button>
@@ -176,7 +206,7 @@ async function runReport(reportType) {
         </section>
         
         <section class="card">
-          <h2>Rapports Analytiques (Lecture)</h2>
+          <h2>Rapports Analytiques (par Semaine)</h2>
           <div class="button-group-vertical">
             <button @click="runReport('daily-frequency')" :disabled="isLoading || !selectedDate">Classement Journalier</button>
             <button @click="runReport('weekly-frequency')" :disabled="isLoading || !selectedDate">Classement Semaine</button>
@@ -200,15 +230,14 @@ async function runReport(reportType) {
             <div v-if="isLoading" class="loader">Chargement...</div>
             <div v-if="error" class="error-box">{{ error }}</div>
             
-            <div v-if="apiResponse && apiResponse.message" class="success-box large">
+            <div v-if="apiResponse" class="success-box large">
                <div>
-                  <p>✅ {{ apiResponse.message }}</p>
-                  <small v-if="lastOperationType === 'visual'">Les couleurs ont été mises à jour dans votre Google Sheet.</small>
+                  <p v-if="apiResponse.message">✅ {{ apiResponse.message }}</p>
+                  <p v-if="apiResponse.analysis_period">✅ Rapport généré pour la période : {{ apiResponse.analysis_period }}</p>
+                  <small v-if="lastOperationType === 'visual'">Les couleurs ont été mises à jour.</small>
                </div>
-               <a :href="sheetDirectLink" target="_blank" class="button-link">Voir le Résultat ↗</a>
+               <a v-if="apiResponse.worksheet_gid" :href="sheetDirectLink" target="_blank" class="button-link">Voir l'Onglet Concerné ↗</a>
             </div>
-
-            <!-- L'IFRAME A ÉTÉ SUPPRIMÉ -->
 
             <table v-if="isTableVisible" class="styled-table">
               <thead>
@@ -280,4 +309,5 @@ async function runReport(reportType) {
   .welcome-message ul { padding-left: 20px; }
   .welcome-message li { margin-bottom: 0.5rem; }
   .close-welcome { display: block; width: auto; margin-top: 1rem; padding: 0.6rem 1.2rem; background-color: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
+  label { display: block; margin-bottom: 0.5rem; font-weight: 500; font-size: 0.9rem; color: #555; margin-top: 1rem; }
 </style>
