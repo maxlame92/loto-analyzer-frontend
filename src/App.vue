@@ -7,6 +7,9 @@ import { doc, getDoc } from "firebase/firestore";
 // --- CONFIGURATION ---
 const GOOGLE_SHEET_ID = "1HepqMzKcshKbRsLWwpEOOy5oO9ntK2CgdV7F_ijmjIo";
 
+// URL dynamique pour le backend
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
+
 // --- SECTION AUTHENTIFICATION ---
 const user = ref(null);
 const userRole = ref('');
@@ -16,6 +19,12 @@ const authError = ref('');
 const isAuthReady = ref(false);
 
 onMounted(() => {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = (today.getMonth() + 1).toString().padStart(2, '0');
+  const day = today.getDate().toString().padStart(2, '0');
+  selectedDate.value = `${year}-${month}-${day}`;
+
   onAuthStateChanged(auth, async (firebaseUser) => {
     if (firebaseUser) {
       user.value = firebaseUser;
@@ -50,8 +59,7 @@ const activeSheetGid = ref(null);
 const showWelcomeMessage = ref(true);
 
 const isAdmin = computed(() => userRole.value === 'admin');
-
-// --- MODIFIÉ : On abandonne l'iframe pour un lien direct, 100% fiable ---
+// --- MODIFIÉ : On ne garde que le lien direct ---
 const sheetDirectLink = computed(() => {
   const base = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}`;
   return activeSheetGid.value ? `${base}/edit#gid=${activeSheetGid.value}` : `${base}/edit`;
@@ -69,7 +77,6 @@ const tableData = computed(() => {
 });
 const isTableVisible = computed(() => tableData.value.length > 0);
 
-// --- MODIFIÉ : Gestion d'erreur améliorée ---
 async function callApi(url, method = 'GET') {
   if (!user.value) { error.value = "Vous devez être connecté."; return; }
   showWelcomeMessage.value = false;
@@ -77,7 +84,7 @@ async function callApi(url, method = 'GET') {
   try {
     const token = await user.value.getIdToken();
     const headers = { 'Authorization': `Bearer ${token}` };
-    const fullUrl = `http://127.0.0.1:8000${url}`;
+    const fullUrl = `${API_BASE_URL}${url}`;
     const response = await fetch(fullUrl, { method, headers });
     const data = await response.json();
     if (!response.ok) {
@@ -201,6 +208,8 @@ async function runReport(reportType) {
                </div>
                <a :href="sheetDirectLink" target="_blank" class="button-link">Voir le Résultat ↗</a>
             </div>
+
+            <!-- L'IFRAME A ÉTÉ SUPPRIMÉ -->
 
             <table v-if="isTableVisible" class="styled-table">
               <thead>
