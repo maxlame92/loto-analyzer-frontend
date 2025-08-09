@@ -6,7 +6,7 @@ import { doc, getDoc } from "firebase/firestore";
 
 // --- CONFIGURATION ---
 const GOOGLE_SHEET_ID = "1HepqMzKcsbKbRsLWwpEOoy5oO9ntK2CgdV7F_ijmjlo";
-// --- URL du backend dynamique ---
+// --- URL DYNAMIQUE POUR RENDER ---
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 
 // --- SECTION AUTHENTIFICATION ---
@@ -37,7 +37,7 @@ onMounted(() => {
   });
 });
 
-const login = async () => { /* ... */ };
+const login = async () => { /* ... (inchangé) ... */ };
 const logout = async () => { await signOut(auth); };
 
 // --- SECTION TABLEAU DE BORD ---
@@ -48,16 +48,27 @@ const isLoading = ref(false);
 const error = ref(null);
 const lastOperationType = ref('');
 const activeSheetGid = ref(null);
-const showWelcomeMessage = ref(true);
+const showWelcomeMessage = ref(true); 
 
 const isAdmin = computed(() => userRole.value === 'admin');
-const sheetEmbedUrl = computed(() => { /* ... */ });
-const sheetDirectLink = computed(() => { /* ... */ });
-const tableHeaders = computed(() => { /* ... */ });
-const tableData = computed(() => { /* ... */ });
+
+// --- Logique de l'URL avec sécurité ---
+const sheetEmbedUrl = computed(() => {
+  const base = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}`;
+  let url = activeSheetGid.value 
+    ? `${base}/htmlembed?gid=${activeSheetGid.value}&widget=true&headers=false`
+    : `${base}/htmlembed?widget=true&headers=false`;
+  return url;
+});
+const sheetDirectLink = computed(() => {
+  const base = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}`;
+  return activeSheetGid.value ? `${base}/edit#gid=${activeSheetGid.value}` : `${base}/edit`;
+});
+
+const tableHeaders = computed(() => { /* ... (inchangé) ... */ });
+const tableData = computed(() => { /* ... (inchangé) ... */ });
 const isTableVisible = computed(() => tableData.value.length > 0);
 
-// --- MODIFIÉ : Gestion d'erreur améliorée ---
 async function callApi(url, method = 'GET') {
   if (!user.value) { error.value = "Vous devez être connecté."; return; }
   showWelcomeMessage.value = false;
@@ -65,7 +76,7 @@ async function callApi(url, method = 'GET') {
   try {
     const token = await user.value.getIdToken();
     const headers = { 'Authorization': `Bearer ${token}` };
-    const fullUrl = `${API_BASE_URL}${url}`;
+    const fullUrl = `${API_BASE_URL}${url}`; // Utilisation de l'URL dynamique
     const response = await fetch(fullUrl, { method, headers });
     const data = await response.json();
     if (!response.ok) {
@@ -81,6 +92,7 @@ async function callApi(url, method = 'GET') {
   }
 }
 
+// --- MODIFIÉ : Utilisation de chemins relatifs ---
 async function runDataUpdate(endpoint) { lastOperationType.value = 'update'; await callApi(`/collection/${endpoint}`, 'POST'); }
 async function runVisualAnalysis(endpoint) {
   if (!selectedDate.value) { error.value = "Veuillez sélectionner une date."; return; }
@@ -100,6 +112,7 @@ async function runReport(reportType) {
   await callApi(url);
 }
 </script>
+
 <template>
   <div v-if="!isAuthReady" class="loading-screen">
     <p>Chargement de l'application...</p>
@@ -107,7 +120,7 @@ async function runReport(reportType) {
 
   <div v-else-if="!user" class="login-wrapper">
     <div class="login-box">
-      <h2>Connexion - LE GUIDE DES FOURCASTER</h2>
+      <h2>LE GUIDE DES FOURCASTER</h2>
       <form @submit.prevent="login">
         <div class="input-group">
           <label for="email">Email</label>
@@ -169,34 +182,49 @@ async function runReport(reportType) {
       <div class="results-column">
         <section class="card results-card">
           <h2>Visualisation & Rapports</h2>
-          <div v-if="isLoading" class="loader">Chargement...</div>
-          <div v-if="error" class="error-box">{{ error }}</div>
-          
-          <div v-if="apiResponse && apiResponse.message" class="success-box">
-             ✅ {{ apiResponse.message }}
-             <a :href="sheetDirectLink" target="_blank" class="external-link">Ouvrir l'onglet ↗</a>
+
+          <div v-if="showWelcomeMessage" class="welcome-message">
+            <h3>Bienvenue sur Le Guide des Fourcaster !</h3>
+            <p>Cet outil est votre assistant personnel pour analyser les tendances du Loto Bonheur.</p>
+            <ul>
+              <li><strong>Paramètres d'Analyse :</strong> Choisissez une date pour cibler une semaine.</li>
+              <li><strong>Analyse Visuelle :</strong> Colorez les numéros récurrents directement dans le tableau.</li>
+              <li><strong>Rapports Analytiques :</strong> Obtenez des classements et découvrez les "numéros compagnons".</li>
+            </ul>
+            <p><strong>Votre objectif :</strong> Utiliser ces données pour prendre des décisions plus éclairées. Bonne analyse !</p>
+            <button @click="showWelcomeMessage = false" class="close-welcome">Commencer</button>
           </div>
 
-          <div class="sheet-container">
-            <iframe :key="sheetEmbedUrl" :src="sheetEmbedUrl">Chargement...</iframe>
-          </div>
+          <div v-else>
+            <div v-if="isLoading" class="loader">Chargement...</div>
+            <div v-if="error" class="error-box">{{ error }}</div>
+            
+            <div v-if="apiResponse && apiResponse.message" class="success-box">
+               ✅ {{ apiResponse.message }}
+               <a v-if="isAdmin" :href="sheetDirectLink" target="_blank" class="external-link">Ouvrir l'onglet ↗</a>
+            </div>
 
-          <table v-if="isTableVisible" class="styled-table">
-            <thead>
-              <tr><th v-for="h in tableHeaders" :key="h">{{ h }}</th></tr>
-            </thead>
-            <tbody>
-              <tr v-for="(row, index) in tableData" :key="index">
-                <td>#{{ index + 1 }}</td>
-                <td>{{ row.number }}</td>
-                <td>{{ row.count }}</td>
-              </tr>
-            </tbody>
-          </table>
+            <div class="sheet-container">
+              <iframe :key="sheetEmbedUrl" :src="sheetEmbedUrl">Chargement...</iframe>
+            </div>
 
-          <div v-if="apiResponse && apiResponse.ai_strategic_analysis" class="ai-analysis">
-            <h3>🧠 Analyse Stratégique de l'IA</h3>
-            <p>{{ apiResponse.ai_strategic_analysis }}</p>
+            <table v-if="isTableVisible" class="styled-table">
+              <thead>
+                <tr><th v-for="h in tableHeaders" :key="h">{{ h }}</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="(row, index) in tableData" :key="index">
+                  <td>#{{ index + 1 }}</td>
+                  <td>{{ row.number }}</td>
+                  <td>{{ row.count }}</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <div v-if="apiResponse && apiResponse.ai_strategic_analysis" class="ai-analysis">
+              <h3>🧠 Analyse Stratégique de l'IA</h3>
+              <p>{{ apiResponse.ai_strategic_analysis }}</p>
+            </div>
           </div>
         </section>
       </div>
@@ -242,4 +270,9 @@ async function runReport(reportType) {
   .ai-analysis p { line-height: 1.6; white-space: pre-wrap; }
   .sheet-container { width: 100%; height: 65vh; border: 1px solid #ddd; border-radius: 8px; overflow: hidden; margin-top: 1rem; }
   iframe { width: 100%; height: 100%; border: 0; }
+  .welcome-message { background-color: #e3f2fd; color: #1e88e5; border: 1px solid #90caf9; padding: 1.5rem; border-radius: 8px; margin-bottom: 2rem; }
+  .welcome-message h3 { margin-top: 0; }
+  .welcome-message ul { padding-left: 20px; }
+  .welcome-message li { margin-bottom: 0.5rem; }
+  .close-welcome { display: block; width: auto; margin-top: 1rem; padding: 0.6rem 1.2rem; background-color: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
 </style>
