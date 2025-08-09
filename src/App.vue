@@ -5,7 +5,7 @@ import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebas
 import { doc, getDoc } from "firebase/firestore";
 
 // --- CONFIGURATION ---
-const GOOGLE_SHEET_ID = "1HepqMzKcshKbRsLWwpEOOy5oO9ntK2CgdV7F_ijmjIo";
+const GOOGLE_SHEET_ID ="1HepqMzKcshKbRsLWwpEOOy5oO9ntK2CgdV7F_ijmjIo";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 
 // --- SECTION AUTHENTIFICATION ---
@@ -60,6 +60,8 @@ const startDate = ref('');
 const endDate = ref('');
 const selectedNumber = ref('');
 const profileNumber = ref('');
+const triggerTargetNumber = ref('');
+const triggerCompanionNumber = ref('');
 const apiResponse = ref(null);
 const isLoading = ref(false);
 const error = ref(null);
@@ -74,13 +76,15 @@ const sheetDirectLink = computed(() => {
 });
 
 const tableHeaders = computed(() => {
-  if (lastOperationType.value === 'frequency' || lastOperationType.value === 'weekly-frequency' || lastOperationType.value === 'daily-frequency') return ['#', 'Numéro', 'Apparitions'];
+  if (lastOperationType.value.includes('frequency')) return ['#', 'Numéro', 'Apparitions'];
   if (lastOperationType.value === 'companions') return ['#', 'Compagnon', 'Apparu avec'];
+  if (lastOperationType.value === 'trigger') return ['#', 'N° Déclencheur', 'Fréquence'];
   return [];
 });
 const tableData = computed(() => {
   if (apiResponse.value?.frequency_ranking) return apiResponse.value.frequency_ranking;
   if (apiResponse.value?.companion_ranking) return apiResponse.value.companion_ranking;
+  if (apiResponse.value?.trigger_numbers_ranking) return apiResponse.value.trigger_numbers_ranking;
   return [];
 });
 const isTableVisible = computed(() => tableData.value.length > 0);
@@ -146,6 +150,26 @@ async function runProfileAnalysis() {
   }
   lastOperationType.value = 'profile';
   const url = `/analysis/number-profile?target_number=${profileNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`;
+  await callApi(url);
+}
+
+async function runSequenceAnalysis() {
+  if (!startDate.value || !endDate.value) {
+    error.value = "Veuillez sélectionner une période pour la détection de suites.";
+    return;
+  }
+  lastOperationType.value = 'sequence';
+  const url = `/analysis/sequence-detection?start_date=${startDate.value}&end_date=${endDate.value}`;
+  await callApi(url);
+}
+
+async function runTriggerAnalysis() {
+  if (!startDate.value || !endDate.value || !triggerTargetNumber.value || !triggerCompanionNumber.value) {
+    error.value = "Veuillez sélectionner une période et les deux numéros de votre paire.";
+    return;
+  }
+  lastOperationType.value = 'trigger';
+  const url = `/analysis/trigger-numbers?target_number=${triggerTargetNumber.value}&companion_number=${triggerCompanionNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`;
   await callApi(url);
 }
 </script>
@@ -219,6 +243,20 @@ async function runProfileAnalysis() {
           <input type="number" v-model="profileNumber" placeholder="N° pour profilage" />
           <button @click="runProfileAnalysis" :disabled="isLoading || !startDate || !endDate || !profileNumber">Générer Profil du Numéro</button>
         </section>
+
+        <section class="card">
+          <h2>Analyse IA Avancée</h2>
+          <p>Utilisera la période sélectionnée ci-dessus.</p>
+          <button @click="runSequenceAnalysis" :disabled="isLoading || !startDate || !endDate">Détection de Suites</button>
+          <hr />
+          <label>Numéro Principal :</label>
+          <input type="number" v-model="triggerTargetNumber" placeholder="Ex: 18" />
+          <label>Numéro Compagnon :</label>
+          <input type="number" v-model="triggerCompanionNumber" placeholder="Ex: 73" />
+          <button @click="runTriggerAnalysis" :disabled="isLoading || !startDate || !endDate || !triggerTargetNumber || !triggerCompanionNumber">
+            Trouver les Déclencheurs
+          </button>
+        </section>
       </div>
 
       <div class="results-column">
@@ -240,6 +278,7 @@ async function runProfileAnalysis() {
                 </div>
                 <a v-if="apiResponse.worksheet_gid" :href="sheetDirectLink" target="_blank" class="button-link">Voir l'Onglet ↗</a>
               </div>
+              
               <table v-if="isTableVisible" class="styled-table">
                 <thead>
                   <tr><th v-for="h in tableHeaders" :key="h">{{ h }}</th></tr>
@@ -252,6 +291,7 @@ async function runProfileAnalysis() {
                   </tr>
                 </tbody>
               </table>
+
               <div v-if="apiResponse.ai_strategic_analysis" class="ai-analysis">
                 <h3>🧠 Analyse Stratégique des Compagnons</h3>
                 <p>{{ apiResponse.ai_strategic_analysis }}</p>
@@ -259,6 +299,14 @@ async function runProfileAnalysis() {
               <div v-if="apiResponse.ai_strategic_profile" class="ai-analysis">
                 <h3>🧠 Profil Stratégique du Numéro {{ apiResponse.profile_for_number }}</h3>
                 <p>{{ apiResponse.ai_strategic_profile }}</p>
+              </div>
+              <div v-if="apiResponse.ai_sequence_analysis" class="ai-analysis">
+                <h3>🧠 Analyse des Suites par l'IA</h3>
+                <p>{{ apiResponse.ai_sequence_analysis }}</p>
+              </div>
+              <div v-if="apiResponse.ai_trigger_analysis" class="ai-analysis">
+                <h3>🧠 Analyse des Numéros Déclencheurs pour la paire {{ apiResponse.analysis_for_pair }}</h3>
+                <p>{{ apiResponse.ai_trigger_analysis }}</p>
               </div>
             </div>
           </div>
