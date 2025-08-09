@@ -278,7 +278,6 @@ async function runTriggerAnalysis() {
                 </div>
                 <a v-if="apiResponse.worksheet_gid" :href="sheetDirectLink" target="_blank" class="button-link">Voir l'Onglet ↗</a>
               </div>
-              
               <table v-if="isTableVisible" class="styled-table">
                 <thead>
                   <tr><th v-for="h in tableHeaders" :key="h">{{ h }}</th></tr>
@@ -291,7 +290,6 @@ async function runTriggerAnalysis() {
                   </tr>
                 </tbody>
               </table>
-
               <div v-if="apiResponse.ai_strategic_analysis" class="ai-analysis">
                 <h3>🧠 Analyse Stratégique des Compagnons</h3>
                 <p>{{ apiResponse.ai_strategic_analysis }}</p>
