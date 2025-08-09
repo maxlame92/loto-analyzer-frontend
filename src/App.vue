@@ -5,7 +5,7 @@ import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebas
 import { doc, getDoc } from "firebase/firestore";
 
 // --- CONFIGURATION ---
-const GOOGLE_SHEET_ID =  "1HepqMzKcshKbRsLWwpEOOy5oO9ntK2CgdV7F_ijmjIo";
+const GOOGLE_SHEET_ID = "1HepqMzKcshKbRsLWwpEOOy5oO9ntK2CgdV7F_ijmjIo";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 
 // --- SECTION AUTHENTIFICATION ---
@@ -59,7 +59,7 @@ const selectedDate = ref('');
 const startDate = ref('');
 const endDate = ref('');
 const selectedNumber = ref('');
-const profileNumber = ref(''); // Pour la Phase 2
+const profileNumber = ref('');
 const apiResponse = ref(null);
 const isLoading = ref(false);
 const error = ref(null);
@@ -74,7 +74,7 @@ const sheetDirectLink = computed(() => {
 });
 
 const tableHeaders = computed(() => {
-  if (lastOperationType.value === 'frequency') return ['#', 'Numéro', 'Apparitions'];
+  if (lastOperationType.value === 'frequency' || lastOperationType.value === 'weekly-frequency' || lastOperationType.value === 'daily-frequency') return ['#', 'Numéro', 'Apparitions'];
   if (lastOperationType.value === 'companions') return ['#', 'Compagnon', 'Apparu avec'];
   return [];
 });
@@ -115,13 +115,17 @@ async function runVisualAnalysis(endpoint) {
 async function runReport(reportType) {
   if (!selectedDate.value) { error.value = "Veuillez sélectionner une date."; return; }
   let url = '';
-  if (reportType === 'weekly-frequency') url = `/analysis/weekly-frequency/${selectedDate.value}`;
-  else if (reportType === 'daily-frequency') url = `/analysis/daily-frequency/${selectedDate.value}`;
-  else if (reportType === 'companions') {
+  if (reportType === 'weekly-frequency') {
+    lastOperationType.value = 'weekly-frequency';
+    url = `/analysis/weekly-frequency/${selectedDate.value}`;
+  } else if (reportType === 'daily-frequency') {
+    lastOperationType.value = 'daily-frequency';
+    url = `/analysis/daily-frequency/${selectedDate.value}`;
+  } else if (reportType === 'companions') {
     if (!selectedNumber.value) { error.value = "Veuillez entrer un numéro."; return; }
+    lastOperationType.value = 'companions';
     url = `/analysis/companions/${selectedNumber.value}?week_date_str=${selectedDate.value}`;
   }
-  lastOperationType.value = reportType;
   await callApi(url);
 }
 
@@ -135,7 +139,6 @@ async function runRangeAnalysis() {
   await callApi(url);
 }
 
-// --- NOUVELLE FONCTION POUR LA PHASE 2 ---
 async function runProfileAnalysis() {
   if (!startDate.value || !endDate.value || !profileNumber.value) {
     error.value = "Veuillez sélectionner une période ET un numéro pour le profilage.";
@@ -193,34 +196,28 @@ async function runProfileAnalysis() {
           <h2>Analyse par Semaine</h2>
           <label>Sélectionnez un jour dans la semaine :</label>
           <input type="date" v-model="selectedDate" />
-          <input type="number" v-model="selectedNumber" placeholder="N° pour analyse compagnons" />
+          <div class="button-group-vertical">
+            <button @click="runVisualAnalysis('highlight-day')" :disabled="isLoading || !selectedDate">Surligner ce Jour</button>
+            <button @click="runVisualAnalysis('process-entire-week')" :disabled="isLoading || !selectedDate">Surligner Toute la Semaine</button>
+            <hr />
+            <button @click="runReport('daily-frequency')" :disabled="isLoading || !selectedDate">Classement du Jour</button>
+            <button @click="runReport('weekly-frequency')" :disabled="isLoading || !selectedDate">Classement de la Semaine</button>
+            <hr />
+            <input type="number" v-model="selectedNumber" placeholder="N° pour analyse compagnons" />
+            <button @click="runReport('companions')" :disabled="isLoading || !selectedDate || !selectedNumber">Analyser Compagnons</button>
+          </div>
         </section>
 
         <section class="card">
-          <h2>Analyse sur Période Spécifique</h2>
+          <h2>Analyse sur Période Étendue</h2>
           <label>Date de début :</label>
           <input type="date" v-model="startDate" />
           <label>Date de fin :</label>
           <input type="date" v-model="endDate" />
-          <button @click="runRangeAnalysis" :disabled="isLoading || !startDate || !endDate">Analyse de Fréquence</button>
-        </section>
-
-        <!-- NOUVELLE SECTION POUR LA PHASE 2 -->
-        <section class="card">
-          <h2>Profilage de Numéro</h2>
-          <label>Numéro à profiler :</label>
-          <input type="number" v-model="profileNumber" placeholder="Ex: 75" />
-          <p>Utilisera la période sélectionnée ci-dessus.</p>
-          <button @click="runProfileAnalysis" :disabled="isLoading || !startDate || !endDate || !profileNumber">Générer le Profil</button>
-        </section>
-        
-        <section class="card">
-          <h2>Outils par Semaine</h2>
-          <div class="button-group-vertical">
-            <button @click="runVisualAnalysis('highlight-day')" :disabled="isLoading || !selectedDate">Surligner Jour</button>
-            <button @click="runReport('daily-frequency')" :disabled="isLoading || !selectedDate">Classement Jour</button>
-            <button @click="runReport('companions')" :disabled="isLoading || !selectedDate || !selectedNumber">Analyser Compagnons</button>
-          </div>
+          <button @click="runRangeAnalysis" :disabled="isLoading || !startDate || !endDate">Fréquence sur Période</button>
+          <hr />
+          <input type="number" v-model="profileNumber" placeholder="N° pour profilage" />
+          <button @click="runProfileAnalysis" :disabled="isLoading || !startDate || !endDate || !profileNumber">Générer Profil du Numéro</button>
         </section>
       </div>
 
@@ -243,7 +240,6 @@ async function runProfileAnalysis() {
                 </div>
                 <a v-if="apiResponse.worksheet_gid" :href="sheetDirectLink" target="_blank" class="button-link">Voir l'Onglet ↗</a>
               </div>
-              
               <table v-if="isTableVisible" class="styled-table">
                 <thead>
                   <tr><th v-for="h in tableHeaders" :key="h">{{ h }}</th></tr>
@@ -256,14 +252,10 @@ async function runProfileAnalysis() {
                   </tr>
                 </tbody>
               </table>
-
-              <!-- AFFICHAGE POUR L'ANALYSE DES COMPAGNONS -->
-              <div v-if="apiResponse.ai_strategic_analysis && lastOperationType === 'companions'" class="ai-analysis">
+              <div v-if="apiResponse.ai_strategic_analysis" class="ai-analysis">
                 <h3>🧠 Analyse Stratégique des Compagnons</h3>
                 <p>{{ apiResponse.ai_strategic_analysis }}</p>
               </div>
-
-              <!-- NOUVEAUTÉ : AFFICHAGE POUR LE PROFILAGE DE NUMÉRO -->
               <div v-if="apiResponse.ai_strategic_profile" class="ai-analysis">
                 <h3>🧠 Profil Stratégique du Numéro {{ apiResponse.profile_for_number }}</h3>
                 <p>{{ apiResponse.ai_strategic_profile }}</p>
@@ -294,8 +286,7 @@ async function runProfileAnalysis() {
   .card { background: white; border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
   .data-update { background-color: #fff9c4; border: 1px solid #fbc02d; }
   .card h2 { font-size: 1.2rem; margin-top: 0; margin-bottom: 1rem; border-bottom: 1px solid #eee; padding-bottom: 0.5rem; }
-  input { width: 100%; padding: 0.75rem; font-size: 1rem; border-radius: 4px; border: 1px solid #ccc; box-sizing: border-box; }
-  input[type="number"] { margin-top: 1rem; }
+  input { width: 100%; padding: 0.75rem; font-size: 1rem; border-radius: 4px; border: 1px solid #ccc; box-sizing: border-box; margin-bottom: 1rem; }
   .button-group-vertical { display: flex; flex-direction: column; gap: 0.5rem; }
   .button-group-horizontal { display: flex; flex-direction: row; gap: 1rem; }
   button { padding: 0.8rem; font-size: 1rem; font-weight: bold; color: white; background-color: #007bff; border: none; border-radius: 5px; cursor: pointer; width: 100%;}
@@ -309,7 +300,7 @@ async function runProfileAnalysis() {
   .styled-table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
   .styled-table th, .styled-table td { border: 1px solid #ddd; padding: 8px; text-align: center; }
   .styled-table th { background-color: #f2f2f2; }
-  .ai-analysis { background-color: #fffbe6; border-left: 5px solid #ffc107; padding: 1rem; margin-top: 1rem; border-radius: 4px; text-align: left;}
+  .ai-analysis { background-color: #fffbe6; border-left: 5px solid #ffc107; padding: 1rem; margin-top: 1rem; border-radius: 4px; text-align: left; }
   .ai-analysis h3 { margin-top: 0; }
   .ai-analysis p { line-height: 1.6; white-space: pre-wrap; }
   .success-box.large { padding: 1.5rem; display: flex; flex-direction: column; align-items: center; gap: 1rem; }
@@ -324,4 +315,5 @@ async function runProfileAnalysis() {
   .close-welcome { display: block; width: auto; margin-top: 1rem; padding: 0.6rem 1.2rem; background-color: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
   label { display: block; margin-bottom: 0.5rem; font-weight: 500; font-size: 0.9rem; color: #555; margin-top: 1rem; }
   .card p { font-size: 0.8rem; color: #777; margin-top: 0.5rem; text-align: center; }
+  hr { border: none; border-top: 1px solid #eee; margin: 1rem 0; }
 </style>
