@@ -5,7 +5,7 @@ import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebas
 import { doc, getDoc } from "firebase/firestore";
 
 // --- CONFIGURATION ---
-const GOOGLE_SHEET_ID ="1HepqMzKcshKbRsLWwpEOOy5oO9ntK2CgdV7F_ijmjIo";
+const GOOGLE_SHEET_ID = "1HepqMzKcshKbRsLWwpEOOy5oO9ntK2CgdV7F_ijmjIo";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 
 // --- SECTION AUTHENTIFICATION ---
@@ -172,6 +172,13 @@ async function runTriggerAnalysis() {
   const url = `/analysis/trigger-numbers?target_number=${triggerTargetNumber.value}&companion_number=${triggerCompanionNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`;
   await callApi(url);
 }
+
+// --- NOUVELLE FONCTION ---
+async function runKantaAnalysis(endpoint) {
+  if (!selectedDate.value) { error.value = "Veuillez sélectionner une date."; return; }
+  lastOperationType.value = 'visual';
+  await callApi(`/analysis/${endpoint}/${selectedDate.value}`, 'POST');
+}
 </script>
 
 <template>
@@ -221,14 +228,28 @@ async function runTriggerAnalysis() {
           <label>Sélectionnez un jour dans la semaine :</label>
           <input type="date" v-model="selectedDate" />
           <div class="button-group-vertical">
-            <button @click="runVisualAnalysis('highlight-day')" :disabled="isLoading || !selectedDate">Surligner ce Jour</button>
-            <button @click="runVisualAnalysis('process-entire-week')" :disabled="isLoading || !selectedDate">Surligner Toute la Semaine</button>
+            <button @click="runVisualAnalysis('highlight-day')" :disabled="isLoading || !selectedDate">Surlignage Standard</button>
+            <button @click="runVisualAnalysis('process-entire-week')" :disabled="isLoading || !selectedDate">Surlignage Standard (Semaine)</button>
             <hr />
             <button @click="runReport('daily-frequency')" :disabled="isLoading || !selectedDate">Classement du Jour</button>
             <button @click="runReport('weekly-frequency')" :disabled="isLoading || !selectedDate">Classement de la Semaine</button>
             <hr />
             <input type="number" v-model="selectedNumber" placeholder="N° pour analyse compagnons" />
             <button @click="runReport('companions')" :disabled="isLoading || !selectedDate || !selectedNumber">Analyser Compagnons</button>
+          </div>
+        </section>
+
+        <!-- NOUVELLE CARTE KANTA TRACKER -->
+        <section class="card">
+          <h2>Kanta Tracker (Visuel)</h2>
+          <p>Utilise la date sélectionnée ci-dessus.</p>
+          <div class="button-group-vertical">
+            <button @click="runKantaAnalysis('kanta-highlight-day')" :disabled="isLoading || !selectedDate">
+              Surligner Kanta du Jour
+            </button>
+            <button @click="runKantaAnalysis('kanta-highlight-week')" :disabled="isLoading || !selectedDate">
+              Surligner Kanta (Semaine)
+            </button>
           </div>
         </section>
 
