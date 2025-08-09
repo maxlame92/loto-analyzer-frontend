@@ -5,7 +5,7 @@ import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebas
 import { doc, getDoc } from "firebase/firestore";
 
 // --- CONFIGURATION ---
-const GOOGLE_SHEET_ID = "1HepqMzKcshKbRsLWwpEOOy5oO9ntK2CgdV7F_ijmjIo";
+const GOOGLE_SHEET_ID =  "1HepqMzKcshKbRsLWwpEOOy5oO9ntK2CgdV7F_ijmjIo";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 
 // --- SECTION AUTHENTIFICATION ---
@@ -22,14 +22,14 @@ onMounted(() => {
   const month = (today.getMonth() + 1).toString().padStart(2, '0');
   const day = today.getDate().toString().padStart(2, '0');
   selectedDate.value = `${year}-${month}-${day}`;
-  endDate.value = `${year}-${month}-${day}`; // Initialise la date de fin à aujourd'hui
+  endDate.value = `${year}-${month}-${day}`;
   
   const oneMonthAgo = new Date();
   oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
   const startYear = oneMonthAgo.getFullYear();
   const startMonth = (oneMonthAgo.getMonth() + 1).toString().padStart(2, '0');
   const startDay = oneMonthAgo.getDate().toString().padStart(2, '0');
-  startDate.value = `${startYear}-${startMonth}-${startDay}`; // Initialise la date de début à il y a un mois
+  startDate.value = `${startYear}-${startMonth}-${startDay}`;
 
   onAuthStateChanged(auth, async (firebaseUser) => {
     if (firebaseUser) {
@@ -56,9 +56,10 @@ const logout = async () => { await signOut(auth); };
 
 // --- SECTION TABLEAU DE BORD ---
 const selectedDate = ref('');
+const startDate = ref('');
+const endDate = ref('');
 const selectedNumber = ref('');
-const startDate = ref(''); // NOUVEAU
-const endDate = ref('');   // NOUVEAU
+const profileNumber = ref(''); // Pour la Phase 2
 const apiResponse = ref(null);
 const isLoading = ref(false);
 const error = ref(null);
@@ -73,7 +74,7 @@ const sheetDirectLink = computed(() => {
 });
 
 const tableHeaders = computed(() => {
-  if (lastOperationType.value.includes('frequency')) return ['#', 'Numéro', 'Apparitions'];
+  if (lastOperationType.value === 'frequency') return ['#', 'Numéro', 'Apparitions'];
   if (lastOperationType.value === 'companions') return ['#', 'Compagnon', 'Apparu avec'];
   return [];
 });
@@ -85,23 +86,21 @@ const tableData = computed(() => {
 const isTableVisible = computed(() => tableData.value.length > 0);
 
 async function callApi(url, method = 'GET') {
-  if (!user.value) { error.value = "Vous devez être connecté."; return; }
   showWelcomeMessage.value = false;
-  isLoading.value = true; error.value = null; apiResponse.value = null;
+  isLoading.value = true;
+  error.value = null;
+  apiResponse.value = null;
   try {
     const token = await user.value.getIdToken();
     const headers = { 'Authorization': `Bearer ${token}` };
     const fullUrl = `${API_BASE_URL}${url}`;
     const response = await fetch(fullUrl, { method, headers });
     const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.detail || `Le serveur a répondu avec une erreur ${response.status}`);
-    }
+    if (!response.ok) throw new Error(data.detail || `Erreur ${response.status}`);
     apiResponse.value = data;
     if (data.worksheet_gid) activeSheetGid.value = data.worksheet_gid;
   } catch (err) {
     error.value = err.message;
-    activeSheetGid.value = null; 
   } finally {
     isLoading.value = false;
   }
@@ -126,7 +125,6 @@ async function runReport(reportType) {
   await callApi(url);
 }
 
-// --- NOUVELLE FONCTION ---
 async function runRangeAnalysis() {
   if (!startDate.value || !endDate.value) {
     error.value = "Veuillez sélectionner une date de début ET de fin.";
@@ -134,6 +132,17 @@ async function runRangeAnalysis() {
   }
   lastOperationType.value = 'frequency';
   const url = `/analysis/frequency-by-range?start_date=${startDate.value}&end_date=${endDate.value}`;
+  await callApi(url);
+}
+
+// --- NOUVELLE FONCTION POUR LA PHASE 2 ---
+async function runProfileAnalysis() {
+  if (!startDate.value || !endDate.value || !profileNumber.value) {
+    error.value = "Veuillez sélectionner une période ET un numéro pour le profilage.";
+    return;
+  }
+  lastOperationType.value = 'profile';
+  const url = `/analysis/number-profile?target_number=${profileNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`;
   await callApi(url);
 }
 </script>
@@ -187,29 +196,29 @@ async function runRangeAnalysis() {
           <input type="number" v-model="selectedNumber" placeholder="N° pour analyse compagnons" />
         </section>
 
-        <!-- NOUVELLE SECTION -->
         <section class="card">
           <h2>Analyse sur Période Spécifique</h2>
           <label>Date de début :</label>
           <input type="date" v-model="startDate" />
           <label>Date de fin :</label>
           <input type="date" v-model="endDate" />
-          <button @click="runRangeAnalysis" :disabled="isLoading || !startDate || !endDate">Lancer Analyse par Période</button>
+          <button @click="runRangeAnalysis" :disabled="isLoading || !startDate || !endDate">Analyse de Fréquence</button>
         </section>
 
+        <!-- NOUVELLE SECTION POUR LA PHASE 2 -->
         <section class="card">
-          <h2>Analyse Visuelle (par Semaine)</h2>
-          <div class="button-group-vertical">
-            <button @click="runVisualAnalysis('highlight-day')" :disabled="isLoading || !selectedDate">Surligner ce Jour</button>
-            <button @click="runVisualAnalysis('process-entire-week')" :disabled="isLoading || !selectedDate">Traiter Toute la Semaine</button>
-          </div>
+          <h2>Profilage de Numéro</h2>
+          <label>Numéro à profiler :</label>
+          <input type="number" v-model="profileNumber" placeholder="Ex: 75" />
+          <p>Utilisera la période sélectionnée ci-dessus.</p>
+          <button @click="runProfileAnalysis" :disabled="isLoading || !startDate || !endDate || !profileNumber">Générer le Profil</button>
         </section>
         
         <section class="card">
-          <h2>Rapports Analytiques (par Semaine)</h2>
+          <h2>Outils par Semaine</h2>
           <div class="button-group-vertical">
-            <button @click="runReport('daily-frequency')" :disabled="isLoading || !selectedDate">Classement Journalier</button>
-            <button @click="runReport('weekly-frequency')" :disabled="isLoading || !selectedDate">Classement Semaine</button>
+            <button @click="runVisualAnalysis('highlight-day')" :disabled="isLoading || !selectedDate">Surligner Jour</button>
+            <button @click="runReport('daily-frequency')" :disabled="isLoading || !selectedDate">Classement Jour</button>
             <button @click="runReport('companions')" :disabled="isLoading || !selectedDate || !selectedNumber">Analyser Compagnons</button>
           </div>
         </section>
@@ -218,43 +227,47 @@ async function runRangeAnalysis() {
       <div class="results-column">
         <section class="card results-card">
           <h2>Résultats d'Analyse</h2>
-
           <div v-if="showWelcomeMessage" class="welcome-message">
             <h3>Bienvenue sur Le Guide des Fourcaster !</h3>
             <p>Cet outil est votre assistant personnel pour analyser les tendances du Loto Bonheur.</p>
-            <p><strong>Votre objectif :</strong> Utiliser ces données pour prendre des décisions plus éclairées. Bonne analyse !</p>
             <button @click="showWelcomeMessage = false" class="close-welcome">Commencer</button>
           </div>
-
           <div v-else>
             <div v-if="isLoading" class="loader">Chargement...</div>
             <div v-if="error" class="error-box">{{ error }}</div>
-            
-            <div v-if="apiResponse" class="success-box large">
-               <div>
-                  <p v-if="apiResponse.message">✅ {{ apiResponse.message }}</p>
-                  <p v-if="apiResponse.analysis_period">✅ Rapport généré pour la période : {{ apiResponse.analysis_period }}</p>
+            <div v-if="apiResponse">
+              <div v-if="apiResponse.message || apiResponse.analysis_period" class="success-box large">
+                <div>
+                  <p>✅ {{ apiResponse.message || `Rapport généré pour la période : ${apiResponse.analysis_period}` }}</p>
                   <small v-if="lastOperationType === 'visual'">Les couleurs ont été mises à jour.</small>
-               </div>
-               <a v-if="apiResponse.worksheet_gid" :href="sheetDirectLink" target="_blank" class="button-link">Voir l'Onglet Concerné ↗</a>
-            </div>
+                </div>
+                <a v-if="apiResponse.worksheet_gid" :href="sheetDirectLink" target="_blank" class="button-link">Voir l'Onglet ↗</a>
+              </div>
+              
+              <table v-if="isTableVisible" class="styled-table">
+                <thead>
+                  <tr><th v-for="h in tableHeaders" :key="h">{{ h }}</th></tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(row, index) in tableData" :key="index">
+                    <td>#{{ index + 1 }}</td>
+                    <td>{{ row.number }}</td>
+                    <td>{{ row.count }}</td>
+                  </tr>
+                </tbody>
+              </table>
 
-            <table v-if="isTableVisible" class="styled-table">
-              <thead>
-                <tr><th v-for="h in tableHeaders" :key="h">{{ h }}</th></tr>
-              </thead>
-              <tbody>
-                <tr v-for="(row, index) in tableData" :key="index">
-                  <td>#{{ index + 1 }}</td>
-                  <td>{{ row.number }}</td>
-                  <td>{{ row.count }}</td>
-                </tr>
-              </tbody>
-            </table>
+              <!-- AFFICHAGE POUR L'ANALYSE DES COMPAGNONS -->
+              <div v-if="apiResponse.ai_strategic_analysis && lastOperationType === 'companions'" class="ai-analysis">
+                <h3>🧠 Analyse Stratégique des Compagnons</h3>
+                <p>{{ apiResponse.ai_strategic_analysis }}</p>
+              </div>
 
-            <div v-if="apiResponse && apiResponse.ai_strategic_analysis" class="ai-analysis">
-              <h3>🧠 Analyse Stratégique de l'IA</h3>
-              <p>{{ apiResponse.ai_strategic_analysis }}</p>
+              <!-- NOUVEAUTÉ : AFFICHAGE POUR LE PROFILAGE DE NUMÉRO -->
+              <div v-if="apiResponse.ai_strategic_profile" class="ai-analysis">
+                <h3>🧠 Profil Stratégique du Numéro {{ apiResponse.profile_for_number }}</h3>
+                <p>{{ apiResponse.ai_strategic_profile }}</p>
+              </div>
             </div>
           </div>
         </section>
@@ -296,7 +309,7 @@ async function runRangeAnalysis() {
   .styled-table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
   .styled-table th, .styled-table td { border: 1px solid #ddd; padding: 8px; text-align: center; }
   .styled-table th { background-color: #f2f2f2; }
-  .ai-analysis { background-color: #fffbe6; border-left: 5px solid #ffc107; padding: 1rem; margin-top: 1rem; border-radius: 4px; }
+  .ai-analysis { background-color: #fffbe6; border-left: 5px solid #ffc107; padding: 1rem; margin-top: 1rem; border-radius: 4px; text-align: left;}
   .ai-analysis h3 { margin-top: 0; }
   .ai-analysis p { line-height: 1.6; white-space: pre-wrap; }
   .success-box.large { padding: 1.5rem; display: flex; flex-direction: column; align-items: center; gap: 1rem; }
@@ -310,4 +323,5 @@ async function runRangeAnalysis() {
   .welcome-message li { margin-bottom: 0.5rem; }
   .close-welcome { display: block; width: auto; margin-top: 1rem; padding: 0.6rem 1.2rem; background-color: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
   label { display: block; margin-bottom: 0.5rem; font-weight: 500; font-size: 0.9rem; color: #555; margin-top: 1rem; }
+  .card p { font-size: 0.8rem; color: #777; margin-top: 0.5rem; text-align: center; }
 </style>
