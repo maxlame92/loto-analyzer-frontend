@@ -6,7 +6,7 @@ import { doc, getDoc } from "firebase/firestore";
 
 // --- CONFIGURATION ---
 const GOOGLE_SHEET_ID = "1HepqMzKcsbKbRsLWwpEOoy5oO9ntK2CgdV7F_ijmjlo";
-// --- URL DYNAMIQUE POUR RENDER ---
+// URL dynamique pour le backend
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 
 // --- SECTION AUTHENTIFICATION ---
@@ -37,7 +37,14 @@ onMounted(() => {
   });
 });
 
-const login = async () => { /* ... (inchangé) ... */ };
+const login = async () => {
+  try {
+    authError.value = '';
+    isLoading.value = true;
+    await signInWithEmailAndPassword(auth, email.value, password.value);
+  } catch (error) { authError.value = "Email ou mot de passe incorrect."; }
+  finally { isLoading.value = false; }
+};
 const logout = async () => { await signOut(auth); };
 
 // --- SECTION TABLEAU DE BORD ---
@@ -48,25 +55,24 @@ const isLoading = ref(false);
 const error = ref(null);
 const lastOperationType = ref('');
 const activeSheetGid = ref(null);
-const showWelcomeMessage = ref(true); 
+const showWelcomeMessage = ref(true);
 
 const isAdmin = computed(() => userRole.value === 'admin');
-
-// --- Logique de l'URL avec sécurité ---
-const sheetEmbedUrl = computed(() => {
-  const base = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}`;
-  let url = activeSheetGid.value 
-    ? `${base}/htmlembed?gid=${activeSheetGid.value}&widget=true&headers=false`
-    : `${base}/htmlembed?widget=true&headers=false`;
-  return url;
-});
 const sheetDirectLink = computed(() => {
   const base = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}`;
   return activeSheetGid.value ? `${base}/edit#gid=${activeSheetGid.value}` : `${base}/edit`;
 });
 
-const tableHeaders = computed(() => { /* ... (inchangé) ... */ });
-const tableData = computed(() => { /* ... (inchangé) ... */ });
+const tableHeaders = computed(() => {
+  if (lastOperationType.value.includes('frequency')) return ['#', 'Numéro', 'Apparitions'];
+  if (lastOperationType.value === 'companions') return ['#', 'Compagnon', 'Apparu avec'];
+  return [];
+});
+const tableData = computed(() => {
+  if (apiResponse.value?.frequency_ranking) return apiResponse.value.frequency_ranking;
+  if (apiResponse.value?.companion_ranking) return apiResponse.value.companion_ranking;
+  return [];
+});
 const isTableVisible = computed(() => tableData.value.length > 0);
 
 async function callApi(url, method = 'GET') {
@@ -76,7 +82,7 @@ async function callApi(url, method = 'GET') {
   try {
     const token = await user.value.getIdToken();
     const headers = { 'Authorization': `Bearer ${token}` };
-    const fullUrl = `${API_BASE_URL}${url}`; // Utilisation de l'URL dynamique
+    const fullUrl = `${API_BASE_URL}${url}`;
     const response = await fetch(fullUrl, { method, headers });
     const data = await response.json();
     if (!response.ok) {
@@ -92,7 +98,6 @@ async function callApi(url, method = 'GET') {
   }
 }
 
-// --- MODIFIÉ : Utilisation de chemins relatifs ---
 async function runDataUpdate(endpoint) { lastOperationType.value = 'update'; await callApi(`/collection/${endpoint}`, 'POST'); }
 async function runVisualAnalysis(endpoint) {
   if (!selectedDate.value) { error.value = "Veuillez sélectionner une date."; return; }
@@ -181,16 +186,11 @@ async function runReport(reportType) {
 
       <div class="results-column">
         <section class="card results-card">
-          <h2>Visualisation & Rapports</h2>
+          <h2>Résultats d'Analyse</h2>
 
           <div v-if="showWelcomeMessage" class="welcome-message">
             <h3>Bienvenue sur Le Guide des Fourcaster !</h3>
             <p>Cet outil est votre assistant personnel pour analyser les tendances du Loto Bonheur.</p>
-            <ul>
-              <li><strong>Paramètres d'Analyse :</strong> Choisissez une date pour cibler une semaine.</li>
-              <li><strong>Analyse Visuelle :</strong> Colorez les numéros récurrents directement dans le tableau.</li>
-              <li><strong>Rapports Analytiques :</strong> Obtenez des classements et découvrez les "numéros compagnons".</li>
-            </ul>
             <p><strong>Votre objectif :</strong> Utiliser ces données pour prendre des décisions plus éclairées. Bonne analyse !</p>
             <button @click="showWelcomeMessage = false" class="close-welcome">Commencer</button>
           </div>
@@ -199,13 +199,12 @@ async function runReport(reportType) {
             <div v-if="isLoading" class="loader">Chargement...</div>
             <div v-if="error" class="error-box">{{ error }}</div>
             
-            <div v-if="apiResponse && apiResponse.message" class="success-box">
-               ✅ {{ apiResponse.message }}
-               <a v-if="isAdmin" :href="sheetDirectLink" target="_blank" class="external-link">Ouvrir l'onglet ↗</a>
-            </div>
-
-            <div class="sheet-container">
-              <iframe :key="sheetEmbedUrl" :src="sheetEmbedUrl">Chargement...</iframe>
+            <div v-if="apiResponse && apiResponse.message" class="success-box large">
+               <div>
+                  <p>✅ {{ apiResponse.message }}</p>
+                  <small v-if="lastOperationType === 'visual'">Les couleurs ont été mises à jour dans votre Google Sheet.</small>
+               </div>
+               <a :href="sheetDirectLink" target="_blank" class="button-link">Voir le Résultat ↗</a>
             </div>
 
             <table v-if="isTableVisible" class="styled-table">
@@ -260,7 +259,7 @@ async function runReport(reportType) {
   .results-card { min-height: 80vh; }
   .error-box, .loader, .success-box { padding: 1rem; border-radius: 4px; text-align: center; margin-bottom: 1rem; }
   .error-box { background-color: #ffebee; color: #c62828; }
-  .success-box { background-color: #e8f5e9; color: #2e7d32; font-weight: bold; display: flex; align-items: center; justify-content: space-between; }
+  .success-box { background-color: #e8f5e9; color: #2e7d32; font-weight: bold; }
   .external-link { font-weight: bold; text-decoration: none; }
   .styled-table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
   .styled-table th, .styled-table td { border: 1px solid #ddd; padding: 8px; text-align: center; }
@@ -268,8 +267,11 @@ async function runReport(reportType) {
   .ai-analysis { background-color: #fffbe6; border-left: 5px solid #ffc107; padding: 1rem; margin-top: 1rem; border-radius: 4px; }
   .ai-analysis h3 { margin-top: 0; }
   .ai-analysis p { line-height: 1.6; white-space: pre-wrap; }
-  .sheet-container { width: 100%; height: 65vh; border: 1px solid #ddd; border-radius: 8px; overflow: hidden; margin-top: 1rem; }
-  iframe { width: 100%; height: 100%; border: 0; }
+  .success-box.large { padding: 1.5rem; display: flex; flex-direction: column; align-items: center; gap: 1rem; }
+  .success-box.large p { margin: 0; font-size: 1.1rem; }
+  .success-box.large small { color: #555; }
+  .button-link { display: inline-block; padding: 0.8rem 2rem; background-color: #28a745; color: white; font-weight: bold; text-decoration: none; border-radius: 5px; transition: background-color 0.2s; }
+  .button-link:hover { background-color: #218838; }
   .welcome-message { background-color: #e3f2fd; color: #1e88e5; border: 1px solid #90caf9; padding: 1.5rem; border-radius: 8px; margin-bottom: 2rem; }
   .welcome-message h3 { margin-top: 0; }
   .welcome-message ul { padding-left: 20px; }
