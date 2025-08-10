@@ -79,12 +79,15 @@ const tableHeaders = computed(() => {
   if (lastOperationType.value.includes('frequency')) return ['#', 'Numéro', 'Apparitions'];
   if (lastOperationType.value === 'companions') return ['#', 'Compagnon', 'Apparu avec'];
   if (lastOperationType.value === 'trigger') return ['#', 'N° Déclencheur', 'Fréquence'];
+  if (lastOperationType.value.includes('kanta-rank')) return ['Paire Kanta', 'Apparitions'];
   return [];
 });
 const tableData = computed(() => {
   if (apiResponse.value?.frequency_ranking) return apiResponse.value.frequency_ranking;
   if (apiResponse.value?.companion_ranking) return apiResponse.value.companion_ranking;
   if (apiResponse.value?.trigger_numbers_ranking) return apiResponse.value.trigger_numbers_ranking;
+  if (apiResponse.value?.kanta_pairs) return apiResponse.value.kanta_pairs; // Pour le rapport journalier Kanta
+  if (apiResponse.value?.kanta_pairs_ranking) return apiResponse.value.kanta_pairs_ranking; // Pour le rapport semaine Kanta
   return [];
 });
 const isTableVisible = computed(() => tableData.value.length > 0);
@@ -173,11 +176,18 @@ async function runTriggerAnalysis() {
   await callApi(url);
 }
 
-// --- NOUVELLE FONCTION ---
 async function runKantaAnalysis(endpoint) {
   if (!selectedDate.value) { error.value = "Veuillez sélectionner une date."; return; }
   lastOperationType.value = 'visual';
   await callApi(`/analysis/${endpoint}/${selectedDate.value}`, 'POST');
+}
+
+// --- NOUVELLE FONCTION ---
+async function runKantaReport(reportType) {
+  if (!selectedDate.value) { error.value = "Veuillez sélectionner une date."; return; }
+  lastOperationType.value = 'kanta-rank';
+  const url = `/analysis/kanta-${reportType}/${selectedDate.value}`;
+  await callApi(url);
 }
 </script>
 
@@ -239,17 +249,19 @@ async function runKantaAnalysis(endpoint) {
           </div>
         </section>
 
-        <!-- NOUVELLE CARTE KANTA TRACKER -->
         <section class="card">
-          <h2>Kanta Tracker (Visuel)</h2>
+          <h2>Kanta Tracker</h2>
           <p>Utilise la date sélectionnée ci-dessus.</p>
           <div class="button-group-vertical">
             <button @click="runKantaAnalysis('kanta-highlight-day')" :disabled="isLoading || !selectedDate">
-              Surligner Kanta du Jour
+              Surligner Kanta (Jour)
             </button>
             <button @click="runKantaAnalysis('kanta-highlight-week')" :disabled="isLoading || !selectedDate">
               Surligner Kanta (Semaine)
             </button>
+            <hr />
+            <button @click="runKantaReport('daily-rank')" :disabled="isLoading || !selectedDate">Classement Kanta (Jour)</button>
+            <button @click="runKantaReport('weekly-rank')" :disabled="isLoading || !selectedDate">Classement Kanta (Semaine)</button>
           </div>
         </section>
 
@@ -305,8 +317,11 @@ async function runKantaAnalysis(endpoint) {
                 </thead>
                 <tbody>
                   <tr v-for="(row, index) in tableData" :key="index">
-                    <td>#{{ index + 1 }}</td>
-                    <td>{{ row.number }}</td>
+                    <td v-if="lastOperationType.includes('kanta-rank')">{{ row.pair }}</td>
+                    <td v-else>#{{ index + 1 }}</td>
+                    
+                    <td v-if="!lastOperationType.includes('kanta-rank')">{{ row.number }}</td>
+                    
                     <td>{{ row.count }}</td>
                   </tr>
                 </tbody>
