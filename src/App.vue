@@ -180,8 +180,6 @@ async function runKantaReport(reportType) {
   const url = `/analysis/kanta-${reportType}/${selectedDate.value}`;
   await callApi(url);
 }
-
-// --- NOUVELLE FONCTION ---
 async function runRetrospectiveAnalysis() {
   if (!selectedDate.value || !selectedTime.value) {
     error.value = "Veuillez sélectionner un jour ET une heure de tirage.";
@@ -230,8 +228,8 @@ async function runRetrospectiveAnalysis() {
         <section v-if="isAdmin" class="card data-update">
           <h2>Maintenance (Admin)</h2>
           <div class="button-group-horizontal">
-            <button @click="runDataUpdate('update-recent-weeks')" :disabled="isLoading">Mise à Jour Rapide</button>
-            <button @click="runDataUpdate('start-full-rebuild')" :disabled="isLoading" class="danger">Reconstruction Complète</button>
+            <button @click="runDataUpdate('update-recent-weeks')" :disabled="isLoading">Mise à Jour Intelligente</button>
+            <button @click="runDataUpdate('audit-and-repair')" :disabled="isLoading" class="danger">Audit & Réparation</button>
           </div>
         </section>
 
