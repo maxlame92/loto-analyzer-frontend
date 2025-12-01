@@ -5,7 +5,7 @@ import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebas
 import { doc, getDoc } from "firebase/firestore";
 
 // --- CONFIGURATION ---
-const GOOGLE_SHEET_ID = "1HepqMzKcshKbRsLWwpEOOy5oO9ntK2CgdV7F_ijmjIo";
+const GOOGLE_SHEET_ID = "1HepqMzKcsbKbRsLWwpEOoy5oO9ntK2CgdV7F_ijmjlo";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 
 // --- SECTION AUTHENTIFICATION ---
@@ -62,6 +62,8 @@ const selectedNumber = ref('');
 const profileNumber = ref('');
 const triggerTargetNumber = ref('');
 const triggerCompanionNumber = ref('');
+const selectedTime = ref('10H00'); // Pour l'Analyse Rétrospective
+const drawTimes = ['07H00', '08H00', '10H00', '13H00', '16H00', '19H00', '21H00', '22H00'];
 const apiResponse = ref(null);
 const isLoading = ref(false);
 const error = ref(null);
@@ -86,8 +88,8 @@ const tableData = computed(() => {
   if (apiResponse.value?.frequency_ranking) return apiResponse.value.frequency_ranking;
   if (apiResponse.value?.companion_ranking) return apiResponse.value.companion_ranking;
   if (apiResponse.value?.trigger_numbers_ranking) return apiResponse.value.trigger_numbers_ranking;
-  if (apiResponse.value?.kanta_pairs) return apiResponse.value.kanta_pairs; // Pour le rapport journalier Kanta
-  if (apiResponse.value?.kanta_pairs_ranking) return apiResponse.value.kanta_pairs_ranking; // Pour le rapport semaine Kanta
+  if (apiResponse.value?.kanta_pairs) return apiResponse.value.kanta_pairs;
+  if (apiResponse.value?.kanta_pairs_ranking) return apiResponse.value.kanta_pairs_ranking;
   return [];
 });
 const isTableVisible = computed(() => tableData.value.length > 0);
@@ -135,59 +137,57 @@ async function runReport(reportType) {
   }
   await callApi(url);
 }
-
 async function runRangeAnalysis() {
   if (!startDate.value || !endDate.value) {
-    error.value = "Veuillez sélectionner une date de début ET de fin.";
-    return;
+    error.value = "Veuillez sélectionner une date de début ET de fin."; return;
   }
   lastOperationType.value = 'frequency';
   const url = `/analysis/frequency-by-range?start_date=${startDate.value}&end_date=${endDate.value}`;
   await callApi(url);
 }
-
 async function runProfileAnalysis() {
   if (!startDate.value || !endDate.value || !profileNumber.value) {
-    error.value = "Veuillez sélectionner une période ET un numéro pour le profilage.";
-    return;
+    error.value = "Veuillez sélectionner une période ET un numéro pour le profilage."; return;
   }
   lastOperationType.value = 'profile';
   const url = `/analysis/number-profile?target_number=${profileNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`;
   await callApi(url);
 }
-
 async function runSequenceAnalysis() {
   if (!startDate.value || !endDate.value) {
-    error.value = "Veuillez sélectionner une période pour la détection de suites.";
-    return;
+    error.value = "Veuillez sélectionner une période pour la détection de suites."; return;
   }
   lastOperationType.value = 'sequence';
   const url = `/analysis/sequence-detection?start_date=${startDate.value}&end_date=${endDate.value}`;
   await callApi(url);
 }
-
 async function runTriggerAnalysis() {
   if (!startDate.value || !endDate.value || !triggerTargetNumber.value || !triggerCompanionNumber.value) {
-    error.value = "Veuillez sélectionner une période et les deux numéros de votre paire.";
-    return;
+    error.value = "Veuillez sélectionner une période et les deux numéros de votre paire."; return;
   }
   lastOperationType.value = 'trigger';
   const url = `/analysis/trigger-numbers?target_number=${triggerTargetNumber.value}&companion_number=${triggerCompanionNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`;
   await callApi(url);
 }
-
 async function runKantaAnalysis(endpoint) {
   if (!selectedDate.value) { error.value = "Veuillez sélectionner une date."; return; }
   lastOperationType.value = 'visual';
   await callApi(`/analysis/${endpoint}/${selectedDate.value}`, 'POST');
 }
-
-// --- NOUVELLE FONCTION ---
 async function runKantaReport(reportType) {
   if (!selectedDate.value) { error.value = "Veuillez sélectionner une date."; return; }
   lastOperationType.value = 'kanta-rank';
   const url = `/analysis/kanta-${reportType}/${selectedDate.value}`;
   await callApi(url);
+}
+async function runRetrospectiveAnalysis() {
+  if (!selectedDate.value || !selectedTime.value) {
+    error.value = "Veuillez sélectionner un jour ET une heure de tirage.";
+    return;
+  }
+  lastOperationType.value = 'retrospective';
+  const url = `/analysis/retrospective-analysis?target_date=${selectedDate.value}&target_time=${selectedTime.value}`;
+  await callApi(url, 'POST');
 }
 </script>
 
@@ -228,8 +228,8 @@ async function runKantaReport(reportType) {
         <section v-if="isAdmin" class="card data-update">
           <h2>Maintenance (Admin)</h2>
           <div class="button-group-horizontal">
-            <button @click="runDataUpdate('update-recent-weeks')" :disabled="isLoading">Mise à Jour Rapide</button>
-            <button @click="runDataUpdate('start-full-rebuild')" :disabled="isLoading" class="danger">Reconstruction Complète</button>
+            <button @click="runDataUpdate('update-recent-weeks')" :disabled="isLoading">Mise à Jour Intelligente</button>
+            <button @click="runDataUpdate('audit-and-repair')" :disabled="isLoading" class="danger">Audit & Réparation</button>
           </div>
         </section>
 
@@ -253,18 +253,14 @@ async function runKantaReport(reportType) {
           <h2>Kanta Tracker</h2>
           <p>Utilise la date sélectionnée ci-dessus.</p>
           <div class="button-group-vertical">
-            <button @click="runKantaAnalysis('kanta-highlight-day')" :disabled="isLoading || !selectedDate">
-              Surligner Kanta (Jour)
-            </button>
-            <button @click="runKantaAnalysis('kanta-highlight-week')" :disabled="isLoading || !selectedDate">
-              Surligner Kanta (Semaine)
-            </button>
+            <button @click="runKantaAnalysis('kanta-highlight-day')" :disabled="isLoading || !selectedDate">Surligner Kanta (Jour)</button>
+            <button @click="runKantaAnalysis('kanta-highlight-week')" :disabled="isLoading || !selectedDate">Surligner Kanta (Semaine)</button>
             <hr />
             <button @click="runKantaReport('daily-rank')" :disabled="isLoading || !selectedDate">Classement Kanta (Jour)</button>
             <button @click="runKantaReport('weekly-rank')" :disabled="isLoading || !selectedDate">Classement Kanta (Semaine)</button>
           </div>
         </section>
-
+        
         <section class="card">
           <h2>Analyse sur Période Étendue</h2>
           <label>Date de début :</label>
@@ -279,16 +275,24 @@ async function runKantaReport(reportType) {
 
         <section class="card">
           <h2>Analyse IA Avancée</h2>
-          <p>Utilisera la période sélectionnée ci-dessus.</p>
+          <p>Utilise la période "Analyse sur Période Étendue".</p>
           <button @click="runSequenceAnalysis" :disabled="isLoading || !startDate || !endDate">Détection de Suites</button>
           <hr />
           <label>Numéro Principal :</label>
           <input type="number" v-model="triggerTargetNumber" placeholder="Ex: 18" />
           <label>Numéro Compagnon :</label>
           <input type="number" v-model="triggerCompanionNumber" placeholder="Ex: 73" />
-          <button @click="runTriggerAnalysis" :disabled="isLoading || !startDate || !endDate || !triggerTargetNumber || !triggerCompanionNumber">
-            Trouver les Déclencheurs
-          </button>
+          <button @click="runTriggerAnalysis" :disabled="isLoading || !startDate || !endDate || !triggerTargetNumber || !triggerCompanionNumber">Trouver les Déclencheurs</button>
+        </section>
+
+        <section class="card">
+          <h2>Analyse Rétrospective (IA)</h2>
+          <p>Pourquoi ce tirage est-il sorti ?</p>
+          <label>Utilise la date de "Analyse par Semaine"</label>
+          <select v-model="selectedTime">
+            <option v-for="time in drawTimes" :key="time" :value="time">{{ time }}</option>
+          </select>
+          <button @click="runRetrospectiveAnalysis" :disabled="isLoading || !selectedDate">Lancer l'Investigation</button>
         </section>
       </div>
 
@@ -319,9 +323,7 @@ async function runKantaReport(reportType) {
                   <tr v-for="(row, index) in tableData" :key="index">
                     <td v-if="lastOperationType.includes('kanta-rank')">{{ row.pair }}</td>
                     <td v-else>#{{ index + 1 }}</td>
-                    
                     <td v-if="!lastOperationType.includes('kanta-rank')">{{ row.number }}</td>
-                    
                     <td>{{ row.count }}</td>
                   </tr>
                 </tbody>
@@ -341,6 +343,10 @@ async function runKantaReport(reportType) {
               <div v-if="apiResponse.ai_trigger_analysis" class="ai-analysis">
                 <h3>🧠 Analyse des Numéros Déclencheurs pour la paire {{ apiResponse.analysis_for_pair }}</h3>
                 <p>{{ apiResponse.ai_trigger_analysis }}</p>
+              </div>
+              <div v-if="apiResponse.ai_retrospective_analysis" class="ai-analysis">
+                <h3>🧠 Rapport d'Investigation IA</h3>
+                <p>{{ apiResponse.ai_retrospective_analysis }}</p>
               </div>
             </div>
           </div>
@@ -398,4 +404,14 @@ async function runKantaReport(reportType) {
   label { display: block; margin-bottom: 0.5rem; font-weight: 500; font-size: 0.9rem; color: #555; margin-top: 1rem; }
   .card p { font-size: 0.8rem; color: #777; margin-top: 0.5rem; text-align: center; }
   hr { border: none; border-top: 1px solid #eee; margin: 1rem 0; }
+  select {
+    width: 100%;
+    padding: 0.75rem;
+    font-size: 1rem;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+    margin-top: 1rem;
+    margin-bottom: 1rem;
+    background-color: white;
+  }
 </style>
