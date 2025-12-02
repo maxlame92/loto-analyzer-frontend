@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, computed, watch } from 'vue';
 import { auth, db } from './firebase';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, getDoc, setDoc, updateDoc, arrayUnion, arrayRemove } from "firebase/firestore";
@@ -23,21 +23,35 @@ const predictionNumber = ref('');
 const predictionCompanion = ref('');
 const multiPredictionInput = ref('');
 
+// --- DASHBOARD PERSO VARIABLES ---
+const dashboardData = ref(null);
+const isDashboardLoading = ref(false);
+const dashStartDate = ref('');
+const dashEndDate = ref('');
+
 // --- INITIALISATION ---
 onMounted(() => {
   const today = new Date();
   const year = today.getFullYear();
   const month = (today.getMonth() + 1).toString().padStart(2, '0');
   const day = today.getDate().toString().padStart(2, '0');
-  selectedDate.value = `${year}-${month}-${day}`;
-  endDate.value = `${year}-${month}-${day}`;
+  const todayStr = `${year}-${month}-${day}`;
   
+  // Dates globales
+  selectedDate.value = todayStr;
+  endDate.value = todayStr;
+  dashEndDate.value = todayStr; // Fin Dashboard = Aujourd'hui
+
+  // Date début (-1 mois par défaut)
   const oneMonthAgo = new Date();
   oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
-  const startYear = oneMonthAgo.getFullYear();
-  const startMonth = (oneMonthAgo.getMonth() + 1).toString().padStart(2, '0');
-  const startDay = oneMonthAgo.getDate().toString().padStart(2, '0');
-  startDate.value = `${startYear}-${startMonth}-${startDay}`;
+  const startY = oneMonthAgo.getFullYear();
+  const startM = (oneMonthAgo.getMonth() + 1).toString().padStart(2, '0');
+  const startD = oneMonthAgo.getDate().toString().padStart(2, '0');
+  const startStr = `${startY}-${startM}-${startD}`;
+  
+  startDate.value = startStr;
+  dashStartDate.value = startStr; // Début Dashboard = -1 mois
 
   onAuthStateChanged(auth, async (firebaseUser) => {
     if (firebaseUser) {
@@ -52,12 +66,9 @@ onMounted(() => {
         } else {
           userRole.value = 'user';
           userFavorites.value = [];
-          // CRITIQUE : Utilisation de merge: true pour créer le doc s'il n'existe pas
           await setDoc(docRef, { role: 'user', favorites: [] }, { merge: true });
         }
-      } catch (e) {
-        console.error("Erreur Firebase:", e);
-      }
+      } catch (e) { console.error(e); }
     } else {
       user.value = null; userRole.value = ''; userFavorites.value = [];
     }
@@ -71,30 +82,22 @@ const login = async () => {
 };
 const logout = async () => { await signOut(auth); };
 
-// --- GESTION FAVORIS ---
 async function addFavorite() {
   const input = newFavoriteInput.value.trim();
   if (!input) return;
-  
   const isSingleNumber = /^[0-9]{1,2}$/.test(input);
   const isPair = /^[0-9]{1,2}-[0-9]{1,2}$/.test(input);
-
-  if (!isSingleNumber && !isPair) {
-    alert("Format invalide. Entrez un numéro (ex: 7) ou une paire (ex: 12-45)."); return;
-  }
+  if (!isSingleNumber && !isPair) { alert("Format invalide."); return; }
   if (userFavorites.value.includes(input)) { newFavoriteInput.value = ''; return; }
 
   try {
     const userRef = doc(db, "users", user.value.uid);
     userFavorites.value.push(input); 
-    // SAUVEGARDE SECURISEE
     await setDoc(userRef, { favorites: arrayUnion(input) }, { merge: true }); 
     newFavoriteInput.value = '';
   } catch (e) {
     console.error("Erreur sauvegarde:", e);
-    let msg = "Erreur technique.";
-    if (e.code === 'permission-denied') msg = "PERMISSION REFUSÉE: Vous devez mettre à jour les Règles Firebase dans la Console.";
-    alert(msg);
+    alert("Erreur technique (Permissions Firebase).");
     userFavorites.value = userFavorites.value.filter(item => item !== input);
   }
 }
@@ -108,8 +111,32 @@ async function removeFavorite(item) {
   } catch (e) { console.error(e); }
 }
 
+// --- LOGIQUE DASHBOARD ---
+async function loadDashboard() {
+  if (userFavorites.value.length === 0 || !dashStartDate.value || !dashEndDate.value) return;
+  isDashboardLoading.value = true;
+  try {
+    const token = await user.value.getIdToken();
+    // On passe les dates en Query Params
+    const url = `${API_BASE_URL}/analysis/favorites-dashboard?start_date=${dashStartDate.value}&end_date=${dashEndDate.value}`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(userFavorites.value)
+    });
+    const data = await response.json();
+    dashboardData.value = data;
+  } catch (e) { console.error(e); } finally { isDashboardLoading.value = false; }
+}
+
+// Auto-chargement quand les favoris arrivent
+watch(userFavorites, (newFavs) => {
+  if (newFavs && newFavs.length > 0) loadDashboard();
+});
+
+// --- AUTRES FONCTIONS ---
 function analyzeFavorite(item, mode) {
-  if (!startDate.value || !endDate.value) { alert("Vérifiez les dates de début et fin."); }
+  if (!startDate.value || !endDate.value) { alert("Vérifiez les dates."); }
   if (item.includes('-')) {
     const parts = item.split('-');
     triggerTargetNumber.value = parts[0]; triggerCompanionNumber.value = parts[1];
@@ -117,7 +144,7 @@ function analyzeFavorite(item, mode) {
   } else {
     if (mode === 'companion') {
       selectedNumber.value = item;
-      if (!selectedDate.value) { alert("Sélectionnez une date pour l'analyse compagnon."); return; }
+      if (!selectedDate.value) { alert("Date requise."); return; }
       runReport('companions');
     } else if (mode === 'trigger') {
       triggerTargetNumber.value = item; triggerCompanionNumber.value = ''; 
@@ -126,7 +153,6 @@ function analyzeFavorite(item, mode) {
   }
 }
 
-// --- VARIABLES ---
 const selectedDate = ref('');
 const startDate = ref('');
 const endDate = ref('');
@@ -188,7 +214,6 @@ const chartData = computed(() => {
   return { labels, datasets: [{ label: 'Occurrences', backgroundColor: '#007bff', borderRadius: 4, data: counts }] };
 });
 
-// --- API CALLS ---
 async function callApi(url, method = 'GET') {
   showWelcomeMessage.value = false; isLoading.value = true; error.value = null; apiResponse.value = null;
   try {
@@ -206,67 +231,52 @@ async function callApi(url, method = 'GET') {
 
 async function runDataUpdate(endpoint) { lastOperationType.value = 'update'; await callApi(`/collection/${endpoint}`, 'POST'); }
 async function runVisualAnalysis(endpoint) {
-  if (!selectedDate.value) { error.value = "Selectionnez une date."; return; }
+  if (!selectedDate.value) { error.value = "Date requise."; return; }
   lastOperationType.value = 'visual'; await callApi(`/analysis/${endpoint}/${selectedDate.value}`, 'POST');
 }
 async function runReport(reportType) {
-  if (!selectedDate.value) { error.value = "Selectionnez une date."; return; }
+  if (!selectedDate.value) { error.value = "Date requise."; return; }
   let url = '';
   if (reportType === 'weekly-frequency') { lastOperationType.value = 'weekly-frequency'; url = `/analysis/weekly-frequency/${selectedDate.value}`; }
   else if (reportType === 'daily-frequency') { lastOperationType.value = 'daily-frequency'; url = `/analysis/daily-frequency/${selectedDate.value}`; }
   else if (reportType === 'companions') {
-    if (!selectedNumber.value) { error.value = "Entrez un numéro."; return; }
+    if (!selectedNumber.value) { error.value = "Numéro requis."; return; }
     lastOperationType.value = 'companions'; url = `/analysis/companions/${selectedNumber.value}?week_date_str=${selectedDate.value}`;
   }
   await callApi(url);
 }
-
-// --- FONCTIONS MANQUANTES ET NOUVELLES ---
-
-// 1. FREQUENCE SUR PERIODE
 async function runRangeAnalysis() {
-  if (!startDate.value || !endDate.value) { error.value = "Sélectionnez date début ET fin."; return; }
-  lastOperationType.value = 'frequency';
-  await callApi(`/analysis/frequency-by-range?start_date=${startDate.value}&end_date=${endDate.value}`);
+  if (!startDate.value || !endDate.value) { error.value = "Dates requises."; return; }
+  lastOperationType.value = 'frequency'; await callApi(`/analysis/frequency-by-range?start_date=${startDate.value}&end_date=${endDate.value}`);
 }
-
-// 2. PROFIL DU NUMERO
 async function runProfileAnalysis() {
-  if (!startDate.value || !endDate.value || !profileNumber.value) { error.value = "Période ET numéro requis."; return; }
-  lastOperationType.value = 'profile';
-  await callApi(`/analysis/number-profile?target_number=${profileNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`);
+  if (!startDate.value || !endDate.value || !profileNumber.value) { error.value = "Infos requises."; return; }
+  lastOperationType.value = 'profile'; await callApi(`/analysis/number-profile?target_number=${profileNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`);
 }
-
-// 3. SUITES & DECLENCHEURS
 async function runSequenceAnalysis() {
   if (!startDate.value || !endDate.value) { error.value = "Période requise."; return; }
   lastOperationType.value = 'sequence'; await callApi(`/analysis/sequence-detection?start_date=${startDate.value}&end_date=${endDate.value}`);
 }
 async function runTriggerAnalysis() {
-  if (!startDate.value || !endDate.value || !triggerTargetNumber.value) { error.value = "Période et cible requises."; return; }
+  if (!startDate.value || !endDate.value || !triggerTargetNumber.value) { error.value = "Infos requises."; return; }
   lastOperationType.value = 'trigger';
   let url = `/analysis/trigger-numbers?target_number=${triggerTargetNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`;
   if (triggerCompanionNumber.value) url += `&companion_number=${triggerCompanionNumber.value}`;
   await callApi(url);
 }
-
-// 4. NOUVEAU : LE PROPHETE
 async function runPredictionAnalysis() {
-  if (!startDate.value || !endDate.value || !predictionNumber.value) { error.value = "Période et numéro vus requis."; return; }
+  if (!startDate.value || !endDate.value || !predictionNumber.value) { error.value = "Infos requises."; return; }
   lastOperationType.value = 'prediction';
   let url = `/analysis/predict-next?observed_number=${predictionNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`;
   if (predictionCompanion.value) url += `&observed_companion=${predictionCompanion.value}`;
   await callApi(url);
 }
-
-// 5. NOUVEAU : ANALYSE CROISEE
 async function runMultiPrediction() {
-  if (!startDate.value || !endDate.value || !multiPredictionInput.value) { error.value = "Période et numéros requis."; return; }
+  if (!startDate.value || !endDate.value || !multiPredictionInput.value) { error.value = "Infos requises."; return; }
   const cleanInput = multiPredictionInput.value.replace(/[\s-]+/g, ',');
   lastOperationType.value = 'prediction';
   await callApi(`/analysis/multi-prediction?numbers_str=${cleanInput}&start_date=${startDate.value}&end_date=${endDate.value}`);
 }
-
 async function runKantaAnalysis(endpoint) {
   if (!selectedDate.value) { error.value = "Date requise."; return; }
   lastOperationType.value = 'visual'; await callApi(`/analysis/${endpoint}/${selectedDate.value}`, 'POST');
@@ -345,20 +355,16 @@ async function runKantaReport(reportType) {
           </div>
         </section>
 
-        <!-- ICI SONT LES FONCTIONS QUE VOUS PENSIEZ MANQUANTES -->
         <section class="card">
           <h2>Période & Profilage</h2>
           <label>Début :</label><input type="date" v-model="startDate" />
           <label>Fin :</label><input type="date" v-model="endDate" />
-          
           <button @click="runRangeAnalysis" :disabled="isLoading || !startDate || !endDate">Fréquence sur Période</button>
-          
           <hr />
           <input type="number" v-model="profileNumber" placeholder="N° pour profil complet" />
           <button @click="runProfileAnalysis" :disabled="isLoading || !startDate || !endDate || !profileNumber">Générer Profil du Numéro</button>
         </section>
 
-        <!-- NOUVELLES FONCTIONS PROPHETE -->
         <section class="card prophet-card">
           <h2>🔮 Le Prophète</h2>
           <p class="small-text">Ce numéro vient de sortir. La suite ?</p>
@@ -394,50 +400,96 @@ async function runKantaReport(reportType) {
       </div>
 
       <div class="results-column">
-        <section class="card results-card">
-          <h2>Résultats</h2>
-          <div v-if="showWelcomeMessage" class="welcome-message">
-            <h3>Bienvenue !</h3>
-            <p>Utilisez les ⭐ Favoris pour lancer des analyses rapides.</p>
-            <button @click="showWelcomeMessage = false" class="close-welcome">OK</button>
-          </div>
-          <div v-else>
-            <div v-if="isLoading" class="loader">Chargement...</div>
-            <div v-if="error" class="error-box">{{ error }}</div>
-            
-            <div v-if="apiResponse">
-              <div v-if="apiResponse.message || apiResponse.analysis_period" class="success-box large">
-                <p>✅ {{ apiResponse.message || `Analyse : ${apiResponse.analysis_period}` }}</p>
-                <a v-if="apiResponse.worksheet_gid" :href="sheetDirectLink" target="_blank" class="button-link">Voir l'Onglet ↗</a>
+        <!-- NOUVEAU TABLEAU DE BORD ACCUEIL -->
+        <div v-if="showWelcomeMessage && userFavorites.length > 0" class="personal-dashboard">
+            <div class="dash-header">
+              <h3>👋 Tableau de Bord Personnalisé</h3>
+              <div class="date-selectors">
+                <input type="date" v-model="dashStartDate" title="Début Période" />
+                <span>à</span>
+                <input type="date" v-model="dashEndDate" title="Fin Période" />
+                <button @click="loadDashboard" class="refresh-btn">🔄 Actualiser</button>
               </div>
-
-              <div v-if="isTableVisible && !lastOperationType.includes('visual')" class="view-controls">
-                <button @click="viewMode = 'table'" :class="{ active: viewMode === 'table' }" class="toggle-btn">📋 Tableau</button>
-                <button @click="viewMode = 'chart'" :class="{ active: viewMode === 'chart' }" class="toggle-btn">📊 Graphique</button>
-              </div>
-
-              <div v-if="isTableVisible && viewMode === 'chart' && !lastOperationType.includes('visual')" class="chart-container">
-                <Bar :data="chartData" :options="chartOptions" />
-              </div>
-
-              <table v-else-if="isTableVisible" class="styled-table">
-                <thead><tr><th v-for="h in tableHeaders" :key="h">{{ h }}</th></tr></thead>
-                <tbody>
-                  <tr v-for="(row, index) in tableData" :key="index">
-                    <td v-if="lastOperationType.includes('kanta-rank')">{{ row.pair }}</td>
-                    <td v-else>#{{ index + 1 }}</td>
-                    <td v-if="!lastOperationType.includes('kanta-rank')">{{ row.number }}</td>
-                    <td>{{ row.count }}</td>
-                  </tr>
-                </tbody>
-              </table>
-
-              <div v-if="apiResponse.ai_strategic_analysis" class="ai-analysis"><h3>🧠 Stratégie</h3><p>{{ apiResponse.ai_strategic_analysis }}</p></div>
-              <div v-if="apiResponse.ai_strategic_profile" class="ai-analysis"><h3>🧠 Profil Numéro</h3><p>{{ apiResponse.ai_strategic_profile }}</p></div>
-              <div v-if="apiResponse.ai_sequence_analysis" class="ai-analysis"><h3>🧠 Suites</h3><p>{{ apiResponse.ai_sequence_analysis }}</p></div>
-              <div v-if="apiResponse.ai_trigger_analysis" class="ai-analysis"><h3>🧠 Déclencheurs</h3><p>{{ apiResponse.ai_trigger_analysis }}</p></div>
-              <div v-if="apiResponse.ai_prediction_analysis" class="ai-analysis prophet-analysis"><h3>🔮 Prédiction</h3><p>{{ apiResponse.ai_prediction_analysis }}</p></div>
             </div>
+
+            <div v-if="isDashboardLoading" class="loader">Analyse de vos favoris en cours...</div>
+            
+            <div v-else-if="dashboardData" class="dash-grid">
+              <div v-for="stat in dashboardData.dashboard_data" :key="stat.item" class="dash-card" :class="{ 'is-hot': stat.status.includes('🔥') }">
+                <div class="dash-main">
+                  <span class="dash-number">{{ stat.item }}</span>
+                  <span class="dash-status">{{ stat.status }}</span>
+                </div>
+                <div class="dash-details">
+                  <div class="detail-row">
+                    <span>Sorties ({{ dashboardData.analysis_period }}):</span>
+                    <strong>{{ stat.frequency }} fois</strong>
+                  </div>
+                  <div class="detail-row" v-if="stat.type === 'number'">
+                    <span>Meilleur Ami (Sort avec):</span>
+                    <strong>{{ stat.best_companion }}</strong>
+                  </div>
+                  <!-- NOUVELLE LIGNE DECLENCHEUR -->
+                  <div class="detail-row" v-if="stat.frequency > 0">
+                    <span>⚡ Déclencheur (Appelé par):</span>
+                    <strong>{{ stat.best_trigger }}</strong>
+                  </div>
+                  <div class="detail-row prop-row" v-if="stat.frequency > 0">
+                    <span>🔮 Prophète (A suivre):</span>
+                    <strong>{{ stat.prophet_prediction }}</strong>
+                  </div>
+                </div>
+                <div class="dash-actions">
+                  <button @click="analyzeFavorite(stat.item, 'trigger')" class="dash-act-btn">⚡ Analyse Complète</button>
+                </div>
+              </div>
+            </div>
+            <button @click="showWelcomeMessage = false" class="close-welcome-link">Accéder aux rapports détaillés ↓</button>
+        </div>
+
+        <div v-else-if="showWelcomeMessage" class="welcome-message">
+           <h3>Bienvenue !</h3>
+           <p>Ajoutez des favoris à gauche pour voir votre tableau de bord.</p>
+           <button @click="showWelcomeMessage = false" class="close-welcome">OK</button>
+        </div>
+
+        <section v-else class="card results-card">
+          <h2>Résultats</h2>
+          <div v-if="isLoading" class="loader">Chargement...</div>
+          <div v-if="error" class="error-box">{{ error }}</div>
+            
+          <div v-if="apiResponse">
+            <div v-if="apiResponse.message || apiResponse.analysis_period" class="success-box large">
+              <p>✅ {{ apiResponse.message || `Analyse : ${apiResponse.analysis_period}` }}</p>
+              <a v-if="apiResponse.worksheet_gid" :href="sheetDirectLink" target="_blank" class="button-link">Voir l'Onglet ↗</a>
+            </div>
+
+            <div v-if="isTableVisible && !lastOperationType.includes('visual')" class="view-controls">
+              <button @click="viewMode = 'table'" :class="{ active: viewMode === 'table' }" class="toggle-btn">📋 Tableau</button>
+              <button @click="viewMode = 'chart'" :class="{ active: viewMode === 'chart' }" class="toggle-btn">📊 Graphique</button>
+            </div>
+
+            <div v-if="isTableVisible && viewMode === 'chart' && !lastOperationType.includes('visual')" class="chart-container">
+              <Bar :data="chartData" :options="chartOptions" />
+            </div>
+
+            <table v-else-if="isTableVisible" class="styled-table">
+              <thead><tr><th v-for="h in tableHeaders" :key="h">{{ h }}</th></tr></thead>
+              <tbody>
+                <tr v-for="(row, index) in tableData" :key="index">
+                  <td v-if="lastOperationType.includes('kanta-rank')">{{ row.pair }}</td>
+                  <td v-else>#{{ index + 1 }}</td>
+                  <td v-if="!lastOperationType.includes('kanta-rank')">{{ row.number }}</td>
+                  <td>{{ row.count }}</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <div v-if="apiResponse.ai_strategic_analysis" class="ai-analysis"><h3>🧠 Stratégie</h3><p>{{ apiResponse.ai_strategic_analysis }}</p></div>
+            <div v-if="apiResponse.ai_strategic_profile" class="ai-analysis"><h3>🧠 Profil Numéro</h3><p>{{ apiResponse.ai_strategic_profile }}</p></div>
+            <div v-if="apiResponse.ai_sequence_analysis" class="ai-analysis"><h3>🧠 Suites</h3><p>{{ apiResponse.ai_sequence_analysis }}</p></div>
+            <div v-if="apiResponse.ai_trigger_analysis" class="ai-analysis"><h3>🧠 Déclencheurs</h3><p>{{ apiResponse.ai_trigger_analysis }}</p></div>
+            <div v-if="apiResponse.ai_prediction_analysis" class="ai-analysis prophet-analysis"><h3>🔮 Prédiction</h3><p>{{ apiResponse.ai_prediction_analysis }}</p></div>
           </div>
         </section>
       </div>
@@ -446,7 +498,7 @@ async function runKantaReport(reportType) {
 </template>
 
 <style scoped>
-  /* STYLES IDENTIQUES AU PRECEDENT - CLEAN */
+  /* STYLES GENERAUX */
   .loading-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; font-size: 1.5rem; color: #666; }
   .login-wrapper { display: flex; align-items: center; justify-content: center; min-height: 100vh; background-color: #f0f2f5; }
   .login-box { background: white; padding: 2.5rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
@@ -494,4 +546,27 @@ async function runKantaReport(reportType) {
   .multi-prophet-card { border: 2px solid #6f42c1; background-color: #f8f0fc; }
   .multi-btn { background: linear-gradient(45deg, #6f42c1, #007bff); border: none; }
   .multi-btn:hover { opacity: 0.9; transform: scale(1.02); }
+
+  /* DASHBOARD PERSO */
+  .personal-dashboard { background-color: #f8f9fa; padding: 1.5rem; border-radius: 12px; border: 1px solid #e9ecef; margin-bottom: 2rem; }
+  .dash-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;}
+  .dash-header h3 { margin: 0; color: #333; }
+  .date-selectors { display: flex; gap: 0.5rem; align-items: center; }
+  .date-selectors input { width: auto; padding: 0.4rem; font-size: 0.9rem; }
+  .refresh-btn { width: auto; padding: 0.4rem 1rem; font-size: 0.9rem; background: #6c757d; }
+  .dash-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1.5rem; }
+  .dash-card { background: white; border-radius: 10px; padding: 1.2rem; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border-top: 4px solid #ccc; transition: transform 0.2s; }
+  .dash-card:hover { transform: translateY(-3px); }
+  .dash-card.is-hot { border-top-color: #ff5722; background: #fff5f2; }
+  .dash-main { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; border-bottom: 1px solid #eee; padding-bottom: 0.5rem; }
+  .dash-number { font-size: 1.8rem; font-weight: bold; color: #007bff; }
+  .dash-status { font-size: 0.9rem; font-weight: bold; color: #555; }
+  .detail-row { display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 0.4rem; color: #555; }
+  .prop-row { margin-top: 0.8rem; padding-top: 0.5rem; border-top: 1px dashed #ddd; color: #6f42c1; }
+  .dash-actions { margin-top: 1rem; text-align: center; }
+  .dash-act-btn { background: none; border: 1px solid #007bff; color: #007bff; padding: 0.3rem 0.8rem; font-size: 0.8rem; border-radius: 20px; cursor: pointer; width: 100%; }
+  .dash-act-btn:hover { background: #007bff; color: white; }
+  .close-welcome-link { display: block; width: 100%; text-align: center; margin-top: 2rem; background: none; border: none; color: #888; text-decoration: underline; cursor: pointer; }
+  .welcome-message { background-color: #e3f2fd; color: #1e88e5; border: 1px solid #90caf9; padding: 1.5rem; border-radius: 8px; margin-bottom: 2rem; }
+  .close-welcome { display: block; width: auto; margin-top: 1rem; padding: 0.6rem 1.2rem; background-color: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
 </style>
