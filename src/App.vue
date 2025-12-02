@@ -2,7 +2,7 @@
 import { ref, onMounted, computed } from 'vue';
 import { auth, db } from './firebase';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebase/auth";
-import { doc, getDoc, updateDoc, arrayUnion, arrayRemove, setDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, updateDoc, arrayUnion, arrayRemove } from "firebase/firestore";
 
 // --- IMPORTS POUR LES GRAPHIQUES (Chart.js) ---
 import { Bar } from 'vue-chartjs';
@@ -45,15 +45,20 @@ onMounted(() => {
     if (firebaseUser) {
       user.value = firebaseUser;
       const docRef = doc(db, "users", firebaseUser.uid);
-      const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        userRole.value = data.role || 'user';
-        userFavorites.value = data.favorites || []; 
-      } else {
-        userRole.value = 'user';
-        userFavorites.value = [];
-        await setDoc(docRef, { role: 'user', favorites: [] });
+      try {
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          userRole.value = data.role || 'user';
+          userFavorites.value = data.favorites || []; 
+        } else {
+          // Création initiale si le document n'existe pas
+          userRole.value = 'user';
+          userFavorites.value = [];
+          await setDoc(docRef, { role: 'user', favorites: [] }, { merge: true });
+        }
+      } catch (e) {
+        console.error("Erreur lecture profil:", e);
       }
     } else {
       user.value = null; userRole.value = ''; userFavorites.value = [];
@@ -72,10 +77,12 @@ const login = async () => {
 };
 const logout = async () => { await signOut(auth); };
 
-// --- GESTION FAVORIS ---
+// --- GESTION FAVORIS (CORRIGÉE) ---
 async function addFavorite() {
   const input = newFavoriteInput.value.trim();
   if (!input) return;
+  
+  // Validation
   const isSingleNumber = /^[0-9]{1,2}$/.test(input);
   const isPair = /^[0-9]{1,2}-[0-9]{1,2}$/.test(input);
 
@@ -89,12 +96,16 @@ async function addFavorite() {
   }
   try {
     const userRef = doc(db, "users", user.value.uid);
+    // Mise à jour locale immédiate
     userFavorites.value.push(input); 
-    await updateDoc(userRef, { favorites: arrayUnion(input) }); 
+    // CORRECTION ICI : Utilisation de setDoc avec merge:true pour éviter les erreurs si le doc n'existe pas
+    await setDoc(userRef, { favorites: arrayUnion(input) }, { merge: true }); 
     newFavoriteInput.value = '';
   } catch (e) {
     console.error("Erreur ajout favori:", e);
-    alert("Erreur lors de la sauvegarde.");
+    alert("Erreur technique lors de la sauvegarde (Vérifiez votre connexion ou les règles Firebase).");
+    // On annule l'ajout local si erreur
+    userFavorites.value = userFavorites.value.filter(item => item !== input);
   }
 }
 
@@ -111,9 +122,6 @@ async function removeFavorite(item) {
 
 // Fonction Polyvalente pour les Favoris
 function analyzeFavorite(item, mode) {
-  // mode = 'companion' (pour voir avec qui il sort)
-  // mode = 'trigger' (pour voir qui le fait sortir)
-
   if (!startDate.value || !endDate.value) {
      alert("Attention: Vérifiez que les dates de début et fin sont bien sélectionnées dans 'Analyse sur Période Étendue'.");
   }
@@ -123,8 +131,6 @@ function analyzeFavorite(item, mode) {
     const parts = item.split('-');
     triggerTargetNumber.value = parts[0];
     triggerCompanionNumber.value = parts[1];
-    
-    // Pour une paire, le mode 'companion' n'a pas trop de sens direct ici, on fait Trigger par défaut
     runTriggerAnalysis(); 
   } 
   // CAS 2 : C'est un NUMÉRO SIMPLE (ex: 7)
@@ -136,7 +142,7 @@ function analyzeFavorite(item, mode) {
     } 
     else if (mode === 'trigger') {
       triggerTargetNumber.value = item;
-      triggerCompanionNumber.value = ''; // On vide le compagnon pour chercher en mode solo
+      triggerCompanionNumber.value = ''; 
       runTriggerAnalysis();
     }
   }
@@ -167,7 +173,7 @@ const sheetDirectLink = computed(() => {
 const tableHeaders = computed(() => {
   if (lastOperationType.value.includes('frequency')) return ['#', 'Numéro', 'Apparitions'];
   if (lastOperationType.value === 'companions') return ['#', 'Compagnon', 'Apparu avec'];
-  if (lastOperationType.value === 'trigger') return ['#', 'N° Déclencheur', 'Fréquence']; // Titre mis à jour
+  if (lastOperationType.value === 'trigger') return ['#', 'N° Déclencheur', 'Fréquence'];
   if (lastOperationType.value.includes('kanta-rank')) return ['Paire Kanta', 'Apparitions'];
   return [];
 });
@@ -257,20 +263,16 @@ async function runSequenceAnalysis() {
   await callApi(`/analysis/sequence-detection?start_date=${startDate.value}&end_date=${endDate.value}`);
 }
 
-// MISE A JOUR TRIGGER pour supporter les numéros seuls
 async function runTriggerAnalysis() {
   if (!startDate.value || !endDate.value || !triggerTargetNumber.value) {
     error.value = "Veuillez sélectionner une période et au moins un numéro principal.";
     return;
   }
   lastOperationType.value = 'trigger';
-  
-  // Construction de l'URL intelligente (avec ou sans compagnon)
   let url = `/analysis/trigger-numbers?target_number=${triggerTargetNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`;
   if (triggerCompanionNumber.value) {
     url += `&companion_number=${triggerCompanionNumber.value}`;
   }
-  
   await callApi(url);
 }
 
@@ -319,21 +321,18 @@ async function runKantaReport(reportType) {
           </div>
         </section>
 
-        <!-- FAVORIS AMÉLIORÉS -->
+        <!-- FAVORIS -->
         <section class="card">
           <h2>⭐ Mes Numéros Favoris</h2>
           <div class="favorites-input-group">
             <input type="text" v-model="newFavoriteInput" placeholder="Ex: 7 ou 12-45" @keyup.enter="addFavorite"/>
             <button @click="addFavorite" :disabled="!newFavoriteInput" class="btn-small">Ajouter</button>
           </div>
-
           <div v-if="userFavorites.length > 0" class="favorites-list">
             <div v-for="item in userFavorites" :key="item" class="favorite-chip">
               <span class="fav-label">{{ item }}</span>
               <div class="fav-actions">
-                <!-- Bouton Compagnons (Numéro seul) -->
                 <button v-if="!item.includes('-')" @click="analyzeFavorite(item, 'companion')" class="icon-btn" title="Voir les Compagnons (Sortent AVEC)">👥</button>
-                <!-- Bouton Déclencheurs (Numéro ou Paire) -->
                 <button @click="analyzeFavorite(item, 'trigger')" class="icon-btn" title="Voir les Déclencheurs (Sortent AVANT)">⚡</button>
               </div>
               <span @click="removeFavorite(item)" class="fav-delete">×</span>
@@ -346,7 +345,9 @@ async function runKantaReport(reportType) {
           <h2>Analyse par Semaine</h2>
           <input type="date" v-model="selectedDate" />
           <div class="button-group-vertical">
-            <button @click="runVisualAnalysis('highlight-day')" :disabled="isLoading || !selectedDate">Surlignage Standard</button>
+            <!-- SURLIGNAGE JOUR -->
+            <button @click="runVisualAnalysis('highlight-day')" :disabled="isLoading || !selectedDate">Surlignage Standard (Jour)</button>
+            <button @click="runVisualAnalysis('process-entire-week')" :disabled="isLoading || !selectedDate">Surlignage Standard (Semaine)</button>
             <hr />
             <button @click="runReport('daily-frequency')" :disabled="isLoading || !selectedDate">Classement du Jour</button>
             <button @click="runReport('weekly-frequency')" :disabled="isLoading || !selectedDate">Classement de la Semaine</button>
@@ -377,7 +378,12 @@ async function runKantaReport(reportType) {
           <h2>Kanta Tracker</h2>
           <div class="button-group-vertical">
             <button @click="runKantaAnalysis('kanta-highlight-day')" :disabled="isLoading || !selectedDate">Surligner Kanta (Jour)</button>
+            <!-- AJOUT DU BOUTON MANQUANT -->
+            <button @click="runKantaAnalysis('kanta-highlight-week')" :disabled="isLoading || !selectedDate">Surligner Kanta (Semaine)</button>
+            <hr />
             <button @click="runKantaReport('daily-rank')" :disabled="isLoading || !selectedDate">Classement Kanta (Jour)</button>
+            <!-- AJOUT DU BOUTON MANQUANT -->
+            <button @click="runKantaReport('weekly-rank')" :disabled="isLoading || !selectedDate">Classement Kanta (Semaine)</button>
           </div>
         </section>
       </div>
