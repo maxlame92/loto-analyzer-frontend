@@ -3,29 +3,22 @@ import { ref, onMounted, computed } from 'vue';
 import { auth, db } from './firebase';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, getDoc, setDoc, updateDoc, arrayUnion, arrayRemove } from "firebase/firestore";
-
-// --- IMPORTS POUR LES GRAPHIQUES (Chart.js) ---
 import { Bar } from 'vue-chartjs';
 import { Chart as ChartJS, Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale } from 'chart.js';
 
 ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale);
 
-// --- CONFIGURATION ---
 const GOOGLE_SHEET_ID = "1HepqMzKcshKbRsLWwpEOOy5oO9ntK2CgdV7F_ijmjIo";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 
-// --- VARIABLES ---
 const user = ref(null);
 const userRole = ref('');
 const email = ref('');
 const password = ref('');
 const authError = ref('');
 const isAuthReady = ref(false);
-
 const userFavorites = ref([]); 
 const newFavoriteInput = ref('');
-
-// --- VARIABLES PREDICTION (NOUVEAU) ---
 const predictionNumber = ref('');
 const predictionCompanion = ref('');
 const multiPredictionInput = ref('');
@@ -57,13 +50,13 @@ onMounted(() => {
           userRole.value = data.role || 'user';
           userFavorites.value = data.favorites || []; 
         } else {
-          // Création initiale si le document n'existe pas
           userRole.value = 'user';
           userFavorites.value = [];
+          // CRITIQUE : Utilisation de merge: true pour créer le doc s'il n'existe pas
           await setDoc(docRef, { role: 'user', favorites: [] }, { merge: true });
         }
       } catch (e) {
-        console.error("Erreur lecture profil:", e);
+        console.error("Erreur Firebase:", e);
       }
     } else {
       user.value = null; userRole.value = ''; userFavorites.value = [];
@@ -73,87 +66,67 @@ onMounted(() => {
 });
 
 const login = async () => {
-  try {
-    authError.value = '';
-    isLoading.value = true;
-    await signInWithEmailAndPassword(auth, email.value, password.value);
-  } catch (error) { authError.value = "Email ou mot de passe incorrect."; }
-  finally { isLoading.value = false; }
+  try { authError.value = ''; isLoading.value = true; await signInWithEmailAndPassword(auth, email.value, password.value); } 
+  catch (error) { authError.value = "Email ou mot de passe incorrect."; } finally { isLoading.value = false; }
 };
 const logout = async () => { await signOut(auth); };
 
-// --- GESTION FAVORIS (CORRIGÉE) ---
+// --- GESTION FAVORIS ---
 async function addFavorite() {
   const input = newFavoriteInput.value.trim();
   if (!input) return;
   
-  // Validation
   const isSingleNumber = /^[0-9]{1,2}$/.test(input);
   const isPair = /^[0-9]{1,2}-[0-9]{1,2}$/.test(input);
 
   if (!isSingleNumber && !isPair) {
-    alert("Format invalide. Entrez un numéro (ex: 7) ou une paire (ex: 12-45).");
-    return;
+    alert("Format invalide. Entrez un numéro (ex: 7) ou une paire (ex: 12-45)."); return;
   }
-  if (userFavorites.value.includes(input)) {
-    newFavoriteInput.value = '';
-    return;
-  }
+  if (userFavorites.value.includes(input)) { newFavoriteInput.value = ''; return; }
+
   try {
     const userRef = doc(db, "users", user.value.uid);
-    // Mise à jour locale immédiate
     userFavorites.value.push(input); 
-    // CORRECTION ICI : Utilisation de setDoc avec merge:true pour éviter les erreurs si le doc n'existe pas
+    // SAUVEGARDE SECURISEE
     await setDoc(userRef, { favorites: arrayUnion(input) }, { merge: true }); 
     newFavoriteInput.value = '';
   } catch (e) {
-    console.error("Erreur ajout favori:", e.code, e.message);
-    alert("Erreur technique lors de la sauvegarde (Vérifiez votre connexion ou les règles Firebase).");
-    // On annule l'ajout local si erreur
+    console.error("Erreur sauvegarde:", e);
+    let msg = "Erreur technique.";
+    if (e.code === 'permission-denied') msg = "PERMISSION REFUSÉE: Vous devez mettre à jour les Règles Firebase dans la Console.";
+    alert(msg);
     userFavorites.value = userFavorites.value.filter(item => item !== input);
   }
 }
 
 async function removeFavorite(item) {
-  if (!confirm(`Retirer ${item} des favoris ?`)) return;
+  if (!confirm(`Retirer ${item} ?`)) return;
   try {
     const userRef = doc(db, "users", user.value.uid);
     userFavorites.value = userFavorites.value.filter(n => n !== item);
     await updateDoc(userRef, { favorites: arrayRemove(item) });
-  } catch (e) {
-    console.error("Erreur suppression:", e);
-  }
+  } catch (e) { console.error(e); }
 }
 
-// Fonction Polyvalente pour les Favoris
 function analyzeFavorite(item, mode) {
-  if (!startDate.value || !endDate.value) {
-     alert("Attention: Vérifiez que les dates de début et fin sont bien sélectionnées dans 'Analyse sur Période Étendue'.");
-  }
-
-  // CAS 1 : C'est une PAIRE (ex: 12-45)
+  if (!startDate.value || !endDate.value) { alert("Vérifiez les dates de début et fin."); }
   if (item.includes('-')) {
     const parts = item.split('-');
-    triggerTargetNumber.value = parts[0];
-    triggerCompanionNumber.value = parts[1];
+    triggerTargetNumber.value = parts[0]; triggerCompanionNumber.value = parts[1];
     runTriggerAnalysis(); 
-  } 
-  // CAS 2 : C'est un NUMÉRO SIMPLE (ex: 7)
-  else {
+  } else {
     if (mode === 'companion') {
       selectedNumber.value = item;
-      if (!selectedDate.value) { alert("Veuillez sélectionner une date pour l'analyse compagnon."); return; }
+      if (!selectedDate.value) { alert("Sélectionnez une date pour l'analyse compagnon."); return; }
       runReport('companions');
-    } 
-    else if (mode === 'trigger') {
-      triggerTargetNumber.value = item;
-      triggerCompanionNumber.value = ''; 
+    } else if (mode === 'trigger') {
+      triggerTargetNumber.value = item; triggerCompanionNumber.value = ''; 
       runTriggerAnalysis();
     }
   }
 }
 
-// --- DASHBOARD VARIABLES ---
+// --- VARIABLES ---
 const selectedDate = ref('');
 const startDate = ref('');
 const endDate = ref('');
@@ -179,9 +152,8 @@ const tableHeaders = computed(() => {
   if (lastOperationType.value.includes('frequency')) return ['#', 'Numéro', 'Apparitions'];
   if (lastOperationType.value === 'companions') return ['#', 'Compagnon', 'Apparu avec'];
   if (lastOperationType.value === 'trigger') return ['#', 'N° Déclencheur', 'Fréquence'];
-  if (lastOperationType.value.includes('kanta-rank')) return ['Paire Kanta', 'Apparitions'];
-  // AJOUT HEADER PREDICTION
   if (lastOperationType.value === 'prediction') return ['#', 'Numéro Suivant (Probable)', 'Fréquence']; 
+  if (lastOperationType.value.includes('kanta-rank')) return ['Paire Kanta', 'Apparitions'];
   return [];
 });
 
@@ -189,17 +161,15 @@ const tableData = computed(() => {
   if (apiResponse.value?.frequency_ranking) return apiResponse.value.frequency_ranking;
   if (apiResponse.value?.companion_ranking) return apiResponse.value.companion_ranking;
   if (apiResponse.value?.trigger_numbers_ranking) return apiResponse.value.trigger_numbers_ranking;
+  if (apiResponse.value?.prediction_ranking) return apiResponse.value.prediction_ranking;
   if (apiResponse.value?.kanta_pairs) return apiResponse.value.kanta_pairs;
   if (apiResponse.value?.kanta_pairs_ranking) return apiResponse.value.kanta_pairs_ranking;
-  // AJOUT DATA PREDICTION
-  if (apiResponse.value?.prediction_ranking) return apiResponse.value.prediction_ranking;
   return [];
 });
 const isTableVisible = computed(() => tableData.value.length > 0);
 
 const chartOptions = {
-  responsive: true,
-  maintainAspectRatio: false,
+  responsive: true, maintainAspectRatio: false,
   plugins: { legend: { display: false }, title: { display: true, text: 'Analyse Visuelle (Top 20)' } },
   scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
 };
@@ -220,10 +190,7 @@ const chartData = computed(() => {
 
 // --- API CALLS ---
 async function callApi(url, method = 'GET') {
-  showWelcomeMessage.value = false;
-  isLoading.value = true;
-  error.value = null;
-  apiResponse.value = null;
+  showWelcomeMessage.value = false; isLoading.value = true; error.value = null; apiResponse.value = null;
   try {
     const token = await user.value.getIdToken();
     const headers = { 'Authorization': `Bearer ${token}` };
@@ -234,92 +201,79 @@ async function callApi(url, method = 'GET') {
     apiResponse.value = data;
     if (data.worksheet_gid) activeSheetGid.value = data.worksheet_gid;
     viewMode.value = 'table';
-  } catch (err) { error.value = err.message; } 
-  finally { isLoading.value = false; }
+  } catch (err) { error.value = err.message; } finally { isLoading.value = false; }
 }
 
 async function runDataUpdate(endpoint) { lastOperationType.value = 'update'; await callApi(`/collection/${endpoint}`, 'POST'); }
 async function runVisualAnalysis(endpoint) {
-  if (!selectedDate.value) { error.value = "Veuillez sélectionner une date."; return; }
-  lastOperationType.value = 'visual';
-  await callApi(`/analysis/${endpoint}/${selectedDate.value}`, 'POST');
+  if (!selectedDate.value) { error.value = "Selectionnez une date."; return; }
+  lastOperationType.value = 'visual'; await callApi(`/analysis/${endpoint}/${selectedDate.value}`, 'POST');
 }
 async function runReport(reportType) {
-  if (!selectedDate.value) { error.value = "Veuillez sélectionner une date."; return; }
+  if (!selectedDate.value) { error.value = "Selectionnez une date."; return; }
   let url = '';
   if (reportType === 'weekly-frequency') { lastOperationType.value = 'weekly-frequency'; url = `/analysis/weekly-frequency/${selectedDate.value}`; }
   else if (reportType === 'daily-frequency') { lastOperationType.value = 'daily-frequency'; url = `/analysis/daily-frequency/${selectedDate.value}`; }
   else if (reportType === 'companions') {
-    if (!selectedNumber.value) { error.value = "Veuillez entrer un numéro."; return; }
-    lastOperationType.value = 'companions';
-    url = `/analysis/companions/${selectedNumber.value}?week_date_str=${selectedDate.value}`;
+    if (!selectedNumber.value) { error.value = "Entrez un numéro."; return; }
+    lastOperationType.value = 'companions'; url = `/analysis/companions/${selectedNumber.value}?week_date_str=${selectedDate.value}`;
   }
   await callApi(url);
 }
+
+// --- FONCTIONS MANQUANTES ET NOUVELLES ---
+
+// 1. FREQUENCE SUR PERIODE
 async function runRangeAnalysis() {
-  if (!startDate.value || !endDate.value) { error.value = "Veuillez sélectionner une date de début ET de fin."; return; }
+  if (!startDate.value || !endDate.value) { error.value = "Sélectionnez date début ET fin."; return; }
   lastOperationType.value = 'frequency';
   await callApi(`/analysis/frequency-by-range?start_date=${startDate.value}&end_date=${endDate.value}`);
 }
+
+// 2. PROFIL DU NUMERO
 async function runProfileAnalysis() {
-  if (!startDate.value || !endDate.value || !profileNumber.value) { error.value = "Veuillez sélectionner une période ET un numéro."; return; }
+  if (!startDate.value || !endDate.value || !profileNumber.value) { error.value = "Période ET numéro requis."; return; }
   lastOperationType.value = 'profile';
   await callApi(`/analysis/number-profile?target_number=${profileNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`);
 }
-async function runSequenceAnalysis() {
-  if (!startDate.value || !endDate.value) { error.value = "Veuillez sélectionner une période."; return; }
-  lastOperationType.value = 'sequence';
-  await callApi(`/analysis/sequence-detection?start_date=${startDate.value}&end_date=${endDate.value}`);
-}
 
+// 3. SUITES & DECLENCHEURS
+async function runSequenceAnalysis() {
+  if (!startDate.value || !endDate.value) { error.value = "Période requise."; return; }
+  lastOperationType.value = 'sequence'; await callApi(`/analysis/sequence-detection?start_date=${startDate.value}&end_date=${endDate.value}`);
+}
 async function runTriggerAnalysis() {
-  if (!startDate.value || !endDate.value || !triggerTargetNumber.value) {
-    error.value = "Veuillez sélectionner une période et au moins un numéro principal.";
-    return;
-  }
+  if (!startDate.value || !endDate.value || !triggerTargetNumber.value) { error.value = "Période et cible requises."; return; }
   lastOperationType.value = 'trigger';
   let url = `/analysis/trigger-numbers?target_number=${triggerTargetNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`;
-  if (triggerCompanionNumber.value) {
-    url += `&companion_number=${triggerCompanionNumber.value}`;
-  }
+  if (triggerCompanionNumber.value) url += `&companion_number=${triggerCompanionNumber.value}`;
   await callApi(url);
 }
 
-// NOUVEAU : LE PROPHETE
+// 4. NOUVEAU : LE PROPHETE
 async function runPredictionAnalysis() {
-  if (!startDate.value || !endDate.value || !predictionNumber.value) {
-    error.value = "Veuillez sélectionner une période et au moins un numéro observé.";
-    return;
-  }
+  if (!startDate.value || !endDate.value || !predictionNumber.value) { error.value = "Période et numéro vus requis."; return; }
   lastOperationType.value = 'prediction';
   let url = `/analysis/predict-next?observed_number=${predictionNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`;
-  if (predictionCompanion.value) {
-    url += `&observed_companion=${predictionCompanion.value}`;
-  }
+  if (predictionCompanion.value) url += `&observed_companion=${predictionCompanion.value}`;
   await callApi(url);
 }
 
-// NOUVEAU : ANALYSE CROISEE
+// 5. NOUVEAU : ANALYSE CROISEE
 async function runMultiPrediction() {
-  if (!startDate.value || !endDate.value || !multiPredictionInput.value) {
-    error.value = "Veuillez sélectionner une période et entrer les numéros.";
-    return;
-  }
+  if (!startDate.value || !endDate.value || !multiPredictionInput.value) { error.value = "Période et numéros requis."; return; }
   const cleanInput = multiPredictionInput.value.replace(/[\s-]+/g, ',');
   lastOperationType.value = 'prediction';
-  const url = `/analysis/multi-prediction?numbers_str=${cleanInput}&start_date=${startDate.value}&end_date=${endDate.value}`;
-  await callApi(url);
+  await callApi(`/analysis/multi-prediction?numbers_str=${cleanInput}&start_date=${startDate.value}&end_date=${endDate.value}`);
 }
 
 async function runKantaAnalysis(endpoint) {
-  if (!selectedDate.value) { error.value = "Veuillez sélectionner une date."; return; }
-  lastOperationType.value = 'visual';
-  await callApi(`/analysis/${endpoint}/${selectedDate.value}`, 'POST');
+  if (!selectedDate.value) { error.value = "Date requise."; return; }
+  lastOperationType.value = 'visual'; await callApi(`/analysis/${endpoint}/${selectedDate.value}`, 'POST');
 }
 async function runKantaReport(reportType) {
-  if (!selectedDate.value) { error.value = "Veuillez sélectionner une date."; return; }
-  lastOperationType.value = 'kanta-rank';
-  await callApi(`/analysis/kanta-${reportType}/${selectedDate.value}`);
+  if (!selectedDate.value) { error.value = "Date requise."; return; }
+  lastOperationType.value = 'kanta-rank'; await callApi(`/analysis/kanta-${reportType}/${selectedDate.value}`);
 }
 </script>
 
@@ -367,80 +321,74 @@ async function runKantaReport(reportType) {
             <div v-for="item in userFavorites" :key="item" class="favorite-chip">
               <span class="fav-label">{{ item }}</span>
               <div class="fav-actions">
-                <button v-if="!item.includes('-')" @click="analyzeFavorite(item, 'companion')" class="icon-btn" title="Voir les Compagnons (Sortent AVEC)">👥</button>
-                <button @click="analyzeFavorite(item, 'trigger')" class="icon-btn" title="Voir les Déclencheurs (Sortent AVANT)">⚡</button>
+                <button v-if="!item.includes('-')" @click="analyzeFavorite(item, 'companion')" class="icon-btn" title="Compagnons (Avec)">👥</button>
+                <button @click="analyzeFavorite(item, 'trigger')" class="icon-btn" title="Déclencheurs (Avant)">⚡</button>
               </div>
               <span @click="removeFavorite(item)" class="fav-delete">×</span>
             </div>
           </div>
-          <p v-else class="empty-msg">Ajoutez vos numéros fétiches pour un accès rapide.</p>
+          <p v-else class="empty-msg">Ajoutez vos numéros fétiches.</p>
         </section>
 
         <section class="card">
           <h2>Analyse par Semaine</h2>
           <input type="date" v-model="selectedDate" />
           <div class="button-group-vertical">
-            <!-- SURLIGNAGE JOUR -->
-            <button @click="runVisualAnalysis('highlight-day')" :disabled="isLoading || !selectedDate">Surlignage Standard (Jour)</button>
-            <button @click="runVisualAnalysis('process-entire-week')" :disabled="isLoading || !selectedDate">Surlignage Standard (Semaine)</button>
+            <button @click="runVisualAnalysis('highlight-day')" :disabled="isLoading || !selectedDate">Surlignage (Jour)</button>
+            <button @click="runVisualAnalysis('process-entire-week')" :disabled="isLoading || !selectedDate">Surlignage (Semaine)</button>
             <hr />
-            <button @click="runReport('daily-frequency')" :disabled="isLoading || !selectedDate">Classement du Jour</button>
-            <button @click="runReport('weekly-frequency')" :disabled="isLoading || !selectedDate">Classement de la Semaine</button>
+            <button @click="runReport('daily-frequency')" :disabled="isLoading || !selectedDate">Classement Jour</button>
+            <button @click="runReport('weekly-frequency')" :disabled="isLoading || !selectedDate">Classement Semaine</button>
             <hr />
             <input type="number" v-model="selectedNumber" placeholder="N° pour analyse compagnons" />
             <button @click="runReport('companions')" :disabled="isLoading || !selectedDate || !selectedNumber">Analyser Compagnons</button>
           </div>
         </section>
 
+        <!-- ICI SONT LES FONCTIONS QUE VOUS PENSIEZ MANQUANTES -->
         <section class="card">
-          <h2>Période & IA Avancée</h2>
+          <h2>Période & Profilage</h2>
           <label>Début :</label><input type="date" v-model="startDate" />
           <label>Fin :</label><input type="date" v-model="endDate" />
           
+          <button @click="runRangeAnalysis" :disabled="isLoading || !startDate || !endDate">Fréquence sur Période</button>
+          
           <hr />
-          <h3>Détecteur de Déclencheurs</h3>
-          <p class="small-text">Trouver les numéros qui sortent le tirage D'AVANT.</p>
-          <label>Cible :</label>
-          <input type="number" v-model="triggerTargetNumber" placeholder="Ex: 18" />
-          <label>Compagnon (Optionnel) :</label>
-          <input type="number" v-model="triggerCompanionNumber" placeholder="Laisser vide pour n° seul" />
-          <button @click="runTriggerAnalysis" :disabled="isLoading || !startDate || !endDate || !triggerTargetNumber">
-            Trouver les Déclencheurs ⚡
-          </button>
+          <input type="number" v-model="profileNumber" placeholder="N° pour profil complet" />
+          <button @click="runProfileAnalysis" :disabled="isLoading || !startDate || !endDate || !profileNumber">Générer Profil du Numéro</button>
         </section>
 
-        <!-- NOUVELLE CARTE : LE PROPHETE -->
+        <!-- NOUVELLES FONCTIONS PROPHETE -->
         <section class="card prophet-card">
-          <h2>🔮 Le Prophète (Prédictions)</h2>
-          <p class="small-text">Ce numéro vient de sortir. Qu'est-ce qui suit ?</p>
-          <label>Numéro Sorti (Vu) :</label>
-          <input type="number" v-model="predictionNumber" placeholder="Ex: 42" />
-          <label>Avec Compagnon (Optionnel) :</label>
-          <input type="number" v-model="predictionCompanion" placeholder="Ex: 10 (Pour paire 42-10)" />
-          <button @click="runPredictionAnalysis" :disabled="isLoading || !startDate || !endDate || !predictionNumber" class="prophet-btn">
-            Voir le Futur Probable 🔮
-          </button>
+          <h2>🔮 Le Prophète</h2>
+          <p class="small-text">Ce numéro vient de sortir. La suite ?</p>
+          <input type="number" v-model="predictionNumber" placeholder="Numéro vu (Ex: 42)" />
+          <input type="number" v-model="predictionCompanion" placeholder="Compagnon vu (Optionnel)" />
+          <button @click="runPredictionAnalysis" :disabled="isLoading || !startDate || !endDate || !predictionNumber" class="prophet-btn">Voir Futur Probable</button>
         </section>
 
-        <!-- CARTE : ANALYSE CROISÉE (CONSENSUS) -->
         <section class="card multi-prophet-card">
-          <h2>🔮 Analyse Croisée (Consensus)</h2>
-          <p class="small-text">Entrez les numéros d'un tirage précédent (Haut, Bas, ou les 10).</p>
-          <label>Numéros déclencheurs (Libre choix) :</label>
-          <input type="text" v-model="multiPredictionInput" placeholder="Ex: 5 12 34 56 78 (et/ou suite...)" @keyup.enter="runMultiPrediction"/>
-          <button @click="runMultiPrediction" :disabled="isLoading || !startDate || !endDate || !multiPredictionInput" class="multi-btn">
-            Lancer la Projection 🚀
-          </button>
+          <h2>🔮 Analyse Croisée</h2>
+          <p class="small-text">Dernier tirage complet (ou sélection).</p>
+          <input type="text" v-model="multiPredictionInput" placeholder="Ex: 5 12 34 56 78" @keyup.enter="runMultiPrediction"/>
+          <button @click="runMultiPrediction" :disabled="isLoading || !startDate || !endDate || !multiPredictionInput" class="multi-btn">Lancer Projection</button>
         </section>
 
         <section class="card">
-          <h2>Kanta Tracker</h2>
-          <div class="button-group-vertical">
-            <button @click="runKantaAnalysis('kanta-highlight-day')" :disabled="isLoading || !selectedDate">Surligner Kanta (Jour)</button>
-            <button @click="runKantaAnalysis('kanta-highlight-week')" :disabled="isLoading || !selectedDate">Surligner Kanta (Semaine)</button>
-            <hr />
-            <button @click="runKantaReport('daily-rank')" :disabled="isLoading || !selectedDate">Classement Kanta (Jour)</button>
-            <button @click="runKantaReport('weekly-rank')" :disabled="isLoading || !selectedDate">Classement Kanta (Semaine)</button>
+          <h2>IA Avancée & Kanta</h2>
+          <button @click="runSequenceAnalysis" :disabled="isLoading || !startDate || !endDate">Détecter Suites</button>
+          <hr />
+          <input type="number" v-model="triggerTargetNumber" placeholder="Cible (ex: 18)" />
+          <input type="number" v-model="triggerCompanionNumber" placeholder="Compagnon (Optionnel)" />
+          <button @click="runTriggerAnalysis" :disabled="isLoading || !startDate || !endDate || !triggerTargetNumber">Trouver Déclencheurs ⚡</button>
+          <hr />
+          <div class="button-group-horizontal">
+             <button @click="runKantaAnalysis('kanta-highlight-day')">Surlign. Kanta J</button>
+             <button @click="runKantaAnalysis('kanta-highlight-week')">Surlign. Kanta S</button>
+          </div>
+          <div class="button-group-horizontal" style="margin-top:5px;">
+             <button @click="runKantaReport('daily-rank')">Class. Kanta J</button>
+             <button @click="runKantaReport('weekly-rank')">Class. Kanta S</button>
           </div>
         </section>
       </div>
@@ -484,15 +432,11 @@ async function runKantaReport(reportType) {
                 </tbody>
               </table>
 
-              <div v-if="apiResponse.ai_strategic_analysis" class="ai-analysis"><h3>🧠 Stratégie Compagnons</h3><p>{{ apiResponse.ai_strategic_analysis }}</p></div>
-              <div v-if="apiResponse.ai_trigger_analysis" class="ai-analysis"><h3>🧠 Analyse Déclencheurs</h3><p>{{ apiResponse.ai_trigger_analysis }}</p></div>
-              
-              <!-- AFFICHAGE PREDICTION PROPHETE & CROISEE -->
-              <div v-if="apiResponse.ai_prediction_analysis" class="ai-analysis prophet-analysis">
-                <h3>🔮 Prédiction du Prophète</h3>
-                <p>{{ apiResponse.ai_prediction_analysis }}</p>
-              </div>
-
+              <div v-if="apiResponse.ai_strategic_analysis" class="ai-analysis"><h3>🧠 Stratégie</h3><p>{{ apiResponse.ai_strategic_analysis }}</p></div>
+              <div v-if="apiResponse.ai_strategic_profile" class="ai-analysis"><h3>🧠 Profil Numéro</h3><p>{{ apiResponse.ai_strategic_profile }}</p></div>
+              <div v-if="apiResponse.ai_sequence_analysis" class="ai-analysis"><h3>🧠 Suites</h3><p>{{ apiResponse.ai_sequence_analysis }}</p></div>
+              <div v-if="apiResponse.ai_trigger_analysis" class="ai-analysis"><h3>🧠 Déclencheurs</h3><p>{{ apiResponse.ai_trigger_analysis }}</p></div>
+              <div v-if="apiResponse.ai_prediction_analysis" class="ai-analysis prophet-analysis"><h3>🔮 Prédiction</h3><p>{{ apiResponse.ai_prediction_analysis }}</p></div>
             </div>
           </div>
         </section>
@@ -502,7 +446,7 @@ async function runKantaReport(reportType) {
 </template>
 
 <style scoped>
-  /* STYLES DE BASE */
+  /* STYLES IDENTIQUES AU PRECEDENT - CLEAN */
   .loading-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; font-size: 1.5rem; color: #666; }
   .login-wrapper { display: flex; align-items: center; justify-content: center; min-height: 100vh; background-color: #f0f2f5; }
   .login-box { background: white; padding: 2.5rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
@@ -515,75 +459,39 @@ async function runKantaReport(reportType) {
   header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 1rem; border-bottom: 1px solid #eee; margin-bottom: 2rem; }
   .user-info { display: flex; gap: 1rem; align-items: center; }
   .logout-button { background-color: #6c757d; padding: 0.5rem 1rem; width: auto; }
-  
   .main-layout { display: grid; grid-template-columns: 350px 1fr; gap: 2rem; }
   .card { background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 1.5rem; }
   .card h2 { margin-top: 0; font-size: 1.2rem; border-bottom: 1px solid #eee; padding-bottom: 0.5rem; margin-bottom: 1rem; }
   .button-group-vertical { display: flex; flex-direction: column; gap: 0.5rem; }
   .button-group-horizontal { display: flex; gap: 1rem; }
   .danger { background-color: #dc3545; }
-  
-  /* RESULTATS */
   .styled-table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
   .styled-table th, .styled-table td { border: 1px solid #ddd; padding: 8px; text-align: center; }
   .styled-table th { background-color: #f2f2f2; }
   .ai-analysis { background-color: #fffbe6; border-left: 5px solid #ffc107; padding: 1rem; margin-top: 1rem; border-radius: 4px; }
   .success-box { background-color: #e8f5e9; color: #2e7d32; padding: 1rem; border-radius: 4px; text-align: center; }
   .button-link { display: inline-block; padding: 0.5rem 1rem; background-color: #28a745; color: white; text-decoration: none; border-radius: 4px; margin-top: 0.5rem; }
-  
-  /* GRAPHIQUES */
   .view-controls { display: flex; justify-content: center; gap: 1rem; margin: 1rem 0; }
   .toggle-btn { background: #e0e0e0; color: #333; width: auto; padding: 0.5rem 1.5rem; }
   .toggle-btn.active { background: #007bff; color: white; }
   .chart-container { height: 400px; width: 100%; }
-
-  /* FAVORIS */
   .favorites-input-group { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
   .btn-small { width: auto; padding: 0.5rem 1rem; }
   .favorites-list { display: flex; flex-wrap: wrap; gap: 0.8rem; }
-  .favorite-chip { 
-    display: flex; align-items: center; background: #e3f2fd; 
-    border: 1px solid #90caf9; border-radius: 20px; padding: 0.3rem 0.5rem 0.3rem 1rem; 
-  }
+  .favorite-chip { display: flex; align-items: center; background: #e3f2fd; border: 1px solid #90caf9; border-radius: 20px; padding: 0.3rem 0.5rem 0.3rem 1rem; }
   .fav-label { font-weight: bold; color: #1565c0; margin-right: 0.5rem; }
   .fav-actions { display: flex; gap: 0.2rem; margin-right: 0.5rem; }
-  .icon-btn { 
-    background: white; border: 1px solid #bbdefb; color: #333; 
-    border-radius: 50%; width: 28px; height: 28px; padding: 0; 
-    font-size: 0.8rem; display: flex; align-items: center; justify-content: center;
-    transition: all 0.2s;
-  }
+  .icon-btn { background: white; border: 1px solid #bbdefb; color: #333; border-radius: 50%; width: 28px; height: 28px; padding: 0; font-size: 0.8rem; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
   .icon-btn:hover { background: #bbdefb; transform: scale(1.1); }
   .fav-delete { cursor: pointer; color: #ef5350; font-weight: bold; font-size: 1.2rem; padding: 0 5px; }
   .empty-msg { font-style: italic; color: #999; font-size: 0.9rem; }
   .small-text { font-size: 0.8rem; color: #666; margin-top: -0.5rem; margin-bottom: 1rem; }
   hr { border: none; border-top: 1px solid #eee; margin: 1.5rem 0; }
-
-  /* NOUVEAUX STYLES PROPHETE */
-  .prophet-card {
-    border: 1px solid #d1c4e9;
-    background: linear-gradient(to bottom right, #ffffff, #f3e5f5);
-  }
-  .prophet-btn {
-    background-color: #7b1fa2; /* Violet mystique */
-  }
-  .prophet-btn:hover {
-    background-color: #4a148c;
-  }
-  .prophet-analysis {
-    background-color: #f3e5f5;
-    border-left: 5px solid #7b1fa2;
-  }
-  .multi-prophet-card {
-    border: 2px solid #6f42c1;
-    background-color: #f8f0fc;
-  }
-  .multi-btn {
-    background: linear-gradient(45deg, #6f42c1, #007bff);
-    border: none;
-  }
-  .multi-btn:hover {
-    opacity: 0.9;
-    transform: scale(1.02);
-  }
+  .prophet-card { border: 1px solid #d1c4e9; background: linear-gradient(to bottom right, #ffffff, #f3e5f5); }
+  .prophet-btn { background-color: #7b1fa2; }
+  .prophet-btn:hover { background-color: #4a148c; }
+  .prophet-analysis { background-color: #f3e5f5; border-left: 5px solid #7b1fa2; }
+  .multi-prophet-card { border: 2px solid #6f42c1; background-color: #f8f0fc; }
+  .multi-btn { background: linear-gradient(45deg, #6f42c1, #007bff); border: none; }
+  .multi-btn:hover { opacity: 0.9; transform: scale(1.02); }
 </style>
