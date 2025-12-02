@@ -25,6 +25,11 @@ const isAuthReady = ref(false);
 const userFavorites = ref([]); 
 const newFavoriteInput = ref('');
 
+// --- VARIABLES PREDICTION (NOUVEAU) ---
+const predictionNumber = ref('');
+const predictionCompanion = ref('');
+const multiPredictionInput = ref('');
+
 // --- INITIALISATION ---
 onMounted(() => {
   const today = new Date();
@@ -102,7 +107,7 @@ async function addFavorite() {
     await setDoc(userRef, { favorites: arrayUnion(input) }, { merge: true }); 
     newFavoriteInput.value = '';
   } catch (e) {
-    console.error("Erreur ajout favori:", e);
+    console.error("Erreur ajout favori:", e.code, e.message);
     alert("Erreur technique lors de la sauvegarde (Vérifiez votre connexion ou les règles Firebase).");
     // On annule l'ajout local si erreur
     userFavorites.value = userFavorites.value.filter(item => item !== input);
@@ -175,6 +180,8 @@ const tableHeaders = computed(() => {
   if (lastOperationType.value === 'companions') return ['#', 'Compagnon', 'Apparu avec'];
   if (lastOperationType.value === 'trigger') return ['#', 'N° Déclencheur', 'Fréquence'];
   if (lastOperationType.value.includes('kanta-rank')) return ['Paire Kanta', 'Apparitions'];
+  // AJOUT HEADER PREDICTION
+  if (lastOperationType.value === 'prediction') return ['#', 'Numéro Suivant (Probable)', 'Fréquence']; 
   return [];
 });
 
@@ -184,6 +191,8 @@ const tableData = computed(() => {
   if (apiResponse.value?.trigger_numbers_ranking) return apiResponse.value.trigger_numbers_ranking;
   if (apiResponse.value?.kanta_pairs) return apiResponse.value.kanta_pairs;
   if (apiResponse.value?.kanta_pairs_ranking) return apiResponse.value.kanta_pairs_ranking;
+  // AJOUT DATA PREDICTION
+  if (apiResponse.value?.prediction_ranking) return apiResponse.value.prediction_ranking;
   return [];
 });
 const isTableVisible = computed(() => tableData.value.length > 0);
@@ -273,6 +282,32 @@ async function runTriggerAnalysis() {
   if (triggerCompanionNumber.value) {
     url += `&companion_number=${triggerCompanionNumber.value}`;
   }
+  await callApi(url);
+}
+
+// NOUVEAU : LE PROPHETE
+async function runPredictionAnalysis() {
+  if (!startDate.value || !endDate.value || !predictionNumber.value) {
+    error.value = "Veuillez sélectionner une période et au moins un numéro observé.";
+    return;
+  }
+  lastOperationType.value = 'prediction';
+  let url = `/analysis/predict-next?observed_number=${predictionNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`;
+  if (predictionCompanion.value) {
+    url += `&observed_companion=${predictionCompanion.value}`;
+  }
+  await callApi(url);
+}
+
+// NOUVEAU : ANALYSE CROISEE
+async function runMultiPrediction() {
+  if (!startDate.value || !endDate.value || !multiPredictionInput.value) {
+    error.value = "Veuillez sélectionner une période et entrer les numéros.";
+    return;
+  }
+  const cleanInput = multiPredictionInput.value.replace(/[\s-]+/g, ',');
+  lastOperationType.value = 'prediction';
+  const url = `/analysis/multi-prediction?numbers_str=${cleanInput}&start_date=${startDate.value}&end_date=${endDate.value}`;
   await callApi(url);
 }
 
@@ -374,15 +409,37 @@ async function runKantaReport(reportType) {
           </button>
         </section>
 
+        <!-- NOUVELLE CARTE : LE PROPHETE -->
+        <section class="card prophet-card">
+          <h2>🔮 Le Prophète (Prédictions)</h2>
+          <p class="small-text">Ce numéro vient de sortir. Qu'est-ce qui suit ?</p>
+          <label>Numéro Sorti (Vu) :</label>
+          <input type="number" v-model="predictionNumber" placeholder="Ex: 42" />
+          <label>Avec Compagnon (Optionnel) :</label>
+          <input type="number" v-model="predictionCompanion" placeholder="Ex: 10 (Pour paire 42-10)" />
+          <button @click="runPredictionAnalysis" :disabled="isLoading || !startDate || !endDate || !predictionNumber" class="prophet-btn">
+            Voir le Futur Probable 🔮
+          </button>
+        </section>
+
+        <!-- CARTE : ANALYSE CROISÉE (CONSENSUS) -->
+        <section class="card multi-prophet-card">
+          <h2>🔮 Analyse Croisée (Consensus)</h2>
+          <p class="small-text">Entrez les numéros d'un tirage précédent (Haut, Bas, ou les 10).</p>
+          <label>Numéros déclencheurs (Libre choix) :</label>
+          <input type="text" v-model="multiPredictionInput" placeholder="Ex: 5 12 34 56 78 (et/ou suite...)" @keyup.enter="runMultiPrediction"/>
+          <button @click="runMultiPrediction" :disabled="isLoading || !startDate || !endDate || !multiPredictionInput" class="multi-btn">
+            Lancer la Projection 🚀
+          </button>
+        </section>
+
         <section class="card">
           <h2>Kanta Tracker</h2>
           <div class="button-group-vertical">
             <button @click="runKantaAnalysis('kanta-highlight-day')" :disabled="isLoading || !selectedDate">Surligner Kanta (Jour)</button>
-            <!-- AJOUT DU BOUTON MANQUANT -->
             <button @click="runKantaAnalysis('kanta-highlight-week')" :disabled="isLoading || !selectedDate">Surligner Kanta (Semaine)</button>
             <hr />
             <button @click="runKantaReport('daily-rank')" :disabled="isLoading || !selectedDate">Classement Kanta (Jour)</button>
-            <!-- AJOUT DU BOUTON MANQUANT -->
             <button @click="runKantaReport('weekly-rank')" :disabled="isLoading || !selectedDate">Classement Kanta (Semaine)</button>
           </div>
         </section>
@@ -429,6 +486,13 @@ async function runKantaReport(reportType) {
 
               <div v-if="apiResponse.ai_strategic_analysis" class="ai-analysis"><h3>🧠 Stratégie Compagnons</h3><p>{{ apiResponse.ai_strategic_analysis }}</p></div>
               <div v-if="apiResponse.ai_trigger_analysis" class="ai-analysis"><h3>🧠 Analyse Déclencheurs</h3><p>{{ apiResponse.ai_trigger_analysis }}</p></div>
+              
+              <!-- AFFICHAGE PREDICTION PROPHETE & CROISEE -->
+              <div v-if="apiResponse.ai_prediction_analysis" class="ai-analysis prophet-analysis">
+                <h3>🔮 Prédiction du Prophète</h3>
+                <p>{{ apiResponse.ai_prediction_analysis }}</p>
+              </div>
+
             </div>
           </div>
         </section>
@@ -494,4 +558,32 @@ async function runKantaReport(reportType) {
   .empty-msg { font-style: italic; color: #999; font-size: 0.9rem; }
   .small-text { font-size: 0.8rem; color: #666; margin-top: -0.5rem; margin-bottom: 1rem; }
   hr { border: none; border-top: 1px solid #eee; margin: 1.5rem 0; }
+
+  /* NOUVEAUX STYLES PROPHETE */
+  .prophet-card {
+    border: 1px solid #d1c4e9;
+    background: linear-gradient(to bottom right, #ffffff, #f3e5f5);
+  }
+  .prophet-btn {
+    background-color: #7b1fa2; /* Violet mystique */
+  }
+  .prophet-btn:hover {
+    background-color: #4a148c;
+  }
+  .prophet-analysis {
+    background-color: #f3e5f5;
+    border-left: 5px solid #7b1fa2;
+  }
+  .multi-prophet-card {
+    border: 2px solid #6f42c1;
+    background-color: #f8f0fc;
+  }
+  .multi-btn {
+    background: linear-gradient(45deg, #6f42c1, #007bff);
+    border: none;
+  }
+  .multi-btn:hover {
+    opacity: 0.9;
+    transform: scale(1.02);
+  }
 </style>
