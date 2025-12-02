@@ -4,6 +4,13 @@ import { auth, db } from './firebase';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 
+// --- IMPORTS POUR LES GRAPHIQUES (Chart.js) ---
+import { Bar } from 'vue-chartjs';
+import { Chart as ChartJS, Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale } from 'chart.js';
+
+// Enregistrement des composants Chart.js
+ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale);
+
 // --- CONFIGURATION ---
 const GOOGLE_SHEET_ID = "1HepqMzKcshKbRsLWwpEOOy5oO9ntK2CgdV7F_ijmjIo";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
@@ -69,6 +76,9 @@ const lastOperationType = ref('');
 const activeSheetGid = ref(null);
 const showWelcomeMessage = ref(true);
 
+// --- NOUVELLES VARIABLES POUR GRAPHIQUE ---
+const viewMode = ref('table'); // 'table' ou 'chart'
+
 const isAdmin = computed(() => userRole.value === 'admin');
 const sheetDirectLink = computed(() => {
   const base = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}`;
@@ -82,6 +92,7 @@ const tableHeaders = computed(() => {
   if (lastOperationType.value.includes('kanta-rank')) return ['Paire Kanta', 'Apparitions'];
   return [];
 });
+
 const tableData = computed(() => {
   if (apiResponse.value?.frequency_ranking) return apiResponse.value.frequency_ranking;
   if (apiResponse.value?.companion_ranking) return apiResponse.value.companion_ranking;
@@ -90,7 +101,59 @@ const tableData = computed(() => {
   if (apiResponse.value?.kanta_pairs_ranking) return apiResponse.value.kanta_pairs_ranking; // Pour le rapport semaine Kanta
   return [];
 });
+
 const isTableVisible = computed(() => tableData.value.length > 0);
+
+// --- LOGIQUE DU GRAPHIQUE (Chart.js) ---
+const chartOptions = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: { display: false },
+    title: { display: true, text: 'Analyse Visuelle des Fréquences (Top 20)' }
+  },
+  scales: {
+    y: { beginAtZero: true, ticks: { precision: 0 } }
+  }
+};
+
+const chartData = computed(() => {
+  const data = tableData.value;
+  if (!data || data.length === 0) return null;
+
+  // On limite le graphique aux 20 premiers résultats pour la lisibilité
+  const limitedData = data.slice(0, 20);
+
+  let labels = [];
+  let counts = [];
+
+  limitedData.forEach(row => {
+    // Gestion dynamique selon le type de données (Kanta, Compagnon, Numéro simple)
+    if (row.pair) {
+      labels.push(row.pair);
+    } else if (row.number) {
+      labels.push(row.number.toString());
+    } else if (row.companion) {
+      labels.push(row.companion.toString());
+    } else {
+      labels.push('?');
+    }
+    
+    counts.push(row.count);
+  });
+
+  return {
+    labels: labels,
+    datasets: [{
+      label: 'Apparitions',
+      backgroundColor: '#007bff',
+      borderRadius: 4,
+      data: counts
+    }]
+  };
+});
+
+// --- APPELS API ---
 
 async function callApi(url, method = 'GET') {
   showWelcomeMessage.value = false;
@@ -106,6 +169,9 @@ async function callApi(url, method = 'GET') {
     if (!response.ok) throw new Error(data.detail || `Erreur ${response.status}`);
     apiResponse.value = data;
     if (data.worksheet_gid) activeSheetGid.value = data.worksheet_gid;
+    
+    // Reset view mode to table on new search
+    viewMode.value = 'table';
   } catch (err) {
     error.value = err.message;
   } finally {
@@ -182,7 +248,6 @@ async function runKantaAnalysis(endpoint) {
   await callApi(`/analysis/${endpoint}/${selectedDate.value}`, 'POST');
 }
 
-// --- NOUVELLE FONCTION ---
 async function runKantaReport(reportType) {
   if (!selectedDate.value) { error.value = "Veuillez sélectionner une date."; return; }
   lastOperationType.value = 'kanta-rank';
@@ -303,7 +368,9 @@ async function runKantaReport(reportType) {
           <div v-else>
             <div v-if="isLoading" class="loader">Chargement...</div>
             <div v-if="error" class="error-box">{{ error }}</div>
+            
             <div v-if="apiResponse">
+              <!-- Message de Succès -->
               <div v-if="apiResponse.message || apiResponse.analysis_period" class="success-box large">
                 <div>
                   <p>✅ {{ apiResponse.message || `Rapport généré pour la période : ${apiResponse.analysis_period}` }}</p>
@@ -311,7 +378,30 @@ async function runKantaReport(reportType) {
                 </div>
                 <a v-if="apiResponse.worksheet_gid" :href="sheetDirectLink" target="_blank" class="button-link">Voir l'Onglet ↗</a>
               </div>
-              <table v-if="isTableVisible" class="styled-table">
+
+              <!-- CONTROLES D'AFFICHAGE (TABLEAU / GRAPHIQUE) -->
+              <div v-if="isTableVisible && !lastOperationType.includes('visual')" class="view-controls">
+                <button 
+                  @click="viewMode = 'table'" 
+                  :class="{ active: viewMode === 'table' }" 
+                  class="toggle-btn">
+                  📋 Tableau
+                </button>
+                <button 
+                  @click="viewMode = 'chart'" 
+                  :class="{ active: viewMode === 'chart' }" 
+                  class="toggle-btn">
+                  📊 Graphique
+                </button>
+              </div>
+
+              <!-- VUE GRAPHIQUE -->
+              <div v-if="isTableVisible && viewMode === 'chart' && !lastOperationType.includes('visual')" class="chart-container">
+                <Bar :data="chartData" :options="chartOptions" />
+              </div>
+
+              <!-- VUE TABLEAU -->
+              <table v-else-if="isTableVisible" class="styled-table">
                 <thead>
                   <tr><th v-for="h in tableHeaders" :key="h">{{ h }}</th></tr>
                 </thead>
@@ -326,6 +416,8 @@ async function runKantaReport(reportType) {
                   </tr>
                 </tbody>
               </table>
+
+              <!-- ANALYSES IA -->
               <div v-if="apiResponse.ai_strategic_analysis" class="ai-analysis">
                 <h3>🧠 Analyse Stratégique des Compagnons</h3>
                 <p>{{ apiResponse.ai_strategic_analysis }}</p>
@@ -398,4 +490,34 @@ async function runKantaReport(reportType) {
   label { display: block; margin-bottom: 0.5rem; font-weight: 500; font-size: 0.9rem; color: #555; margin-top: 1rem; }
   .card p { font-size: 0.8rem; color: #777; margin-top: 0.5rem; text-align: center; }
   hr { border: none; border-top: 1px solid #eee; margin: 1rem 0; }
+
+  /* NOUVEAUX STYLES POUR LE GRAPHIQUE */
+  .view-controls {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    margin: 1.5rem 0;
+  }
+
+  .toggle-btn {
+    background-color: #e0e0e0;
+    color: #333;
+    border: 1px solid #ccc;
+    width: auto;
+    padding: 0.5rem 1.5rem;
+    transition: all 0.3s ease;
+  }
+
+  .toggle-btn.active {
+    background-color: #007bff;
+    color: white;
+    border-color: #0056b3;
+    box-shadow: 0 2px 5px rgba(0,123,255,0.3);
+  }
+
+  .chart-container {
+    height: 400px;
+    width: 100%;
+    margin-bottom: 2rem;
+  }
 </style>
