@@ -11,23 +11,45 @@ ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale)
 const GOOGLE_SHEET_ID = "1HepqMzKcshKbRsLWwpEOOy5oO9ntK2CgdV7F_ijmjIo";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 
+// --- ETAT GLOBAL ---
 const user = ref(null);
 const userRole = ref('');
 const email = ref('');
 const password = ref('');
 const authError = ref('');
 const isAuthReady = ref(false);
+
+// --- NAVIGATION (NOUVEAU) ---
+const currentView = ref('dashboard'); // 'dashboard' ou 'results'
+
+// --- FAVORIS ---
 const userFavorites = ref([]); 
 const newFavoriteInput = ref('');
-const predictionNumber = ref('');
-const predictionCompanion = ref('');
-const multiPredictionInput = ref('');
 
-// --- DASHBOARD PERSO VARIABLES ---
+// --- DASHBOARD VARIABLES ---
 const dashboardData = ref(null);
 const isDashboardLoading = ref(false);
 const dashStartDate = ref('');
 const dashEndDate = ref('');
+
+// --- ANALYSE VARIABLES ---
+const selectedDate = ref('');
+const startDate = ref('');
+const endDate = ref('');
+const selectedNumber = ref('');
+const profileNumber = ref('');
+const triggerTargetNumber = ref('');
+const triggerCompanionNumber = ref('');
+const predictionNumber = ref('');
+const predictionCompanion = ref('');
+const multiPredictionInput = ref('');
+
+const apiResponse = ref(null);
+const isLoading = ref(false);
+const error = ref(null);
+const lastOperationType = ref('');
+const activeSheetGid = ref(null);
+const viewMode = ref('table'); // 'table' ou 'chart' pour les résultats
 
 // --- INITIALISATION ---
 onMounted(() => {
@@ -37,12 +59,10 @@ onMounted(() => {
   const day = today.getDate().toString().padStart(2, '0');
   const todayStr = `${year}-${month}-${day}`;
   
-  // Dates globales
   selectedDate.value = todayStr;
   endDate.value = todayStr;
-  dashEndDate.value = todayStr; // Fin Dashboard = Aujourd'hui
+  dashEndDate.value = todayStr; 
 
-  // Date début (-1 mois par défaut)
   const oneMonthAgo = new Date();
   oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
   const startY = oneMonthAgo.getFullYear();
@@ -51,7 +71,7 @@ onMounted(() => {
   const startStr = `${startY}-${startM}-${startD}`;
   
   startDate.value = startStr;
-  dashStartDate.value = startStr; // Début Dashboard = -1 mois
+  dashStartDate.value = startStr; 
 
   onAuthStateChanged(auth, async (firebaseUser) => {
     if (firebaseUser) {
@@ -82,6 +102,15 @@ const login = async () => {
 };
 const logout = async () => { await signOut(auth); };
 
+// --- FONCTIONS DE NAVIGATION ---
+function switchView(viewName) {
+  currentView.value = viewName;
+  if (viewName === 'dashboard') {
+    loadDashboard(); // Rafraichir les données quand on revient sur l'accueil
+  }
+}
+
+// --- GESTION FAVORIS ---
 async function addFavorite() {
   const input = newFavoriteInput.value.trim();
   if (!input) return;
@@ -111,13 +140,12 @@ async function removeFavorite(item) {
   } catch (e) { console.error(e); }
 }
 
-// --- LOGIQUE DASHBOARD ---
+// --- CHARGEMENT DASHBOARD ---
 async function loadDashboard() {
   if (userFavorites.value.length === 0 || !dashStartDate.value || !dashEndDate.value) return;
   isDashboardLoading.value = true;
   try {
     const token = await user.value.getIdToken();
-    // On passe les dates en Query Params
     const url = `${API_BASE_URL}/analysis/favorites-dashboard?start_date=${dashStartDate.value}&end_date=${dashEndDate.value}`;
     const response = await fetch(url, {
       method: 'POST',
@@ -129,12 +157,11 @@ async function loadDashboard() {
   } catch (e) { console.error(e); } finally { isDashboardLoading.value = false; }
 }
 
-// Auto-chargement quand les favoris arrivent
 watch(userFavorites, (newFavs) => {
   if (newFavs && newFavs.length > 0) loadDashboard();
 });
 
-// --- AUTRES FONCTIONS ---
+// --- RACCCOURCIS D'ANALYSE ---
 function analyzeFavorite(item, mode) {
   if (!startDate.value || !endDate.value) { alert("Vérifiez les dates."); }
   if (item.includes('-')) {
@@ -153,69 +180,12 @@ function analyzeFavorite(item, mode) {
   }
 }
 
-const selectedDate = ref('');
-const startDate = ref('');
-const endDate = ref('');
-const selectedNumber = ref('');
-const profileNumber = ref('');
-const triggerTargetNumber = ref('');
-const triggerCompanionNumber = ref('');
-const apiResponse = ref(null);
-const isLoading = ref(false);
-const error = ref(null);
-const lastOperationType = ref('');
-const activeSheetGid = ref(null);
-const showWelcomeMessage = ref(true);
-const viewMode = ref('table');
-
-const isAdmin = computed(() => userRole.value === 'admin');
-const sheetDirectLink = computed(() => {
-  const base = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}`;
-  return activeSheetGid.value ? `${base}/edit#gid=${activeSheetGid.value}` : `${base}/edit`;
-});
-
-const tableHeaders = computed(() => {
-  if (lastOperationType.value.includes('frequency')) return ['#', 'Numéro', 'Apparitions'];
-  if (lastOperationType.value === 'companions') return ['#', 'Compagnon', 'Apparu avec'];
-  if (lastOperationType.value === 'trigger') return ['#', 'N° Déclencheur', 'Fréquence'];
-  if (lastOperationType.value === 'prediction') return ['#', 'Numéro Suivant (Probable)', 'Fréquence']; 
-  if (lastOperationType.value.includes('kanta-rank')) return ['Paire Kanta', 'Apparitions'];
-  return [];
-});
-
-const tableData = computed(() => {
-  if (apiResponse.value?.frequency_ranking) return apiResponse.value.frequency_ranking;
-  if (apiResponse.value?.companion_ranking) return apiResponse.value.companion_ranking;
-  if (apiResponse.value?.trigger_numbers_ranking) return apiResponse.value.trigger_numbers_ranking;
-  if (apiResponse.value?.prediction_ranking) return apiResponse.value.prediction_ranking;
-  if (apiResponse.value?.kanta_pairs) return apiResponse.value.kanta_pairs;
-  if (apiResponse.value?.kanta_pairs_ranking) return apiResponse.value.kanta_pairs_ranking;
-  return [];
-});
-const isTableVisible = computed(() => tableData.value.length > 0);
-
-const chartOptions = {
-  responsive: true, maintainAspectRatio: false,
-  plugins: { legend: { display: false }, title: { display: true, text: 'Analyse Visuelle (Top 20)' } },
-  scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
-};
-const chartData = computed(() => {
-  const data = tableData.value;
-  if (!data || data.length === 0) return null;
-  const limitedData = data.slice(0, 20);
-  let labels = [], counts = [];
-  limitedData.forEach(row => {
-    if (row.pair) labels.push(row.pair);
-    else if (row.number) labels.push(row.number.toString());
-    else if (row.companion) labels.push(row.companion.toString());
-    else labels.push('?');
-    counts.push(row.count);
-  });
-  return { labels, datasets: [{ label: 'Occurrences', backgroundColor: '#007bff', borderRadius: 4, data: counts }] };
-});
-
+// --- APPELS API GÉNÉRAUX ---
 async function callApi(url, method = 'GET') {
-  showWelcomeMessage.value = false; isLoading.value = true; error.value = null; apiResponse.value = null;
+  // IMPORTANT : On bascule automatiquement sur la vue résultats
+  currentView.value = 'results';
+  
+  isLoading.value = true; error.value = null; apiResponse.value = null;
   try {
     const token = await user.value.getIdToken();
     const headers = { 'Authorization': `Bearer ${token}` };
@@ -229,6 +199,7 @@ async function callApi(url, method = 'GET') {
   } catch (err) { error.value = err.message; } finally { isLoading.value = false; }
 }
 
+// --- FONCTIONS WRAPPERS ---
 async function runDataUpdate(endpoint) { lastOperationType.value = 'update'; await callApi(`/collection/${endpoint}`, 'POST'); }
 async function runVisualAnalysis(endpoint) {
   if (!selectedDate.value) { error.value = "Date requise."; return; }
@@ -285,6 +256,53 @@ async function runKantaReport(reportType) {
   if (!selectedDate.value) { error.value = "Date requise."; return; }
   lastOperationType.value = 'kanta-rank'; await callApi(`/analysis/kanta-${reportType}/${selectedDate.value}`);
 }
+
+// --- COMPUTED POUR AFFICHAGE ---
+const isAdmin = computed(() => userRole.value === 'admin');
+const sheetDirectLink = computed(() => {
+  const base = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}`;
+  return activeSheetGid.value ? `${base}/edit#gid=${activeSheetGid.value}` : `${base}/edit`;
+});
+
+const tableHeaders = computed(() => {
+  if (lastOperationType.value.includes('frequency')) return ['#', 'Numéro', 'Apparitions'];
+  if (lastOperationType.value === 'companions') return ['#', 'Compagnon', 'Apparu avec'];
+  if (lastOperationType.value === 'trigger') return ['#', 'N° Déclencheur', 'Fréquence'];
+  if (lastOperationType.value === 'prediction') return ['#', 'Numéro Suivant (Probable)', 'Fréquence']; 
+  if (lastOperationType.value.includes('kanta-rank')) return ['Paire Kanta', 'Apparitions'];
+  return [];
+});
+
+const tableData = computed(() => {
+  if (apiResponse.value?.frequency_ranking) return apiResponse.value.frequency_ranking;
+  if (apiResponse.value?.companion_ranking) return apiResponse.value.companion_ranking;
+  if (apiResponse.value?.trigger_numbers_ranking) return apiResponse.value.trigger_numbers_ranking;
+  if (apiResponse.value?.prediction_ranking) return apiResponse.value.prediction_ranking;
+  if (apiResponse.value?.kanta_pairs) return apiResponse.value.kanta_pairs;
+  if (apiResponse.value?.kanta_pairs_ranking) return apiResponse.value.kanta_pairs_ranking;
+  return [];
+});
+const isTableVisible = computed(() => tableData.value.length > 0);
+
+const chartOptions = {
+  responsive: true, maintainAspectRatio: false,
+  plugins: { legend: { display: false }, title: { display: true, text: 'Analyse Visuelle (Top 20)' } },
+  scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+};
+const chartData = computed(() => {
+  const data = tableData.value;
+  if (!data || data.length === 0) return null;
+  const limitedData = data.slice(0, 20);
+  let labels = [], counts = [];
+  limitedData.forEach(row => {
+    if (row.pair) labels.push(row.pair);
+    else if (row.number) labels.push(row.number.toString());
+    else if (row.companion) labels.push(row.companion.toString());
+    else labels.push('?');
+    counts.push(row.count);
+  });
+  return { labels, datasets: [{ label: 'Occurrences', backgroundColor: '#007bff', borderRadius: 4, data: counts }] };
+});
 </script>
 
 <template>
@@ -310,7 +328,24 @@ async function runKantaReport(reportType) {
       </div>
     </header>
 
+    <!-- NOUVELLE BARRE DE NAVIGATION (ONGLETS) -->
+    <nav class="main-nav">
+      <button 
+        @click="switchView('dashboard')" 
+        :class="{ active: currentView === 'dashboard' }"
+        class="nav-item">
+        🏠 Mon Tableau de Bord
+      </button>
+      <button 
+        @click="switchView('results')" 
+        :class="{ active: currentView === 'results' }"
+        class="nav-item">
+        📊 Résultats d'Analyse
+      </button>
+    </nav>
+
     <div class="main-layout">
+      <!-- COLONNE GAUCHE (CONTROLES) - TOUJOURS VISIBLE -->
       <div class="controls-column">
         <section v-if="isAdmin" class="card data-update">
           <h2>Maintenance (Admin)</h2>
@@ -399,9 +434,11 @@ async function runKantaReport(reportType) {
         </section>
       </div>
 
+      <!-- COLONNE DROITE (CONTENU DYNAMIQUE SELON L'ONGLET) -->
       <div class="results-column">
-        <!-- NOUVEAU TABLEAU DE BORD ACCUEIL -->
-        <div v-if="showWelcomeMessage && userFavorites.length > 0" class="personal-dashboard">
+        
+        <!-- VUE 1 : DASHBOARD PERSONNEL -->
+        <div v-if="currentView === 'dashboard'" class="personal-dashboard">
             <div class="dash-header">
               <h3>👋 Tableau de Bord Personnalisé</h3>
               <div class="date-selectors">
@@ -412,7 +449,11 @@ async function runKantaReport(reportType) {
               </div>
             </div>
 
-            <div v-if="isDashboardLoading" class="loader">Analyse de vos favoris en cours...</div>
+            <div v-if="userFavorites.length === 0" class="empty-dashboard">
+               <p>👈 Ajoutez des numéros "Favoris" dans la colonne de gauche pour activer votre tableau de bord.</p>
+            </div>
+
+            <div v-else-if="isDashboardLoading" class="loader">Analyse de vos favoris en cours...</div>
             
             <div v-else-if="dashboardData" class="dash-grid">
               <div v-for="stat in dashboardData.dashboard_data" :key="stat.item" class="dash-card" :class="{ 'is-hot': stat.status.includes('🔥') }">
@@ -429,7 +470,6 @@ async function runKantaReport(reportType) {
                     <span>Meilleur Ami (Sort avec):</span>
                     <strong>{{ stat.best_companion }}</strong>
                   </div>
-                  <!-- NOUVELLE LIGNE DECLENCHEUR -->
                   <div class="detail-row" v-if="stat.frequency > 0">
                     <span>⚡ Déclencheur (Appelé par):</span>
                     <strong>{{ stat.best_trigger }}</strong>
@@ -444,19 +484,18 @@ async function runKantaReport(reportType) {
                 </div>
               </div>
             </div>
-            <button @click="showWelcomeMessage = false" class="close-welcome-link">Accéder aux rapports détaillés ↓</button>
         </div>
 
-        <div v-else-if="showWelcomeMessage" class="welcome-message">
-           <h3>Bienvenue !</h3>
-           <p>Ajoutez des favoris à gauche pour voir votre tableau de bord.</p>
-           <button @click="showWelcomeMessage = false" class="close-welcome">OK</button>
-        </div>
-
-        <section v-else class="card results-card">
-          <h2>Résultats</h2>
+        <!-- VUE 2 : RÉSULTATS D'ANALYSE -->
+        <section v-else-if="currentView === 'results'" class="card results-card">
+          <h2>Résultats d'Analyse</h2>
+          
           <div v-if="isLoading" class="loader">Chargement...</div>
           <div v-if="error" class="error-box">{{ error }}</div>
+          
+          <div v-if="!isLoading && !apiResponse && !error" class="empty-state">
+            <p>Sélectionnez une analyse à gauche pour voir les résultats ici.</p>
+          </div>
             
           <div v-if="apiResponse">
             <div v-if="apiResponse.message || apiResponse.analysis_period" class="success-box large">
@@ -498,6 +537,33 @@ async function runKantaReport(reportType) {
 </template>
 
 <style scoped>
+  /* NAVIGATION BAR (NOUVEAU STYLE) */
+  .main-nav {
+    display: flex;
+    justify-content: center;
+    gap: 2rem;
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #e0e0e0;
+  }
+  .nav-item {
+    background: none;
+    border: none;
+    font-size: 1.2rem;
+    font-weight: bold;
+    color: #666;
+    padding: 0.8rem 1.5rem;
+    cursor: pointer;
+    border-bottom: 3px solid transparent;
+    transition: all 0.3s;
+    width: auto; /* Override general button style */
+  }
+  .nav-item:hover { color: #007bff; background-color: #f8f9fa; border-radius: 5px 5px 0 0; }
+  .nav-item.active {
+    color: #007bff;
+    border-bottom: 3px solid #007bff;
+  }
+
   /* STYLES GENERAUX */
   .loading-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; font-size: 1.5rem; color: #666; }
   .login-wrapper { display: flex; align-items: center; justify-content: center; min-height: 100vh; background-color: #f0f2f5; }
@@ -566,7 +632,6 @@ async function runKantaReport(reportType) {
   .dash-actions { margin-top: 1rem; text-align: center; }
   .dash-act-btn { background: none; border: 1px solid #007bff; color: #007bff; padding: 0.3rem 0.8rem; font-size: 0.8rem; border-radius: 20px; cursor: pointer; width: 100%; }
   .dash-act-btn:hover { background: #007bff; color: white; }
-  .close-welcome-link { display: block; width: 100%; text-align: center; margin-top: 2rem; background: none; border: none; color: #888; text-decoration: underline; cursor: pointer; }
-  .welcome-message { background-color: #e3f2fd; color: #1e88e5; border: 1px solid #90caf9; padding: 1.5rem; border-radius: 8px; margin-bottom: 2rem; }
-  .close-welcome { display: block; width: auto; margin-top: 1rem; padding: 0.6rem 1.2rem; background-color: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
+  .empty-state { text-align: center; padding: 3rem; color: #999; font-style: italic; font-size: 1.1rem; }
+  .empty-dashboard { text-align: center; padding: 2rem; color: #666; background: #fff; border-radius: 8px; }
 </style>
