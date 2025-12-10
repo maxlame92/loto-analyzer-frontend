@@ -1,4 +1,4 @@
-<script setup>
+a<script setup>
 import { ref, onMounted, computed, watch } from 'vue';
 import { auth, db } from './firebase';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebase/auth";
@@ -348,7 +348,7 @@ const chartData = computed(() => {
           <input type="number" v-model="triggerTargetNumber" placeholder="Cible (ex: 18)" />
           <input type="number" v-model="triggerCompanionNumber" placeholder="Compagnon (Optionnel)" />
           <button @click="runTriggerAnalysis" :disabled="isLoading || !startDate || !endDate || !triggerTargetNumber">Trouver Déclencheurs ⚡</button>
-          <hr />
+          <hr />nhjkm
           <div class="button-group-horizontal">
              <button @click="runKantaAnalysis('kanta-highlight-day')">Surlign. Kanta J</button>
              <button @click="runKantaAnalysis('kanta-highlight-week')">Surlign. Kanta S</button>
