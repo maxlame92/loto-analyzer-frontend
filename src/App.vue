@@ -1,4 +1,4 @@
-<!-- app.vue (Version 31.0 - Analyse Expert & Liste Résultats) -->
+<!-- app.vue (Version 33.0 - Profil Jour avec Dates Précises) -->
 <template>
   <div id="app" class="app-container">
     <div v-if="loadingGlobal" class="loading-overlay"><div class="loader"></div><p>Chargement...</p></div>
@@ -36,9 +36,9 @@
               </div>
             </div>
           </div>
-          <!-- HABITUDES -->
-          <div class="control-group" style="background-color: #f0f4f8; border: 1px solid #d1d9e6;">
-            <h3 style="color: #2c3e50;">📅 Habitudes & Tendances</h3>
+          <!-- PROFIL JOUR -->
+          <div class="control-group" style="background-color: #e8f5e9; border: 1px solid #c8e6c9;">
+            <h3 style="color: #2e7d32;">📅 Profil du Jour</h3>
             <div class="input-group">
               <label>Jour :</label>
               <select v-model="habitDayIndex">
@@ -51,14 +51,17 @@
                 <option value="">Toute la journée</option><option value="07H00">07H00</option><option value="10H00">10H00</option><option value="13H00">13H00</option><option value="16H00">16H00</option><option value="19H00">19H00</option><option value="21H00">21H00</option><option value="22H00">22H00</option><option value="23H00">23H00</option>
               </select>
             </div>
+            <!-- SELECTION DATES -->
             <div class="input-group">
-              <label>Période :</label>
-              <select v-model="habitPeriod">
-                <option value="7">1 Semaine</option><option value="14">2 Semaines</option><option value="30">1 Mois</option><option value="60">2 Mois</option><option value="90">3 Mois</option><option value="180">6 Mois</option><option value="365">1 An</option>
-              </select>
+              <label>Période d'analyse :</label>
+              <div class="date-row" style="display:flex; gap:5px;">
+                <input type="date" v-model="habitStart" title="Début">
+                <input type="date" v-model="habitEnd" title="Fin">
+              </div>
             </div>
-            <button @click="analyzeHabits" class="action-btn purple-btn">🕵️ Analyser les Habitudes</button>
+            <button @click="analyzeHabits" class="action-btn purple-btn">Générer le Profil</button>
           </div>
+          <!-- AUTRES FONCTIONS -->
           <div class="control-group">
             <h3>Semaine & Fréquence</h3>
             <input type="date" v-model="selectedDate" class="date-picker" />
@@ -113,8 +116,10 @@
                 </table>
               </div>
               <div class="ai-insights">
-                <div v-if="apiResponse.ai_strategic_analysis" class="ai-box strategy"><h4>🧠 Expert IA</h4><p>{{ apiResponse.ai_strategic_analysis }}</p></div>
+                <div v-if="apiResponse.ai_strategic_analysis" class="ai-box strategy"><h4>🧠 Analyse Expert</h4><p>{{ apiResponse.ai_strategic_analysis }}</p></div>
                 <div v-if="apiResponse.ai_strategic_profile" class="ai-box profile"><h4>🧠 Profil</h4><p>{{ apiResponse.ai_strategic_profile }}</p></div>
+                <div v-if="apiResponse.ai_sequence_analysis" class="ai-box sequence"><h4>🧬 Suites</h4><p>{{ apiResponse.ai_sequence_analysis }}</p></div>
+                <div v-if="apiResponse.ai_trigger_analysis" class="ai-box trigger"><h4>⚡ Déclencheurs</h4><p>{{ apiResponse.ai_trigger_analysis }}</p></div>
                 <div v-if="apiResponse.ai_prediction_analysis" class="ai-box prediction"><h4>🔮 Prédiction</h4><p>{{ apiResponse.ai_prediction_analysis }}</p></div>
               </div>
             </div>
@@ -139,7 +144,8 @@ const currentTab = ref('dashboard'); const error = ref(null); const apiResponse 
 const favoritesList = ref([]); const newFavorite = ref(""); const dashboardData = ref({ dashboard_data: [] }); const dashboardLoading = ref(false); const dashStart = ref("2025-01-01"); const dashEnd = ref(new Date().toISOString().substr(0, 10));
 const selectedDate = ref(new Date().toISOString().substr(0, 10)); const startDate = ref("2025-01-01"); const endDate = ref(new Date().toISOString().substr(0, 10));
 const companionNumber = ref(''); const profileNumber = ref(''); const triggerTarget = ref(''); const triggerCompanion = ref(''); const prophetObserved = ref(''); const prophetCompanion = ref(''); const multiProphetInput = ref('');
-const habitDayIndex = ref('0'); const habitTime = ref(''); const habitPeriod = ref('365');
+const habitDayIndex = ref('0'); const habitTime = ref(''); 
+const habitStart = ref("2025-01-01"); const habitEnd = ref(new Date().toISOString().substr(0, 10));
 
 onMounted(() => {
   const savedFavs = localStorage.getItem('lotoFavorites'); if (savedFavs) favoritesList.value = JSON.parse(savedFavs);
@@ -170,7 +176,7 @@ async function callApi(ep, m='GET', b=null) {
 }
 
 const getDashboard = () => callApi(`/analysis/favorites-dashboard?start_date=${dashStart.value}&end_date=${dashEnd.value}`, 'POST', favoritesList.value);
-const analyzeHabits = () => callApi(`/analysis/day-specific-profile?day_index=${habitDayIndex.value}&days_count=${habitPeriod.value}${habitTime.value?'&time_slot='+habitTime.value:''}`);
+const analyzeHabits = () => callApi(`/analysis/day-specific-profile?day_index=${habitDayIndex.value}&start_date=${habitStart.value}&end_date=${habitEnd.value}${habitTime.value?'&time_slot='+habitTime.value:''}`);
 const triggerUpdate = () => callApi('/collection/update-recent-weeks', 'POST');
 const triggerRebuild = () => { if(confirm('Sûr?')) callApi('/collection/start-full-rebuild', 'POST'); };
 const highlightDay = () => callApi(`/analysis/highlight-day/${selectedDate.value}`, 'POST');
@@ -191,9 +197,9 @@ const analyzeFavorite = (i) => { currentTab.value='analysis'; if(i.includes('-')
 
 const getHeaderLabel = (i) => {
   const r = apiResponse.value;
-  if(r.habits) return i===1?"Numéro Habitué":i===2?"Déclencheur":i===3?"Compagnon":"";
-  if(r.prediction_ranking) return i===1?"Suivant Probable":i===2?"Score":i===3?"":"";
-  return i===1?"Numéro":i===2?"Fréquence":i===3?"":"";
+  if(r.habits) return i===1?"Numéro":i===2?"Déclencheur":i===3?"Compagnon";
+  if(r.prediction_ranking) return i===1?"Suivant Probable":i===2?"Score":i===3?"";
+  return i===1?"Numéro":i===2?"Fréquence":i===3?"";
 }
 const getTableData = () => {
   const r = apiResponse.value;
