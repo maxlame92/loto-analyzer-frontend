@@ -1,4 +1,4 @@
-<!-- app.vue (Version 33.0 - Profil Jour avec Dates Précises) -->
+<!-- app.vue (Version 33.1 - Corrigée Syntaxe Ternaire) -->
 <template>
   <div id="app" class="app-container">
     <div v-if="loadingGlobal" class="loading-overlay"><div class="loader"></div><p>Chargement...</p></div>
@@ -51,9 +51,8 @@
                 <option value="">Toute la journée</option><option value="07H00">07H00</option><option value="10H00">10H00</option><option value="13H00">13H00</option><option value="16H00">16H00</option><option value="19H00">19H00</option><option value="21H00">21H00</option><option value="22H00">22H00</option><option value="23H00">23H00</option>
               </select>
             </div>
-            <!-- SELECTION DATES -->
             <div class="input-group">
-              <label>Période d'analyse :</label>
+              <label>Période :</label>
               <div class="date-row" style="display:flex; gap:5px;">
                 <input type="date" v-model="habitStart" title="Début">
                 <input type="date" v-model="habitEnd" title="Fin">
@@ -61,7 +60,7 @@
             </div>
             <button @click="analyzeHabits" class="action-btn purple-btn">Générer le Profil</button>
           </div>
-          <!-- AUTRES FONCTIONS -->
+          <!-- AUTRES -->
           <div class="control-group">
             <h3>Semaine & Fréquence</h3>
             <input type="date" v-model="selectedDate" class="date-picker" />
