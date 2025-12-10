@@ -1,4 +1,4 @@
-<!-- app.vue (Version 29.0 - Avec Habitudes Périodiques) -->
+<!-- app.vue (Version Corrigée - Syntaxe Validée) -->
 <template>
   <div id="app" class="app-container">
     
@@ -517,17 +517,16 @@ export default {
       if (r.prediction_ranking) return colIndex === 1 ? "Numéro Suivant (Probable)" : "Fréquence";
       if (r.kanta_pairs_ranking) return colIndex === 1 ? "Paire Kanta" : "Fréquence";
       if (r.kanta_pairs) return colIndex === 1 ? "Paire Présente" : "-";
-      if (r.rankings) return colIndex === 1 ? "Numéro" : "Détails"; // Pour les habitudes
+      if (r.rankings) return colIndex === 1 ? "Numéro" : "Détails";
       return "Donnée";
     },
     getTableData() {
       const r = this.apiResponse;
       const list = r.frequency_ranking || r.companion_ranking || r.trigger_numbers_ranking || r.prediction_ranking || r.kanta_pairs_ranking || r.kanta_pairs || r.rankings || [];
       return list.map(item => {
-        // Gestion générique des colonnes
-        if (item.pair && item.count) return { col1: item.pair, col2: item.count }; // Kanta ranking
-        if (Array.isArray(item)) return { col1: `${item[0]}-${item[1]}`, col2: "Présent" }; // Kanta list
-        if (item.number !== undefined) return { col1: item.number, col2: item.count }; // Standard
+        if (item.pair && item.count) return { col1: item.pair, col2: item.count }; 
+        if (Array.isArray(item)) return { col1: `${item[0]}-${item[1]}`, col2: "Présent" };
+        if (item.number !== undefined) return { col1: item.number, col2: item.count };
         return { col1: "?", col2: "?" };
       });
     }
