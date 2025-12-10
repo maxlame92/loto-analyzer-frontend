@@ -1,4 +1,3 @@
-<!-- app.vue (Version Finale Corrigée - Propre) -->
 <template>
   <div id="app" class="app-container">
     
@@ -358,7 +357,7 @@ export default {
       this.user = currentUser;
       this.loadingGlobal = false;
       if (this.user) {
-        // Chargement favoris (Local Storage pour demo)
+        // Chargement favoris
         const savedFavs = localStorage.getItem('lotoFavorites');
         if (savedFavs) this.favoritesList = JSON.parse(savedFavs);
         this.getDashboard(); // Auto-load
@@ -409,7 +408,6 @@ export default {
       finally { this.dashboardLoading = false; }
     },
     analyzeFavorite(item) {
-      // Pré-remplit les champs et change d'onglet
       this.currentTab = 'analysis';
       if (item.includes('-')) {
         this.triggerTarget = item.split('-')[0];
@@ -435,7 +433,7 @@ export default {
     async getFrequencyRange() { await this.callApi(`/analysis/frequency-by-range?start_date=${this.startDate}&end_date=${this.endDate}`); },
     async getNumberProfile() { if(this.profileNumber) await this.callApi(`/analysis/number-profile?target_number=${this.profileNumber}&start_date=${this.startDate}&end_date=${this.endDate}`); },
     
-    // --- NOUVEAU : HABITUDES & AJOUT ---
+    // --- HABITUDES & AJOUT ---
     async analyzeHabitsAndAdd() {
       if (!this.habitDate) return alert("Date requise.");
       this.loading = true; this.apiResponse = {};
@@ -447,7 +445,7 @@ export default {
         if(!res.ok) { const err=await res.json(); throw new Error(err.detail); }
         const data = await res.json();
 
-        // 1. Affichage
+        // Affichage
         this.apiResponse = {
           message: `Habitudes : ${data.context}`,
           ai_strategic_analysis: data.ai_analysis,
@@ -455,7 +453,7 @@ export default {
         };
         this.currentTab = 'analysis';
 
-        // 2. Ajout Favoris
+        // Ajout Favoris
         let added = 0;
         data.habits.forEach(h => {
           const s = h.number.toString();
