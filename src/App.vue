@@ -1,4 +1,4 @@
-<!-- app.vue (Version Corrigée - Syntaxe Validée) -->
+<!-- app.vue (Version Finale Corrigée - Propre) -->
 <template>
   <div id="app" class="app-container">
     
