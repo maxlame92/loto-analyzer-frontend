@@ -1,4 +1,4 @@
-<!-- app.vue (Version 33.1 - Corrigée Syntaxe Ternaire) -->
+<!-- app.vue (Version 33.2 - Corrigée & Validée) -->
 <template>
   <div id="app" class="app-container">
     <div v-if="loadingGlobal" class="loading-overlay"><div class="loader"></div><p>Chargement...</p></div>
@@ -196,10 +196,23 @@ const analyzeFavorite = (i) => { currentTab.value='analysis'; if(i.includes('-')
 
 const getHeaderLabel = (i) => {
   const r = apiResponse.value;
-  if(r.habits) return i===1?"Numéro":i===2?"Déclencheur":i===3?"Compagnon";
-  if(r.prediction_ranking) return i===1?"Suivant Probable":i===2?"Score":i===3?"";
-  return i===1?"Numéro":i===2?"Fréquence":i===3?"";
+  if(r.habits) {
+    if(i===1) return "Numéro";
+    if(i===2) return "Déclencheur";
+    if(i===3) return "Compagnon";
+    return "";
+  }
+  if(r.prediction_ranking) {
+    if(i===1) return "Suivant Probable";
+    if(i===2) return "Score";
+    return "";
+  }
+  // CAS PAR DEFAUT (Ajouté pour corriger l'erreur de syntaxe)
+  if(i===1) return "Numéro";
+  if(i===2) return "Fréquence";
+  return "";
 }
+
 const getTableData = () => {
   const r = apiResponse.value;
   const l = r.frequency_ranking||r.companion_ranking||r.trigger_numbers_ranking||r.prediction_ranking||r.kanta_pairs_ranking||r.habits||[];
