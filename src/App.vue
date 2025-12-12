@@ -1,501 +1,599 @@
 <script setup>
-import { ref, onMounted, computed, watch } from 'vue';
-import { auth, db } from './firebase';
+import { ref, onMounted, computed } from 'vue';
+// Assurez-vous que './firebase.js' exporte bien `auth`, `db`, et initialise Firebase
+import { auth, db } from './firebase'; 
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebase/auth";
-import { doc, getDoc, setDoc, updateDoc, arrayUnion, arrayRemove } from "firebase/firestore";
-import { Bar } from 'vue-chartjs';
-import { Chart as ChartJS, Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale } from 'chart.js';
+import { doc, getDoc } from "firebase/firestore";
 
-ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale);
+// --- CONFIGURATION GLOBALE ---
+// Remplacez par votre ID Google Sheet trouvé dans l'URL
+const GOOGLE_SHEET_ID = "1HepqMzKcsbKbRsLWwpEOoy5oO9ntK2CgdV7F_ijmjlo"; 
+// URL de votre API Backend (Ex: Render, ou localhost pour le dev)
+const API_BASE_URL = "http://127.0.0.1:8000"; 
 
-const GOOGLE_SHEET_ID = "1HepqMzKcshKbRsLWwpEOOy5oO9ntK2CgdV7F_ijmjIo";
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
-
-const user = ref(null);
-const userRole = ref('');
+// --- STATE DE L'AUTHENTIFICATION ---
+const user = ref(null); // Objet utilisateur Firebase s'il est connecté
+const userRole = ref(''); // 'admin', 'user', ou ''
 const email = ref('');
 const password = ref('');
-const authError = ref('');
-const isAuthReady = ref(false);
-const userFavorites = ref([]); 
-const newFavoriteInput = ref('');
-const currentView = ref('dashboard');
-const dashboardData = ref(null);
-const isDashboardLoading = ref(false);
-const dashStartDate = ref('');
-const dashEndDate = ref('');
-const selectedDate = ref('');
-const startDate = ref('');
-const endDate = ref('');
-const selectedNumber = ref('');
-const profileNumber = ref('');
-const triggerTargetNumber = ref('');
-const triggerCompanionNumber = ref('');
-const predictionNumber = ref('');
-const predictionCompanion = ref('');
-const multiPredictionInput = ref('');
-const apiResponse = ref(null);
-const isLoading = ref(false);
-const error = ref(null);
-const lastOperationType = ref('');
-const activeSheetGid = ref(null);
-const viewMode = ref('table');
+const authError = ref(''); // Message d'erreur de connexion
+const isAuthReady = ref(false); // Pour afficher l'appli une fois Firebase prêt
 
-// --- INITIALISATION ---
+// --- STATE DE L'APPLICATION ET DES ANALYSES ---
+const selectedDate = ref('');      // Date principale pour les analyses (jour/semaine)
+const selectedEndDate = ref('');   // Date de fin pour le Dashboard (période)
+const selectedNumber = ref('');    // Numéro pour analyses Compagnons / Prophète
+const selectedCompanion = ref(''); // Compagnon optionnel pour Prophète
+const favoritesInput = ref('7, 24, 10-90, 45'); // Favoris pour le dashboard (par défaut)
+
+const apiResponse = ref(null);     // Stocke la réponse JSON du backend
+const isLoading = ref(false);      // Indicateur de chargement
+const error = ref(null);           // Message d'erreur d'une requête API
+const lastOperationType = ref(''); // Pour adapter l'affichage du tableau (ex: 'frequency', 'dashboard')
+const activeSheetGid = ref(null);  // GID de l'onglet Google Sheet actif
+const showWelcomeMessage = ref(true); // Contrôle l'affichage initial
+
+// --- INITIALISATION ET AUTH STATE ---
 onMounted(() => {
+  // Définir les dates par défaut pour la sélection
   const today = new Date();
-  const todayStr = today.toISOString().split('T')[0];
-  
-  selectedDate.value = todayStr;
-  endDate.value = todayStr;
-  dashEndDate.value = todayStr; 
+  const lastWeek = new Date();
+  lastWeek.setDate(today.getDate() - 7); // Prend la date d'il y a 7 jours
 
-  // Date de début (Mois précédent pour avoir des données)
-  const oneMonthAgo = new Date();
-  oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
-  const startStr = oneMonthAgo.toISOString().split('T')[0];
-  
-  startDate.value = startStr;
-  dashStartDate.value = startStr; 
+  selectedDate.value = today.toISOString().split('T')[0]; // Format YYYY-MM-DD
+  selectedEndDate.value = today.toISOString().split('T')[0]; // Date de fin par défaut = aujourd'hui
 
+  // Écoute les changements d'état d'authentification Firebase
   onAuthStateChanged(auth, async (firebaseUser) => {
     if (firebaseUser) {
       user.value = firebaseUser;
-      const docRef = doc(db, "users", firebaseUser.uid);
+      // Récupère le rôle de l'utilisateur depuis Firestore
       try {
+        const docRef = doc(db, "users", firebaseUser.uid);
         const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          userRole.value = data.role || 'user';
-          userFavorites.value = data.favorites || []; 
-        } else {
-          userRole.value = 'user';
-          userFavorites.value = [];
-          await setDoc(docRef, { role: 'user', favorites: [] }, { merge: true });
-        }
-      } catch (e) { console.error(e); }
+        userRole.value = docSnap.exists() ? docSnap.data().role : 'user'; // Défaut 'user'
+      } catch (e) {
+        console.error("Erreur lors de la récupération du rôle:", e);
+        userRole.value = 'user'; // Sécurité : assume rôle 'user' en cas d'erreur
+      }
     } else {
-      user.value = null; userRole.value = ''; userFavorites.value = [];
+      user.value = null;
+      userRole.value = '';
     }
-    isAuthReady.value = true;
+    isAuthReady.value = true; // Indique que l'état d'authentification est prêt
   });
 });
 
+// Propriété calculée pour vérifier si l'utilisateur est admin
+const isAdmin = computed(() => userRole.value === 'admin');
+
+// --- FONCTIONS D'AUTHENTIFICATION ---
 const login = async () => {
-  try { authError.value = ''; isLoading.value = true; await signInWithEmailAndPassword(auth, email.value, password.value); } 
-  catch (error) { authError.value = "Email ou mot de passe incorrect."; } finally { isLoading.value = false; }
+  try {
+    authError.value = ''; isLoading.value = true;
+    await signInWithEmailAndPassword(auth, email.value, password.value);
+  } catch (error) { 
+    authError.value = "Email ou mot de passe incorrect."; 
+    console.error("Erreur Login:", error);
+  } finally { isLoading.value = false; }
 };
-const logout = async () => { await signOut(auth); };
 
-function switchView(viewName) {
-  currentView.value = viewName;
-  if (viewName === 'dashboard') loadDashboard();
-}
+const logout = async () => {
+  await signOut(auth);
+  // Reset les states de l'appli lors de la déconnexion
+  user.value = null; userRole.value = ''; activeSheetGid.value = null;
+  apiResponse.value = null; error.value = null; lastOperationType.value = '';
+};
 
-async function addFavorite() {
-  const input = newFavoriteInput.value.trim();
-  if (!input) return;
-  const isSingleNumber = /^[0-9]{1,2}$/.test(input);
-  const isPair = /^[0-9]{1,2}-[0-9]{1,2}$/.test(input);
-  if (!isSingleNumber && !isPair) { alert("Format invalide."); return; }
-  if (userFavorites.value.includes(input)) { newFavoriteInput.value = ''; return; }
+// --- LOGIQUE D'APPEL À L'API BACKEND ---
+async function callApi(endpoint, method = 'GET', body = null) {
+  // Vérifie si l'utilisateur est connecté
+  if (!user.value) { 
+    error.value = "Veuillez vous connecter pour accéder aux analyses."; 
+    return; 
+  }
+  
+  showWelcomeMessage.value = false; // Cache le message de bienvenue
+  isLoading.value = true;           // Affiche le loader
+  error.value = null;               // Réinitialise l'erreur précédente
+  apiResponse.value = null;         // Réinitialise la réponse précédente
+
   try {
-    const userRef = doc(db, "users", user.value.uid);
-    userFavorites.value.push(input); 
-    await setDoc(userRef, { favorites: arrayUnion(input) }, { merge: true }); 
-    newFavoriteInput.value = '';
-  } catch (e) { console.error(e); userFavorites.value = userFavorites.value.filter(item => item !== input); }
-}
+    // Récupère le token JWT pour authentification
+    const token = await user.value.getIdToken(); 
+    const headers = { 
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json' 
+    };
+    
+    const options = { method, headers };
+    if (body) options.body = JSON.stringify(body); // Ajoute le body si nécessaire (POST, PUT etc)
 
-async function removeFavorite(item) {
-  if (!confirm(`Retirer ${item} ?`)) return;
-  try {
-    const userRef = doc(db, "users", user.value.uid);
-    userFavorites.value = userFavorites.value.filter(n => n !== item);
-    await updateDoc(userRef, { favorites: arrayRemove(item) });
-  } catch (e) { console.error(e); }
-}
-
-async function loadDashboard() {
-  if (userFavorites.value.length === 0 || !dashStartDate.value || !dashEndDate.value) return;
-  isDashboardLoading.value = true;
-  try {
-    const token = await user.value.getIdToken();
-    const url = `${API_BASE_URL}/analysis/favorites-dashboard?start_date=${dashStartDate.value}&end_date=${dashEndDate.value}`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(userFavorites.value)
-    });
+    // Appel fetch
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, options);
     const data = await response.json();
-    dashboardData.value = data;
-  } catch (e) { console.error(e); } finally { isDashboardLoading.value = false; }
-}
 
-watch(userFavorites, (newFavs) => { if (newFavs && newFavs.length > 0) loadDashboard(); });
-
-function analyzeFavorite(item, mode) {
-  if (!startDate.value || !endDate.value) { alert("Vérifiez les dates."); }
-  if (item.includes('-')) {
-    const parts = item.split('-');
-    triggerTargetNumber.value = parts[0]; triggerCompanionNumber.value = parts[1];
-    runTriggerAnalysis(); 
-  } else {
-    if (mode === 'companion') {
-      selectedNumber.value = item;
-      if (!selectedDate.value) { alert("Date requise."); return; }
-      runReport('companions');
-    } else if (mode === 'trigger') {
-      triggerTargetNumber.value = item; triggerCompanionNumber.value = ''; 
-      runTriggerAnalysis();
-    }
+    // Gestion des erreurs HTTP (4xx, 5xx)
+    if (!response.ok) throw new Error(data.detail || `Erreur serveur ${response.status}`);
+    
+    // Succès : Stocke la réponse et le GID si présent
+    apiResponse.value = data;
+    if (data.worksheet_gid) activeSheetGid.value = data.worksheet_gid;
+    
+  } catch (err) {
+    error.value = err.message; // Affiche l'erreur utilisateur
+    console.error(`Erreur API (${endpoint}):`, err);
+    // Garde le sheet visible si possible même en cas d'erreur d'analyse
+  } finally {
+    isLoading.value = false; // Cache le loader
   }
 }
 
-async function callApi(url, method = 'GET') {
-  currentView.value = 'results';
-  isLoading.value = true; error.value = null; apiResponse.value = null;
-  try {
-    const token = await user.value.getIdToken();
-    const headers = { 'Authorization': `Bearer ${token}` };
-    const fullUrl = `${API_BASE_URL}${url}`;
-    const response = await fetch(fullUrl, { method, headers });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || `Erreur ${response.status}`);
-    apiResponse.value = data;
-    if (data.worksheet_gid) activeSheetGid.value = data.worksheet_gid;
-    viewMode.value = 'table';
-  } catch (err) { error.value = err.message; } finally { isLoading.value = false; }
-}
+// --- FONCTIONS SPÉCIFIQUES POUR CHAQUE ACTION ---
 
-async function runDataUpdate(endpoint) { lastOperationType.value = 'update'; await callApi(`/collection/${endpoint}`, 'POST'); }
-async function runVisualAnalysis(endpoint) { if (!selectedDate.value) { error.value = "Date requise."; return; } lastOperationType.value = 'visual'; await callApi(`/analysis/${endpoint}/${selectedDate.value}`, 'POST'); }
-async function runReport(reportType) {
-  if (!selectedDate.value) { error.value = "Date requise."; return; }
-  let url = '';
-  if (reportType === 'weekly-frequency') { lastOperationType.value = 'weekly-frequency'; url = `/analysis/weekly-frequency/${selectedDate.value}`; }
-  else if (reportType === 'daily-frequency') { lastOperationType.value = 'daily-frequency'; url = `/analysis/daily-frequency/${selectedDate.value}`; }
-  else if (reportType === 'companions') { if (!selectedNumber.value) { error.value = "Numéro requis."; return; } lastOperationType.value = 'companions'; url = `/analysis/companions/${selectedNumber.value}?week_date_str=${selectedDate.value}`; }
-  await callApi(url);
-}
-async function runRangeAnalysis() { if (!startDate.value || !endDate.value) { error.value = "Dates requises."; return; } lastOperationType.value = 'frequency'; await callApi(`/analysis/frequency-by-range?start_date=${startDate.value}&end_date=${endDate.value}`); }
-async function runProfileAnalysis() { if (!startDate.value || !endDate.value || !profileNumber.value) { error.value = "Infos requises."; return; } lastOperationType.value = 'profile'; await callApi(`/analysis/number-profile?target_number=${profileNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`); }
-async function runSequenceAnalysis() { if (!startDate.value || !endDate.value) { error.value = "Période requise."; return; } lastOperationType.value = 'sequence'; await callApi(`/analysis/sequence-detection?start_date=${startDate.value}&end_date=${endDate.value}`); }
-async function runTriggerAnalysis() {
-  if (!startDate.value || !endDate.value || !triggerTargetNumber.value) { error.value = "Infos requises."; return; }
-  lastOperationType.value = 'trigger';
-  let url = `/analysis/trigger-numbers?target_number=${triggerTargetNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`;
-  if (triggerCompanionNumber.value) url += `&companion_number=${triggerCompanionNumber.value}`;
-  await callApi(url);
-}
-async function runPredictionAnalysis() {
-  if (!startDate.value || !endDate.value || !predictionNumber.value) { error.value = "Infos requises."; return; }
-  lastOperationType.value = 'prediction';
-  let url = `/analysis/predict-next?observed_number=${predictionNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`;
-  if (predictionCompanion.value) url += `&observed_companion=${predictionCompanion.value}`;
-  await callApi(url);
-}
-async function runMultiPrediction() {
-  if (!startDate.value || !endDate.value || !multiPredictionInput.value) { error.value = "Infos requises."; return; }
-  const cleanInput = multiPredictionInput.value.replace(/[\s-]+/g, ',');
-  lastOperationType.value = 'prediction';
-  await callApi(`/analysis/multi-prediction?numbers_str=${cleanInput}&start_date=${startDate.value}&end_date=${endDate.value}`);
-}
-async function runKantaAnalysis(endpoint) { if (!selectedDate.value) { error.value = "Date requise."; return; } lastOperationType.value = 'visual'; await callApi(`/analysis/${endpoint}/${selectedDate.value}`, 'POST'); }
-async function runKantaReport(reportType) { if (!selectedDate.value) { error.value = "Date requise."; return; } lastOperationType.value = 'kanta-rank'; await callApi(`/analysis/kanta-${reportType}/${selectedDate.value}`); }
+// 1. ADMIN : Lancement des mises à jour
+const runUpdate = (type) => {
+  lastOperationType.value = 'admin';
+  callApi(`/collection/${type}`, 'POST');
+};
 
-const isAdmin = computed(() => userRole.value === 'admin');
-const sheetDirectLink = computed(() => {
+// 2. ANALYSE VISUELLE (Modification du Google Sheet)
+const runVisual = (type) => {
+  if (!selectedDate.value) { error.value = "Veuillez sélectionner une date."; return; }
+  lastOperationType.value = 'visual'; 
+  // Les types sont 'highlight-day' et 'kanta-highlight-day'
+  callApi(`/analysis/${type}/${selectedDate.value}`, 'POST');
+};
+
+// 3. RAPPORTS CLASSIQUES & COMPAGNONS
+const runReport = (type) => {
+  if (!selectedDate.value) { error.value = "Veuillez sélectionner une date."; return; }
+  lastOperationType.value = type;
+  
+  if (type === 'companions') {
+    if (!selectedNumber.value) { error.value = "Numéro cible requis pour l'analyse des compagnons."; return; }
+    // Appel API avec paramètres pour numéro et date de semaine
+    callApi(`/analysis/companions/${selectedNumber.value}?week_date_str=${selectedDate.value}`);
+  } else {
+    // Appel API pour fréquence journalière ou hebdomadaire
+    callApi(`/analysis/${type}/${selectedDate.value}`);
+  }
+};
+
+// 4. DASHBOARD PERSONNEL
+const runDashboard = () => {
+  if (!favoritesInput.value) { error.value = "Veuillez entrer vos numéros favoris."; return; }
+  
+  // Nettoie et formate les favoris (ex: "7, 10-20, 30" -> ['7', '10-20', '30'])
+  const favoritesList = favoritesInput.value.split(',')
+    .map(s => s.trim()).filter(s => s); // Filtre les entrées vides
+
+  // Définit la période d'analyse pour le dashboard (par défaut 30 jours avant la date sélectionnée)
+  const endDateObj = new Date(selectedDate.value);
+  const startDateObj = new Date(endDateObj);
+  startDateObj.setDate(endDateObj.getDate() - 30); // Analyse sur les 30 derniers jours
+  
+  const startDateStr = startDateObj.toISOString().split('T')[0];
+  const endDateStr = selectedDate.value;
+
+  lastOperationType.value = 'dashboard';
+  // Appel POST avec le corps (liste des favoris) et les dates en query params
+  callApi(
+    `/analysis/favorites-dashboard?start_date=${startDateStr}&end_date=${endDateStr}`, 
+    'POST', 
+    favoritesList
+  );
+};
+
+// 5. LE PROPHÈTE (Prédiction IA)
+const runProphet = () => {
+  if (!selectedNumber.value) { error.value = "Numéro observé requis pour la prédiction."; return; }
+  
+  // Période d'analyse pour le prophète (fixe ou dynamique)
+  // Ici, on utilise une période fixe depuis début 2023 pour plus de données historiques
+  const fixedStartDate = new Date(2023, 0, 1); // 1er Janvier 2023
+  const endDateObj = new Date(selectedDate.value); // La date sélectionnée sert de fin
+
+  const startDateStr = fixedStartDate.toISOString().split('T')[0];
+  const endDateStr = endDateObj.toISOString().split('T')[0];
+
+  lastOperationType.value = 'prophet';
+  
+  // Construction de l'URL avec paramètres optionnels
+  let url = `/analysis/predict-next?observed_number=${selectedNumber.value}&start_date=${startDateStr}&end_date=${endDateStr}`;
+  if (selectedCompanion.value && selectedCompanion.value > 0) { // Vérifie si un compagnon valide est entré
+    url += `&observed_companion=${selectedCompanion.value}`;
+  }
+  
+  callApi(url);
+};
+
+// --- PROPRIÉTÉS CALCULÉES POUR L'INTERFACE ---
+
+// URL de l'iframe Google Sheets (dynamique selon le GID)
+const sheetEmbedUrl = computed(() => {
   const base = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}`;
-  return activeSheetGid.value ? `${base}/edit#gid=${activeSheetGid.value}` : `${base}/edit`;
+  // Ajoute le gid seulement si on a un onglet actif
+  const gidParam = activeSheetGid.value ? `&gid=${activeSheetGid.value}` : ''; 
+  return `${base}/htmlembed?widget=true&headers=false${gidParam}`;
 });
+
+// Lien direct vers l'onglet actif dans Google Sheets
+const sheetDirectLink = computed(() => 
+  `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/edit#gid=${activeSheetGid.value || 0}` // Gid 0 = Feuille principale si pas d'onglet actif
+);
+
+// Détermine les en-têtes du tableau en fonction de la dernière opération
 const tableHeaders = computed(() => {
-  if (lastOperationType.value.includes('frequency')) return ['#', 'Numéro', 'Apparitions'];
-  if (lastOperationType.value === 'companions') return ['#', 'Compagnon', 'Apparu avec'];
-  if (lastOperationType.value === 'trigger') return ['#', 'N° Déclencheur', 'Fréquence'];
-  if (lastOperationType.value === 'prediction') return ['#', 'Numéro Suivant (Probable)', 'Fréquence']; 
-  if (lastOperationType.value.includes('kanta-rank')) return ['Paire Kanta', 'Apparitions'];
-  return [];
+  if (lastOperationType.value === 'dashboard') return ['Item', 'Statut', 'Freq.', 'Meilleur Compagnon', 'Meilleur Déclencheur'];
+  if (lastOperationType.value === 'prophet') return ['#', 'Numéro Prédit', 'Force'];
+  if (lastOperationType.value.includes('kanta') && apiResponse.value?.kanta_pairs_ranking) return ['#', 'Paire Kanta', 'Apparitions'];
+  if (lastOperationType.value === 'companions') return ['#', 'Compagnon', 'Sorties ensemble'];
+  // Par défaut (Fréquence)
+  return ['#', 'Numéro', 'Apparitions']; 
 });
+
+// Prépare les données pour le tableau en fonction de la réponse API et du type d'opération
 const tableData = computed(() => {
-  if (apiResponse.value?.frequency_ranking) return apiResponse.value.frequency_ranking;
-  if (apiResponse.value?.companion_ranking) return apiResponse.value.companion_ranking;
-  if (apiResponse.value?.trigger_numbers_ranking) return apiResponse.value.trigger_numbers_ranking;
-  if (apiResponse.value?.prediction_ranking) return apiResponse.value.prediction_ranking;
-  if (apiResponse.value?.kanta_pairs) return apiResponse.value.kanta_pairs;
-  if (apiResponse.value?.kanta_pairs_ranking) return apiResponse.value.kanta_pairs_ranking;
-  return [];
+  const data = apiResponse.value;
+  if (!data) return []; // Si pas de réponse, tableau vide
+  
+  if (lastOperationType.value === 'dashboard') return data.dashboard_data;
+  if (lastOperationType.value === 'prophet') return data.prediction_ranking;
+  if (lastOperationType.value.includes('kanta') && data.kanta_pairs_ranking) return data.kanta_pairs_ranking;
+  if (data.frequency_ranking) return data.frequency_ranking; // Fréquence journalière ou hebdo
+  if (data.companion_ranking) return data.companion_ranking;
+  
+  return []; // Retour par défaut si rien ne correspond
 });
-const isTableVisible = computed(() => tableData.value.length > 0);
-const chartOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, title: { display: true, text: 'Analyse Visuelle (Top 20)' } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } };
-const chartData = computed(() => {
-  const data = tableData.value;
-  if (!data || data.length === 0) return null;
-  const limitedData = data.slice(0, 20);
-  let labels = [], counts = [];
-  limitedData.forEach(row => {
-    if (row.pair) labels.push(row.pair);
-    else if (row.number) labels.push(row.number.toString());
-    else if (row.companion) labels.push(row.companion.toString());
-    else labels.push('?');
-    counts.push(row.count);
-  });
-  return { labels, datasets: [{ label: 'Occurrences', backgroundColor: '#007bff', borderRadius: 4, data: counts }] };
+
+// Extrait le texte de l'analyse IA depuis la réponse API
+const aiAnalysisText = computed(() => {
+  const r = apiResponse.value;
+  if (!r) return null;
+  // Tente de récupérer le texte d'analyse depuis différentes clés possibles
+  return r.ai_strategic_analysis || r.ai_strategic_profile || r.ai_prediction_analysis || r.ai_trigger_analysis;
 });
+
 </script>
 
 <template>
-  <div v-if="!isAuthReady" class="loading-screen"><p>Chargement...</p></div>
+  <!-- ÉCRAN DE CHARGEMENT INITIAL -->
+  <div v-if="!isAuthReady" class="loading-screen">
+    <div class="spinner"></div>
+    <p>Chargement du Guide des Fourcaster...</p>
+  </div>
+
+  <!-- ÉCRAN DE CONNEXION -->
   <div v-else-if="!user" class="login-wrapper">
     <div class="login-box">
-      <h2>LE GUIDE DES FOURCASTER</h2>
+      <h1>🔐 ACCÈS FOURCASTER</h1>
       <form @submit.prevent="login">
-        <div class="input-group"><label>Email</label><input type="email" v-model="email" required /></div>
-        <div class="input-group"><label>Mot de passe</label><input type="password" v-model="password" required /></div>
-        <button type="submit" class="login-button" :disabled="isLoading">{{ isLoading ? '...' : 'Connexion' }}</button>
-        <p v-if="authError" class="auth-error">{{ authError }}</p>
+        <div class="input-group">
+          <label>Email</label>
+          <input type="email" v-model="email" required placeholder="votre@email.com" />
+        </div>
+        <div class="input-group">
+          <label>Mot de passe</label>
+          <input type="password" v-model="password" required placeholder="••••••••" />
+        </div>
+        <button type="submit" class="primary-btn" :disabled="isLoading">
+          {{ isLoading ? 'Vérification...' : 'Entrer' }}
+        </button>
+        <p v-if="authError" class="error-msg">{{ authError }}</p>
       </form>
     </div>
   </div>
 
-  <main v-else class="dashboard">
-    <header>
-      <h1>LE GUIDE DES FOURCASTER</h1>
-      <div class="user-info">
-        <span>Connecté : <strong>{{ user.email }}</strong></span>
-        <button @click="logout" class="logout-button">Déconnexion</button>
+  <!-- DASHBOARD PRINCIPAL (Utilisateur connecté) -->
+  <main v-else class="app-layout">
+    
+    <!-- Header -->
+    <header class="app-header">
+      <div class="logo">🎱 LE GUIDE DES FOURCASTER</div>
+      <div class="user-controls">
+        <span class="desktop-only">Connecté : {{ user.email }} ({{ userRole }})</span>
+        <button @click="logout" class="logout-btn">Déconnexion</button>
       </div>
     </header>
 
-    <nav class="main-nav">
-      <button @click="switchView('dashboard')" :class="{ active: currentView === 'dashboard' }" class="nav-item">🏠 Mon Tableau de Bord</button>
-      <button @click="switchView('results')" :class="{ active: currentView === 'results' }" class="nav-item">📊 Résultats d'Analyse</button>
-    </nav>
-
-    <div class="main-layout">
-      <div class="controls-column">
-        <section v-if="isAdmin" class="card data-update">
-          <h2>Maintenance (Admin)</h2>
-          <div class="button-group-horizontal">
-            <button @click="runDataUpdate('update-recent-weeks')" :disabled="isLoading">Mise à Jour Rapide</button>
-            <button @click="runDataUpdate('start-full-rebuild')" :disabled="isLoading" class="danger">Reconstruction</button>
+    <!-- Grille principale : Colonnes Contrôles + Résultats -->
+    <div class="content-grid">
+      
+      <!-- COLONNE GAUCHE : CONTROLES -->
+      <aside class="controls-sidebar">
+        
+        <!-- Section Admin -->
+        <div v-if="isAdmin" class="control-card admin-card">
+          <h3>🛠️ Maintenance (Admin)</h3>
+          <div class="btn-row">
+            <button @click="runUpdate('update-recent-weeks')" :disabled="isLoading">Mise à Jour Rapide</button>
+            <button @click="runUpdate('start-full-rebuild')" class="danger-btn" :disabled="isLoading">Full Rebuild</button>
           </div>
-        </section>
-
-        <section class="card">
-          <h2>⭐ Mes Numéros Favoris</h2>
-          <div class="favorites-input-group">
-            <input type="text" v-model="newFavoriteInput" placeholder="Ex: 7 ou 12-45" @keyup.enter="addFavorite"/>
-            <button @click="addFavorite" :disabled="!newFavoriteInput" class="btn-small">Ajouter</button>
-          </div>
-          <div v-if="userFavorites.length > 0" class="favorites-list">
-            <div v-for="item in userFavorites" :key="item" class="favorite-chip">
-              <span class="fav-label">{{ item }}</span>
-              <div class="fav-actions">
-                <button v-if="!item.includes('-')" @click="analyzeFavorite(item, 'companion')" class="icon-btn" title="Compagnons">👥</button>
-                <button @click="analyzeFavorite(item, 'trigger')" class="icon-btn" title="Déclencheurs">⚡</button>
-              </div>
-              <span @click="removeFavorite(item)" class="fav-delete">×</span>
-            </div>
-          </div>
-          <p v-else class="empty-msg">Ajoutez vos numéros fétiches.</p>
-        </section>
-
-        <section class="card">
-          <h2>Analyse par Semaine</h2>
-          <input type="date" v-model="selectedDate" />
-          <div class="button-group-vertical">
-            <button @click="runVisualAnalysis('highlight-day')" :disabled="isLoading || !selectedDate">Surlignage (Jour)</button>
-            <button @click="runVisualAnalysis('process-entire-week')" :disabled="isLoading || !selectedDate">Surlignage (Semaine)</button>
-            <hr />
-            <button @click="runReport('daily-frequency')" :disabled="isLoading || !selectedDate">Classement Jour</button>
-            <button @click="runReport('weekly-frequency')" :disabled="isLoading || !selectedDate">Classement Semaine</button>
-            <hr />
-            <input type="number" v-model="selectedNumber" placeholder="N° pour analyse compagnons" />
-            <button @click="runReport('companions')" :disabled="isLoading || !selectedDate || !selectedNumber">Analyser Compagnons</button>
-          </div>
-        </section>
-
-        <section class="card">
-          <h2>Période & Profilage</h2>
-          <label>Début :</label><input type="date" v-model="startDate" />
-          <label>Fin :</label><input type="date" v-model="endDate" />
-          <button @click="runRangeAnalysis" :disabled="isLoading || !startDate || !endDate">Fréquence sur Période</button>
-          <hr />
-          <input type="number" v-model="profileNumber" placeholder="N° pour profil complet" />
-          <button @click="runProfileAnalysis" :disabled="isLoading || !startDate || !endDate || !profileNumber">Générer Profil du Numéro</button>
-        </section>
-
-        <section class="card prophet-card">
-          <h2>🔮 Le Prophète</h2>
-          <p class="small-text">Ce numéro vient de sortir. La suite ?</p>
-          <input type="number" v-model="predictionNumber" placeholder="Numéro vu (Ex: 42)" />
-          <input type="number" v-model="predictionCompanion" placeholder="Compagnon vu (Optionnel)" />
-          <button @click="runPredictionAnalysis" :disabled="isLoading || !startDate || !endDate || !predictionNumber" class="prophet-btn">Voir Futur Probable</button>
-        </section>
-
-        <section class="card multi-prophet-card">
-          <h2>🔮 Analyse Croisée</h2>
-          <p class="small-text">Dernier tirage complet (ou sélection).</p>
-          <input type="text" v-model="multiPredictionInput" placeholder="Ex: 5 12 34 56 78" @keyup.enter="runMultiPrediction"/>
-          <button @click="runMultiPrediction" :disabled="isLoading || !startDate || !endDate || !multiPredictionInput" class="multi-btn">Lancer Projection</button>
-        </section>
-
-        <section class="card">
-          <h2>IA Avancée & Kanta</h2>
-          <button @click="runSequenceAnalysis" :disabled="isLoading || !startDate || !endDate">Détecter Suites</button>
-          <hr />
-          <input type="number" v-model="triggerTargetNumber" placeholder="Cible (ex: 18)" />
-          <input type="number" v-model="triggerCompanionNumber" placeholder="Compagnon (Optionnel)" />
-          <button @click="runTriggerAnalysis" :disabled="isLoading || !startDate || !endDate || !triggerTargetNumber">Trouver Déclencheurs ⚡</button>
-          <hr />
-          <div class="button-group-horizontal">
-             <button @click="runKantaAnalysis('kanta-highlight-day')">Surlign. Kanta J</button>
-             <button @click="runKantaAnalysis('kanta-highlight-week')">Surlign. Kanta S</button>
-          </div>
-          <div class="button-group-horizontal" style="margin-top:5px;">
-             <button @click="runKantaReport('daily-rank')">Class. Kanta J</button>
-             <button @click="runKantaReport('weekly-rank')">Class. Kanta S</button>
-          </div>
-        </section>
-      </div>
-
-      <div class="results-column">
-        <div v-if="currentView === 'dashboard'" class="personal-dashboard">
-            <div class="dash-header">
-              <h3>👋 Tableau de Bord Personnalisé</h3>
-              <div class="date-selectors">
-                <input type="date" v-model="dashStartDate" />
-                <span>à</span>
-                <input type="date" v-model="dashEndDate" />
-                <button @click="loadDashboard" class="refresh-btn">🔄 Actualiser</button>
-              </div>
-            </div>
-            <div v-if="userFavorites.length === 0" class="empty-dashboard"><p>👈 Ajoutez des numéros "Favoris" pour activer votre tableau de bord.</p></div>
-            <div v-else-if="isDashboardLoading" class="loader">Analyse de vos favoris en cours...</div>
-            <div v-else-if="dashboardData" class="dash-grid">
-              <div v-for="stat in dashboardData.dashboard_data" :key="stat.item" class="dash-card" :class="{ 'is-hot': stat.status.includes('🔥') }">
-                <div class="dash-main"><span class="dash-number">{{ stat.item }}</span><span class="dash-status">{{ stat.status }}</span></div>
-                <div class="dash-details">
-                  <div class="detail-row"><span>Sorties ({{ dashboardData.analysis_period }}):</span><strong>{{ stat.frequency }} fois</strong></div>
-                  <div class="detail-row" v-if="stat.type === 'number'"><span>Meilleur Ami (Sort avec):</span><strong>{{ stat.best_companion }}</strong></div>
-                  <div class="detail-row" v-if="stat.frequency > 0"><span>⚡ Déclencheur (Appelé par):</span><strong>{{ stat.best_trigger }}</strong></div>
-                  <div class="detail-row prop-row" v-if="stat.frequency > 0"><span>🔮 Prophète (A suivre):</span><strong>{{ stat.prophet_prediction }}</strong></div>
-                </div>
-                <div class="dash-actions"><button @click="analyzeFavorite(stat.item, 'trigger')" class="dash-act-btn">⚡ Analyse Complète</button></div>
-              </div>
-            </div>
         </div>
 
-        <section v-else-if="currentView === 'results'" class="card results-card">
-          <h2>Résultats d'Analyse</h2>
-          <div v-if="isLoading" class="loader">Chargement...</div>
-          <div v-if="error" class="error-box">{{ error }}</div>
-          <div v-if="!isLoading && !apiResponse && !error" class="empty-state"><p>Sélectionnez une analyse à gauche pour voir les résultats ici.</p></div>
-          <div v-if="apiResponse">
-            <div v-if="apiResponse.message || apiResponse.analysis_period" class="success-box large">
-              <p>✅ {{ apiResponse.message || `Analyse : ${apiResponse.analysis_period}` }}</p>
-              <a v-if="apiResponse.worksheet_gid" :href="sheetDirectLink" target="_blank" class="button-link">Voir l'Onglet ↗</a>
-            </div>
-            <div v-if="isTableVisible && !lastOperationType.includes('visual')" class="view-controls">
-              <button @click="viewMode = 'table'" :class="{ active: viewMode === 'table' }" class="toggle-btn">📋 Tableau</button>
-              <button @click="viewMode = 'chart'" :class="{ active: viewMode === 'chart' }" class="toggle-btn">📊 Graphique</button>
-            </div>
-            <div v-if="isTableVisible && viewMode === 'chart' && !lastOperationType.includes('visual')" class="chart-container"><Bar :data="chartData" :options="chartOptions" /></div>
-            <table v-else-if="isTableVisible" class="styled-table">
-              <thead><tr><th v-for="h in tableHeaders" :key="h">{{ h }}</th></tr></thead>
-              <tbody>
-                <tr v-for="(row, index) in tableData" :key="index">
-                  <td v-if="lastOperationType.includes('kanta-rank')">{{ row.pair }}</td>
-                  <td v-else>#{{ index + 1 }}</td>
-                  <td v-if="!lastOperationType.includes('kanta-rank')">{{ row.number }}</td>
-                  <td>{{ row.count }}</td>
-                </tr>
-              </tbody>
-            </table>
-            <div v-if="apiResponse.ai_strategic_analysis" class="ai-analysis"><h3>🧠 Stratégie</h3><p>{{ apiResponse.ai_strategic_analysis }}</p></div>
-            <div v-if="apiResponse.ai_strategic_profile" class="ai-analysis"><h3>🧠 Profil Numéro</h3><p>{{ apiResponse.ai_strategic_profile }}</p></div>
-            <div v-if="apiResponse.ai_sequence_analysis" class="ai-analysis"><h3>🧠 Suites</h3><p>{{ apiResponse.ai_sequence_analysis }}</p></div>
-            <div v-if="apiResponse.ai_trigger_analysis" class="ai-analysis"><h3>🧠 Déclencheurs</h3><p>{{ apiResponse.ai_trigger_analysis }}</p></div>
-            <div v-if="apiResponse.ai_prediction_analysis" class="ai-analysis prophet-analysis"><h3>🔮 Prédiction</h3><p>{{ apiResponse.ai_prediction_analysis }}</p></div>
+        <!-- Section Paramètres Généraux -->
+        <div class="control-card">
+          <h3>📅 Date & Cible</h3>
+          <label>Date Référence (Fin)</label>
+          <input type="date" v-model="selectedDate" />
+          
+          <label style="margin-top:10px; display:block">Numéro Cible (Optionnel)</label>
+          <input type="number" v-model="selectedNumber" placeholder="Ex: 42" />
+          <input v-if="lastOperationType === 'prophet'" type="number" v-model="selectedCompanion" placeholder="Compagnon (Optionnel)" style="margin-top: 8px;" />
+        </div>
+
+        <!-- Section Dashboard Personnel -->
+        <div class="control-card highlight-card">
+          <h3>🚀 Mon Dashboard</h3>
+          <p class="hint">Entrez vos numéros/paires favoris (séparés par virgule).</p>
+          <textarea v-model="favoritesInput" rows="2" placeholder="Ex: 7, 24, 10-90"></textarea>
+          <button @click="runDashboard" :disabled="isLoading">Analyser Favoris (30j)</button>
+        </div>
+
+        <!-- Section Analyse Visuelle -->
+        <div class="control-card">
+          <h3>🎨 Visuel (Google Sheet)</h3>
+          <div class="btn-stack">
+            <button @click="runVisual('highlight-day')" :disabled="isLoading || !selectedDate">Surligner Jour (Chaud/Froid)</button>
+            <button @click="runVisual('kanta-highlight-day')" :disabled="isLoading || !selectedDate" class="kanta-btn">Surligner Kanta (Opposés)</button>
           </div>
-        </section>
-      </div>
+        </div>
+
+        <!-- Section Rapports & Prophète -->
+        <div class="control-card">
+          <h3>📊 Rapports & Prophète</h3>
+          <div class="btn-stack">
+            <button @click="runReport('daily-frequency')" :disabled="isLoading">Classement Jour</button>
+            <button @click="runReport('weekly-frequency')" :disabled="isLoading">Classement Semaine</button>
+            <button @click="runReport('companions')" :disabled="isLoading || !selectedNumber">Compagnons du {{ selectedNumber || '?' }}</button>
+            <div class="separator"></div>
+            <button @click="runProphet" :disabled="isLoading" class="prophet-btn">🔮 Prédiction Prophète</button>
+          </div>
+        </div>
+
+      </aside>
+
+      <!-- COLONNE DROITE : RÉSULTATS -->
+      <section class="results-area">
+        
+        <!-- Message de Bienvenue / Infos -->
+        <div v-if="showWelcomeMessage" class="welcome-box">
+          <h2>Bienvenue Fourcaster !</h2>
+          <p>Utilisez les contrôles à gauche pour analyser les tirages.</p>
+          <ul>
+            <li><strong>Dashboard :</strong> Suivez vos numéros favoris.</li>
+            <li><strong>Visuel :</strong> Coloriez les tirages sur Google Sheet.</li>
+            <li><strong>Rapports :</strong> Statistiques détaillées.</li>
+            <li><strong>Prophète :</strong> Prédictions IA basées sur l'historique.</li>
+          </ul>
+        </div>
+
+        <!-- Bannières d'Erreur / Succès -->
+        <div v-if="error" class="error-banner">❌ {{ error }}</div>
+        <div v-if="apiResponse?.message" class="success-banner">
+          ✅ {{ apiResponse.message }}
+          <a v-if="apiResponse.worksheet_gid" :href="sheetDirectLink" target="_blank" class="sheet-link">Ouvrir l'onglet ↗</a>
+        </div>
+
+        <!-- Loader pendant le chargement -->
+        <div v-if="isLoading" class="loader-overlay">
+          <div class="spinner"></div>
+          <span>Analyse en cours...</span>
+        </div>
+
+        <!-- Intégration Google Sheet -->
+        <div class="sheet-wrapper">
+          <!-- Clé : url pour forcer le rechargement si le GID change -->
+          <iframe :key="sheetEmbedUrl" :src="sheetEmbedUrl" loading="lazy"></iframe>
+        </div>
+
+        <!-- Tableau des Résultats (si des données sont disponibles) -->
+        <div v-if="tableData.length > 0" class="data-table-wrapper">
+          <h3>Résultats : {{ lastOperationType.toUpperCase() }}</h3>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th v-for="h in tableHeaders" :key="h">{{ h }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <!-- Boucle sur les données du tableau -->
+              <tr v-for="(row, idx) in tableData" :key="idx">
+                <!-- Cas spécifique pour le Dashboard -->
+                <template v-if="lastOperationType === 'dashboard'">
+                  <td><strong>{{ row.item }}</strong></td>
+                  <td :class="{'status-hot': row.status.includes('Brûlant'), 'status-cold': row.status.includes('Gelé')}">{{ row.status }}</td>
+                  <td>{{ row.frequency }}</td>
+                  <td>{{ row.best_companion }}</td>
+                  <td>{{ row.best_trigger }}</td>
+                </template>
+                <!-- Cas général (Prophète, Fréquence, Kanta, Compagnons) -->
+                <template v-else>
+                  <td>{{ idx + 1 }}</td>
+                  <td><strong>{{ row.number || row.pair || row.item }}</strong></td>
+                  <td>{{ row.count || row.frequency }}</td>
+                </template>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Bloc d'Analyse IA -->
+        <div v-if="aiAnalysisText" class="ai-box">
+          <div class="ai-header">🧠 L'AVIS DE L'EXPERT (IA)</div>
+          <div class="ai-content">{{ aiAnalysisText }}</div>
+        </div>
+
+      </section>
+
     </div>
   </main>
 </template>
 
 <style scoped>
-  .main-nav { display: flex; justify-content: center; gap: 2rem; margin-bottom: 2rem; padding-bottom: 1rem; border-bottom: 1px solid #e0e0e0; }
-  .nav-item { background: none; border: none; font-size: 1.2rem; font-weight: bold; color: #666; padding: 0.8rem 1.5rem; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.3s; width: auto; }
-  .nav-item:hover { color: #007bff; background-color: #f8f9fa; border-radius: 5px 5px 0 0; }
-  .nav-item.active { color: #007bff; border-bottom: 3px solid #007bff; }
-  .loading-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; font-size: 1.5rem; color: #666; }
-  .login-wrapper { display: flex; align-items: center; justify-content: center; min-height: 100vh; background-color: #f0f2f5; }
-  .login-box { background: white; padding: 2.5rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
-  .input-group { margin-bottom: 1rem; }
-  .input-group label { display: block; margin-bottom: 0.5rem; font-weight: 500; }
-  input { width: 100%; padding: 0.8rem; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-  button { padding: 0.8rem; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; width: 100%; font-weight: bold; }
-  button:disabled { background-color: #ccc; }
-  .dashboard { max-width: 95%; margin: 1rem auto; font-family: sans-serif; }
-  header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 1rem; border-bottom: 1px solid #eee; margin-bottom: 2rem; }
-  .user-info { display: flex; gap: 1rem; align-items: center; }
-  .logout-button { background-color: #6c757d; padding: 0.5rem 1rem; width: auto; }
-  .main-layout { display: grid; grid-template-columns: 350px 1fr; gap: 2rem; }
-  .card { background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 1.5rem; }
-  .card h2 { margin-top: 0; font-size: 1.2rem; border-bottom: 1px solid #eee; padding-bottom: 0.5rem; margin-bottom: 1rem; }
-  .button-group-vertical { display: flex; flex-direction: column; gap: 0.5rem; }
-  .button-group-horizontal { display: flex; gap: 1rem; }
-  .danger { background-color: #dc3545; }
-  .styled-table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
-  .styled-table th, .styled-table td { border: 1px solid #ddd; padding: 8px; text-align: center; }
-  .styled-table th { background-color: #f2f2f2; }
-  .ai-analysis { background-color: #fffbe6; border-left: 5px solid #ffc107; padding: 1rem; margin-top: 1rem; border-radius: 4px; }
-  .success-box { background-color: #e8f5e9; color: #2e7d32; padding: 1rem; border-radius: 4px; text-align: center; }
-  .button-link { display: inline-block; padding: 0.5rem 1rem; background-color: #28a745; color: white; text-decoration: none; border-radius: 4px; margin-top: 0.5rem; }
-  .view-controls { display: flex; justify-content: center; gap: 1rem; margin: 1rem 0; }
-  .toggle-btn { background: #e0e0e0; color: #333; width: auto; padding: 0.5rem 1.5rem; }
-  .toggle-btn.active { background: #007bff; color: white; }
-  .chart-container { height: 400px; width: 100%; }
-  .favorites-input-group { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
-  .btn-small { width: auto; padding: 0.5rem 1rem; }
-  .favorites-list { display: flex; flex-wrap: wrap; gap: 0.8rem; }
-  .favorite-chip { display: flex; align-items: center; background: #e3f2fd; border: 1px solid #90caf9; border-radius: 20px; padding: 0.3rem 0.5rem 0.3rem 1rem; }
-  .fav-label { font-weight: bold; color: #1565c0; margin-right: 0.5rem; }
-  .fav-actions { display: flex; gap: 0.2rem; margin-right: 0.5rem; }
-  .icon-btn { background: white; border: 1px solid #bbdefb; color: #333; border-radius: 50%; width: 28px; height: 28px; padding: 0; font-size: 0.8rem; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
-  .icon-btn:hover { background: #bbdefb; transform: scale(1.1); }
-  .fav-delete { cursor: pointer; color: #ef5350; font-weight: bold; font-size: 1.2rem; padding: 0 5px; }
-  .empty-msg { font-style: italic; color: #999; font-size: 0.9rem; }
-  .small-text { font-size: 0.8rem; color: #666; margin-top: -0.5rem; margin-bottom: 1rem; }
-  hr { border: none; border-top: 1px solid #eee; margin: 1.5rem 0; }
-  .prophet-card { border: 1px solid #d1c4e9; background: linear-gradient(to bottom right, #ffffff, #f3e5f5); }
-  .prophet-btn { background-color: #7b1fa2; }
-  .prophet-btn:hover { background-color: #4a148c; }
-  .prophet-analysis { background-color: #f3e5f5; border-left: 5px solid #7b1fa2; }
-  .multi-prophet-card { border: 2px solid #6f42c1; background-color: #f8f0fc; }
-  .multi-btn { background: linear-gradient(45deg, #6f42c1, #007bff); border: none; }
-  .multi-btn:hover { opacity: 0.9; transform: scale(1.02); }
-  .personal-dashboard { background-color: #f8f9fa; padding: 1.5rem; border-radius: 12px; border: 1px solid #e9ecef; margin-bottom: 2rem; }
-  .dash-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;}
-  .dash-header h3 { margin: 0; color: #333; }
-  .date-selectors { display: flex; gap: 0.5rem; align-items: center; }
-  .date-selectors input { width: auto; padding: 0.4rem; font-size: 0.9rem; }
-  .refresh-btn { width: auto; padding: 0.4rem 1rem; font-size: 0.9rem; background: #6c757d; }
-  .dash-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1.5rem; }
-  .dash-card { background: white; border-radius: 10px; padding: 1.2rem; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border-top: 4px solid #ccc; transition: transform 0.2s; }
-  .dash-card:hover { transform: translateY(-3px); }
-  .dash-card.is-hot { border-top-color: #ff5722; background: #fff5f2; }
-  .dash-main { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; border-bottom: 1px solid #eee; padding-bottom: 0.5rem; }
-  .dash-number { font-size: 1.8rem; font-weight: bold; color: #007bff; }
-  .dash-status { font-size: 0.9rem; font-weight: bold; color: #555; }
-  .detail-row { display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 0.4rem; color: #555; }
-  .prop-row { margin-top: 0.8rem; padding-top: 0.5rem; border-top: 1px dashed #ddd; color: #6f42c1; }
-  .dash-actions { margin-top: 1rem; text-align: center; }
-  .dash-act-btn { background: none; border: 1px solid #007bff; color: #007bff; padding: 0.3rem 0.8rem; font-size: 0.8rem; border-radius: 20px; cursor: pointer; width: 100%; }
-  .dash-act-btn:hover { background: #007bff; color: white; }
-  .empty-state { text-align: center; padding: 3rem; color: #999; font-style: italic; font-size: 1.1rem; }
-  .empty-dashboard { text-align: center; padding: 2rem; color: #666; background: #fff; border-radius: 8px; }
-  .error-box { background-color: #ffebee; color: #c62828; padding: 1rem; border-radius: 4px; text-align: center; margin-bottom: 1rem; white-space: pre-wrap;}
+/* --- STYLES GÉNÉRAUX & COMPOSANTS --- */
+.loading-screen {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  min-height: 100vh; background: #f4f7f6; color: #7f8c8d; font-size: 1.1rem;
+}
+.spinner {
+  border: 4px solid #f3f3f3; border-top: 4px solid #3498db; /* Bleu */
+  border-radius: 50%; width: 40px; height: 40px;
+  animation: spin 1s linear infinite; margin-bottom: 10px;
+}
+@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+.login-wrapper {
+  display: flex; align-items: center; justify-content: center; height: 100vh;
+  background: linear-gradient(135deg, #3498db, #2980b9); /* Bleu dégradé */
+}
+.login-box {
+  background: white; padding: 40px; border-radius: 12px; width: 100%; max-width: 420px;
+  box-shadow: 0 15px 30px rgba(0,0,0,0.15); text-align: center;
+}
+.login-box h1 { margin-bottom: 30px; color: #2c3e50; font-size: 1.8rem; font-weight: bold;}
+.input-group { text-align: left; margin-bottom: 15px; }
+.input-group label { display: block; margin-bottom: 5px; color: #7f8c8d; font-size: 0.9rem; }
+.primary-btn {
+  background: #3498db; color: white; padding: 12px 20px; font-size: 1rem; font-weight: bold;
+  border: none; border-radius: 6px; cursor: pointer; transition: background 0.3s ease; width: 100%;
+}
+.primary-btn:hover { background: #2980b9; }
+.primary-btn:disabled { background: #bdc3c7; cursor: not-allowed; }
+.error-msg { color: #e74c3c; margin-top: 15px; font-size: 0.9rem; }
+
+.app-layout { max-width: 1400px; margin: 0 auto; padding: 15px; font-family: 'Inter', sans-serif; background-color: #f4f7f6; min-height: 100vh; }
+.app-header {
+  display: flex; justify-content: space-between; align-items: center;
+  background: #2c3e50; /* Bleu nuit */ color: white; padding: 15px 25px; border-radius: 10px;
+  margin-bottom: 20px; box-shadow: 0 5px 10px rgba(0,0,0,0.1);
+}
+.logo { font-size: 1.3rem; font-weight: bold; letter-spacing: 0.5px; }
+.user-controls { display: flex; align-items: center; }
+.logout-btn {
+  background: #e74c3c; /* Rouge */ color: white; border: none; padding: 8px 18px;
+  border-radius: 5px; cursor: pointer; font-weight: bold; margin-left: 15px;
+}
+
+.content-grid { display: grid; grid-template-columns: 300px 1fr; gap: 25px; }
+
+/* --- COLONNE GAUCHE : CONTROLES --- */
+.controls-sidebar { display: flex; flex-direction: column; gap: 15px; }
+.control-card {
+  background: white; padding: 20px; border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.05); border: 1px solid #e0e0e0;
+}
+.admin-card { background: #fff8e1; border-color: #ffe082; }
+.highlight-card { border-left: 5px solid #3498db; } /* Bleu */
+.control-card h3 {
+  margin-top: 0; font-size: 1.1rem; color: #34495e;
+  border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 15px;
+}
+label { display: block; margin-bottom: 6px; color: #555; font-size: 0.9rem; font-weight: 500;}
+input[type="date"], input[type="number"], textarea {
+  width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px;
+  box-sizing: border-box; font-family: inherit; font-size: 0.95rem;
+  margin-bottom: 10px;
+}
+textarea { resize: vertical; min-height: 50px; }
+.btn-stack { display: flex; flex-direction: column; gap: 10px; }
+.btn-row { display: flex; gap: 10px; }
+button {
+  padding: 10px 15px; border: none; background: #34495e; /* Gris anthracite */
+  color: white; border-radius: 5px; cursor: pointer; font-weight: bold;
+  font-size: 0.95rem; transition: background 0.3s ease;
+}
+button:hover { background: #2c3e50; } /* Bleu nuit */
+button:disabled { background: #bdc3c7; cursor: not-allowed; }
+.danger-btn { background: #e74c3c; } /* Rouge */
+.danger-btn:hover { background: #c0392b; }
+.kanta-btn { background: #27ae60; } /* Vert */
+.kanta-btn:hover { background: #229954; }
+.prophet-btn { background: #8e44ad; } /* Violet */
+.prophet-btn:hover { background: #7d3c98; }
+.separator { height: 1px; background: #eee; margin: 8px 0; }
+
+/* --- COLONNE DROITE : RÉSULTATS --- */
+.results-area { display: flex; flex-direction: column; gap: 15px; }
+.welcome-box {
+  background: #d6eaf8; /* Bleu clair */ color: #2980b9;
+  padding: 20px; border-radius: 10px; border-left: 5px solid #3498db;
+}
+.welcome-box h2 { margin-top: 0; font-size: 1.4rem; }
+.welcome-box ul { padding-left: 25px; }
+.welcome-box li { margin-bottom: 8px; }
+
+.error-banner, .success-banner {
+  padding: 12px 15px; border-radius: 5px; font-weight: bold;
+  text-align: center;
+}
+.error-banner { background: #fadbd8; color: #c0392b; border: 1px solid #e74c3c; }
+.success-banner { background: #d5f5e3; color: #27ae60; border: 1px solid #82e0aa; display: flex; justify-content: space-between; align-items: center; }
+.sheet-link { color: #27ae60; text-decoration: none; border-bottom: 1px dashed; }
+
+.loader-overlay {
+  position: absolute; /* Dans results-area */
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(255,255,255,0.85);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  border-radius: 10px; z-index: 10; /* Surcouche */
+}
+.loader-overlay span { margin-top: 10px; color: #34495e; font-size: 1.1rem; }
+
+.sheet-wrapper {
+  height: 550px; background: white; border-radius: 10px; overflow: hidden;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.08); border: 1px solid #ddd;
+}
+iframe { width: 100%; height: 100%; border: none; display: block;}
+
+.data-table-wrapper {
+  background: white; padding: 20px; border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.05); overflow-x: auto; /* Scroll horizontal si table trop large */
+}
+.data-table {
+  width: 100%; border-collapse: collapse; min-width: 550px; /* Largeur min pour éviter trop de compression */
+}
+.data-table th, .data-table td {
+  padding: 12px 10px; text-align: center; border-bottom: 1px solid #eee;
+  font-size: 0.95rem;
+}
+.data-table th {
+  background: #ecf0f1; /* Gris clair */ color: #2c3e50; font-weight: bold;
+  font-size: 0.9rem;
+}
+.data-table td:first-child { font-weight: bold; } /* Première colonne (ex: numéro) en gras */
+.status-hot { color: #e74c3c; font-weight: bold; } /* Rouge */
+.status-cold { color: #3498db; } /* Bleu */
+
+.ai-box {
+  background: #fdfdfd; /* Blanc cassé */
+  border: 1px solid #e0e0e0; border-left: 6px solid #34495e; /* Bordure anthracite */
+  border-radius: 8px; overflow: hidden; margin-top: 15px;
+}
+.ai-header {
+  background: #34495e; color: #f1c40f; /* Jaune */
+  padding: 12px; font-weight: bold; font-size: 0.9rem; letter-spacing: 0.5px;
+}
+.ai-content {
+  padding: 15px; line-height: 1.7; white-space: pre-wrap; /* Conserve les sauts de ligne de l'IA */
+  font-size: 0.95rem; color: #333;
+}
+
+/* --- MEDIA QUERIES POUR ADAPTABILITÉ --- */
+@media (max-width: 992px) {
+  .content-grid { grid-template-columns: 1fr; } /* Colonne unique sur petits écrans */
+  .controls-sidebar { flex-direction: row; overflow-x: auto; padding-bottom: 5px; } /* Barre de défilement si trop de sections */
+  .control-card { margin-bottom: 0; flex-shrink: 0; width: 280px; } /* Cartes plus petites */
+  .sheet-wrapper { height: 400px; }
+}
+
+@media (max-width: 768px) {
+  .app-header { padding: 10px 15px; }
+  .logo { font-size: 1.1rem; }
+  .logout-btn { font-size: 0.9rem; padding: 6px 12px;}
+  .desktop-only { display: none; } /* Cache l'email sur mobile */
+  .controls-sidebar { flex-direction: column; } /* Remet en colonne sur très petits écrans */
+  .control-card { width: auto; } /* Prend toute la largeur */
+}
 </style>
