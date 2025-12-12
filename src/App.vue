@@ -9,10 +9,7 @@ import { Chart as ChartJS, Title, Tooltip, Legend, BarElement, CategoryScale, Li
 ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale);
 
 const GOOGLE_SHEET_ID = "1HepqMzKcshKbRsLWwpEOOy5oO9ntK2CgdV7F_ijmjIo";
-
-// --- IMPORTANT : FORCAGE DE L'URL BACKEND ---
-// Cela empêche l'erreur de connexion au localhost
-const API_BASE_URL = 'https://loto-analyzer-backend.onrender.com';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 
 const user = ref(null);
 const userRole = ref('');
@@ -48,13 +45,16 @@ const viewMode = ref('table');
 onMounted(() => {
   const today = new Date();
   const todayStr = today.toISOString().split('T')[0];
+  
   selectedDate.value = todayStr;
   endDate.value = todayStr;
   dashEndDate.value = todayStr; 
 
+  // Date de début (Mois précédent pour avoir des données)
   const oneMonthAgo = new Date();
   oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
   const startStr = oneMonthAgo.toISOString().split('T')[0];
+  
   startDate.value = startStr;
   dashStartDate.value = startStr; 
 
@@ -74,8 +74,6 @@ onMounted(() => {
           await setDoc(docRef, { role: 'user', favorites: [] }, { merge: true });
         }
       } catch (e) { console.error(e); }
-      // Chargement auto du dashboard
-      if(userFavorites.value.length > 0) loadDashboard();
     } else {
       user.value = null; userRole.value = ''; userFavorites.value = [];
     }
@@ -97,27 +95,29 @@ function switchView(viewName) {
 async function addFavorite() {
   const input = newFavoriteInput.value.trim();
   if (!input) return;
+  const isSingleNumber = /^[0-9]{1,2}$/.test(input);
+  const isPair = /^[0-9]{1,2}-[0-9]{1,2}$/.test(input);
+  if (!isSingleNumber && !isPair) { alert("Format invalide."); return; }
   if (userFavorites.value.includes(input)) { newFavoriteInput.value = ''; return; }
   try {
     const userRef = doc(db, "users", user.value.uid);
     userFavorites.value.push(input); 
-    await updateDoc(userRef, { favorites: arrayUnion(input) });
+    await setDoc(userRef, { favorites: arrayUnion(input) }, { merge: true }); 
     newFavoriteInput.value = '';
-    loadDashboard(); // Refresh direct
-  } catch (e) { console.error(e); }
+  } catch (e) { console.error(e); userFavorites.value = userFavorites.value.filter(item => item !== input); }
 }
 
 async function removeFavorite(item) {
+  if (!confirm(`Retirer ${item} ?`)) return;
   try {
     const userRef = doc(db, "users", user.value.uid);
     userFavorites.value = userFavorites.value.filter(n => n !== item);
     await updateDoc(userRef, { favorites: arrayRemove(item) });
-    loadDashboard();
   } catch (e) { console.error(e); }
 }
 
 async function loadDashboard() {
-  if (userFavorites.value.length === 0) return;
+  if (userFavorites.value.length === 0 || !dashStartDate.value || !dashEndDate.value) return;
   isDashboardLoading.value = true;
   try {
     const token = await user.value.getIdToken();
@@ -127,10 +127,29 @@ async function loadDashboard() {
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(userFavorites.value)
     });
-    if(!response.ok) throw new Error("Erreur Dashboard");
     const data = await response.json();
     dashboardData.value = data;
   } catch (e) { console.error(e); } finally { isDashboardLoading.value = false; }
+}
+
+watch(userFavorites, (newFavs) => { if (newFavs && newFavs.length > 0) loadDashboard(); });
+
+function analyzeFavorite(item, mode) {
+  if (!startDate.value || !endDate.value) { alert("Vérifiez les dates."); }
+  if (item.includes('-')) {
+    const parts = item.split('-');
+    triggerTargetNumber.value = parts[0]; triggerCompanionNumber.value = parts[1];
+    runTriggerAnalysis(); 
+  } else {
+    if (mode === 'companion') {
+      selectedNumber.value = item;
+      if (!selectedDate.value) { alert("Date requise."); return; }
+      runReport('companions');
+    } else if (mode === 'trigger') {
+      triggerTargetNumber.value = item; triggerCompanionNumber.value = ''; 
+      runTriggerAnalysis();
+    }
+  }
 }
 
 async function callApi(url, method = 'GET') {
@@ -154,8 +173,8 @@ async function runVisualAnalysis(endpoint) { if (!selectedDate.value) { error.va
 async function runReport(reportType) {
   if (!selectedDate.value) { error.value = "Date requise."; return; }
   let url = '';
-  if (reportType === 'weekly-frequency') { lastOperationType.value = 'frequency'; url = `/analysis/weekly-frequency/${selectedDate.value}`; }
-  else if (reportType === 'daily-frequency') { lastOperationType.value = 'frequency'; url = `/analysis/daily-frequency/${selectedDate.value}`; }
+  if (reportType === 'weekly-frequency') { lastOperationType.value = 'weekly-frequency'; url = `/analysis/weekly-frequency/${selectedDate.value}`; }
+  else if (reportType === 'daily-frequency') { lastOperationType.value = 'daily-frequency'; url = `/analysis/daily-frequency/${selectedDate.value}`; }
   else if (reportType === 'companions') { if (!selectedNumber.value) { error.value = "Numéro requis."; return; } lastOperationType.value = 'companions'; url = `/analysis/companions/${selectedNumber.value}?week_date_str=${selectedDate.value}`; }
   await callApi(url);
 }
@@ -185,7 +204,7 @@ async function runMultiPrediction() {
 async function runKantaAnalysis(endpoint) { if (!selectedDate.value) { error.value = "Date requise."; return; } lastOperationType.value = 'visual'; await callApi(`/analysis/${endpoint}/${selectedDate.value}`, 'POST'); }
 async function runKantaReport(reportType) { if (!selectedDate.value) { error.value = "Date requise."; return; } lastOperationType.value = 'kanta-rank'; await callApi(`/analysis/kanta-${reportType}/${selectedDate.value}`); }
 
-const isAdmin = computed(() => userRole.value === 'admin' || user.value?.email === 'aboucho92@gmail.com');
+const isAdmin = computed(() => userRole.value === 'admin');
 const sheetDirectLink = computed(() => {
   const base = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}`;
   return activeSheetGid.value ? `${base}/edit#gid=${activeSheetGid.value}` : `${base}/edit`;
@@ -194,7 +213,7 @@ const tableHeaders = computed(() => {
   if (lastOperationType.value.includes('frequency')) return ['#', 'Numéro', 'Apparitions'];
   if (lastOperationType.value === 'companions') return ['#', 'Compagnon', 'Apparu avec'];
   if (lastOperationType.value === 'trigger') return ['#', 'N° Déclencheur', 'Fréquence'];
-  if (lastOperationType.value === 'prediction') return ['#', 'Suivant Probable', 'Fréquence']; 
+  if (lastOperationType.value === 'prediction') return ['#', 'Numéro Suivant (Probable)', 'Fréquence']; 
   if (lastOperationType.value.includes('kanta-rank')) return ['Paire Kanta', 'Apparitions'];
   return [];
 });
@@ -208,7 +227,7 @@ const tableData = computed(() => {
   return [];
 });
 const isTableVisible = computed(() => tableData.value.length > 0);
-const chartOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } };
+const chartOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, title: { display: true, text: 'Analyse Visuelle (Top 20)' } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } };
 const chartData = computed(() => {
   const data = tableData.value;
   if (!data || data.length === 0) return null;
@@ -223,24 +242,6 @@ const chartData = computed(() => {
   });
   return { labels, datasets: [{ label: 'Occurrences', backgroundColor: '#007bff', borderRadius: 4, data: counts }] };
 });
-
-function analyzeFavorite(item, mode) {
-  // Pré-remplit les champs et switch vers résultats
-  if (item.includes('-')) {
-    const parts = item.split('-');
-    triggerTargetNumber.value = parts[0]; triggerCompanionNumber.value = parts[1];
-    runTriggerAnalysis(); 
-  } else {
-    if (mode === 'companion') {
-      selectedNumber.value = item;
-      if(!selectedDate.value) selectedDate.value = new Date().toISOString().split('T')[0];
-      runReport('companions');
-    } else if (mode === 'trigger') {
-      triggerTargetNumber.value = item; triggerCompanionNumber.value = ''; 
-      runTriggerAnalysis();
-    }
-  }
-}
 </script>
 
 <template>
@@ -450,7 +451,7 @@ function analyzeFavorite(item, mode) {
   .styled-table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
   .styled-table th, .styled-table td { border: 1px solid #ddd; padding: 8px; text-align: center; }
   .styled-table th { background-color: #f2f2f2; }
-  .ai-analysis { background-color: #fffbe6; border-left: 5px solid #ffc107; padding: 1rem; margin-top: 1rem; border-radius: 4px; white-space: pre-wrap; }
+  .ai-analysis { background-color: #fffbe6; border-left: 5px solid #ffc107; padding: 1rem; margin-top: 1rem; border-radius: 4px; }
   .success-box { background-color: #e8f5e9; color: #2e7d32; padding: 1rem; border-radius: 4px; text-align: center; }
   .button-link { display: inline-block; padding: 0.5rem 1rem; background-color: #28a745; color: white; text-decoration: none; border-radius: 4px; margin-top: 0.5rem; }
   .view-controls { display: flex; justify-content: center; gap: 1rem; margin: 1rem 0; }
