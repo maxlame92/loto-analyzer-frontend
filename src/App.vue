@@ -1,4 +1,4 @@
-<!-- app.vue (Version Finale 30.5 - Auto-Ajout + Explications IA) -->
+<!-- app.vue (Version 32.0 - Interface Profil Jour) -->
 <template>
   <div id="app" class="app-container">
     <div v-if="loadingGlobal" class="loading-overlay"><div class="loader"></div><p>Chargement...</p></div>
@@ -36,9 +36,9 @@
               </div>
             </div>
           </div>
-          <!-- HABITUDES & AUTO-AJOUT -->
-          <div class="control-group" style="background-color: #f0f4f8; border: 1px solid #d1d9e6;">
-            <h3 style="color: #2c3e50;">📅 Habitudes & Tendances</h3>
+          <!-- PROFIL JOUR (STYLE EXPERT) -->
+          <div class="control-group" style="background-color: #e8f5e9; border: 1px solid #c8e6c9;">
+            <h3 style="color: #2e7d32;">📅 Profil du Jour</h3>
             <div class="input-group">
               <label>Jour :</label>
               <select v-model="habitDayIndex">
@@ -54,11 +54,12 @@
             <div class="input-group">
               <label>Période :</label>
               <select v-model="habitPeriod">
-                <option value="7">1 Semaine</option><option value="30">1 Mois</option><option value="90">3 Mois</option><option value="365">1 An</option>
+                <option value="7">1 Semaine</option><option value="14">2 Semaines</option><option value="30">1 Mois</option><option value="90">3 Mois</option><option value="180">6 Mois</option><option value="365">1 An</option>
               </select>
             </div>
-            <button @click="analyzeHabitsAndAdd" class="action-btn purple-btn">🕵️ Analyser & Ajouter</button>
+            <button @click="analyzeHabits" class="action-btn purple-btn">Générer le Profil</button>
           </div>
+          <!-- AUTRES FONCTIONS -->
           <div class="control-group">
             <h3>Semaine & Fréquence</h3>
             <input type="date" v-model="selectedDate" class="date-picker" />
@@ -114,7 +115,7 @@
               </div>
               <div class="ai-insights">
                 <!-- EXPLICATION EXPERTE -->
-                <div v-if="apiResponse.ai_strategic_analysis" class="ai-box strategy"><h4>🧠 Explication Expert</h4><p>{{ apiResponse.ai_strategic_analysis }}</p></div>
+                <div v-if="apiResponse.ai_strategic_analysis" class="ai-box strategy"><h4>🧠 Analyse Expert</h4><p>{{ apiResponse.ai_strategic_analysis }}</p></div>
                 <div v-if="apiResponse.ai_strategic_profile" class="ai-box profile"><h4>🧠 Profil</h4><p>{{ apiResponse.ai_strategic_profile }}</p></div>
                 <div v-if="apiResponse.ai_prediction_analysis" class="ai-box prediction"><h4>🔮 Prédiction</h4><p>{{ apiResponse.ai_prediction_analysis }}</p></div>
               </div>
@@ -171,19 +172,7 @@ async function callApi(ep, m='GET', b=null) {
 }
 
 const getDashboard = () => callApi(`/analysis/favorites-dashboard?start_date=${dashStart.value}&end_date=${dashEnd.value}`, 'POST', favoritesList.value);
-// --- FONCTION CLES : HABITUDES & AJOUT ---
-const analyzeHabitsAndAdd = async () => {
-  await callApi(`/analysis/day-specific-profile?day_index=${habitDayIndex.value}&days_count=${habitPeriod.value}${habitTime.value?'&time_slot='+habitTime.value:''}`);
-  if (apiResponse.value.habits) {
-    let added = 0;
-    apiResponse.value.habits.forEach(h => {
-      const s = h.number.toString();
-      if (!favoritesList.value.includes(s)) { favoritesList.value.push(s); added++; }
-    });
-    if (added > 0) { localStorage.setItem('lotoFavorites', JSON.stringify(favoritesList.value)); getDashboard(); alert(`✅ ${added} numéros ajoutés aux favoris !`); }
-  }
-};
-// ---
+const analyzeHabits = () => callApi(`/analysis/day-specific-profile?day_index=${habitDayIndex.value}&days_count=${habitPeriod.value}${habitTime.value?'&time_slot='+habitTime.value:''}`);
 const triggerUpdate = () => callApi('/collection/update-recent-weeks', 'POST');
 const triggerRebuild = () => { if(confirm('Sûr?')) callApi('/collection/start-full-rebuild', 'POST'); };
 const highlightDay = () => callApi(`/analysis/highlight-day/${selectedDate.value}`, 'POST');
