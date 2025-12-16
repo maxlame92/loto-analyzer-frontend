@@ -1,4 +1,4 @@
-<!-- app.vue (Version Finale 36.0 - Profil Jour avec Dates Précises) -->
+<!-- app.vue (Version ULTIMATE 37.0) -->
 <template>
   <div id="app" class="app-container">
     <div v-if="loadingGlobal" class="loading-overlay"><div class="loader"></div><p>Chargement...</p></div>
@@ -51,9 +51,8 @@
                 <option value="">Toute la journée</option><option value="07H00">07H00</option><option value="10H00">10H00</option><option value="13H00">13H00</option><option value="16H00">16H00</option><option value="19H00">19H00</option><option value="21H00">21H00</option><option value="22H00">22H00</option><option value="23H00">23H00</option>
               </select>
             </div>
-            <!-- SELECTION DATES -->
             <div class="input-group">
-              <label>Période d'analyse :</label>
+              <label>Période :</label>
               <div class="date-row" style="display:flex; gap:5px;">
                 <input type="date" v-model="habitStart" title="Début">
                 <input type="date" v-model="habitEnd" title="Fin">
@@ -116,7 +115,6 @@
                 </table>
               </div>
               <div class="ai-insights">
-                <!-- EXPLICATION EXPERTE -->
                 <div v-if="apiResponse.ai_strategic_analysis" class="ai-box strategy"><h4>🧠 Analyse Expert</h4><p>{{ apiResponse.ai_strategic_analysis }}</p></div>
                 <div v-if="apiResponse.ai_strategic_profile" class="ai-box profile"><h4>🧠 Profil</h4><p>{{ apiResponse.ai_strategic_profile }}</p></div>
                 <div v-if="apiResponse.ai_sequence_analysis" class="ai-box sequence"><h4>🧬 Suites</h4><p>{{ apiResponse.ai_sequence_analysis }}</p></div>
@@ -198,22 +196,10 @@ const analyzeFavorite = (i) => { currentTab.value='analysis'; if(i.includes('-')
 
 const getHeaderLabel = (i) => {
   const r = apiResponse.value;
-  // CORRECTION ICI : Ajout des valeurs par défaut pour éviter les erreurs de syntaxe
-  if(r.habits) {
-    if(i===1) return "Numéro";
-    if(i===2) return "Déclencheur";
-    if(i===3) return "Compagnon";
-    return "";
-  }
-  if(r.prediction_ranking) {
-    if(i===1) return "Suivant Probable";
-    if(i===2) return "Score";
-    return "";
-  }
-  // CAS PAR DEFAUT
-  if(i===1) return "Numéro";
-  if(i===2) return "Fréquence";
-  return "";
+  // Correction Syntaxe Ternaire (Validée)
+  if(r.habits) { return i===1?"Numéro":i===2?"Déclencheur":i===3?"Compagnon":""; }
+  if(r.prediction_ranking) { return i===1?"Suivant Probable":i===2?"Score":i===3?"":""; }
+  return i===1?"Numéro":i===2?"Fréquence":i===3?"":"";
 }
 
 const getTableData = () => {
