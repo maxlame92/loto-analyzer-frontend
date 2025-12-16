@@ -1,497 +1,257 @@
+<!-- app.vue (Version Finale 36.0 - Profil Jour avec Dates Précises) -->
+<template>
+  <div id="app" class="app-container">
+    <div v-if="loadingGlobal" class="loading-overlay"><div class="loader"></div><p>Chargement...</p></div>
+    <div v-if="!user" class="auth-container">
+      <div class="login-card">
+        <h1>LE GUIDE DES FOURCASTER</h1>
+        <input type="email" v-model="email" placeholder="Email" class="auth-input" />
+        <input type="password" v-model="password" placeholder="Mot de passe" class="auth-input" />
+        <button @click="login" class="auth-btn" :disabled="isLoading">{{ isLoading ? '...' : 'Connexion' }}</button>
+        <p v-if="authError" class="error-msg">{{ authError }}</p>
+      </div>
+    </div>
+    <div v-else class="main-layout">
+      <header class="top-bar">
+        <h2>LE GUIDE DES FOURCASTER</h2>
+        <div class="user-info"><span>{{ user.email }}</span><button @click="logout" class="logout-btn">Déconnexion</button></div>
+      </header>
+      <div class="content-wrapper">
+        <aside class="sidebar">
+          <div class="tabs">
+            <button :class="{ active: currentTab === 'dashboard' }" @click="currentTab = 'dashboard'">🏠 Tableau de Bord</button>
+            <button :class="{ active: currentTab === 'analysis' }" @click="currentTab = 'analysis'">📊 Résultats</button>
+          </div>
+          <div v-if="isAdmin" class="admin-panel">
+            <h3>Maintenance</h3>
+            <div class="btn-row"><button @click="triggerUpdate" class="action-btn blue-btn">Mise à Jour</button><button @click="triggerRebuild" class="action-btn red-btn">Reconstruction</button></div>
+          </div>
+          <div class="control-group favorites-group">
+            <h3>⭐ Mes Favoris</h3>
+            <div class="add-fav-row"><input v-model="newFavorite" placeholder="Ex: 7 ou 12-45" @keyup.enter="addFavorite"><button @click="addFavorite">Ajouter</button></div>
+            <div class="favorites-list">
+              <div v-for="(item, index) in favoritesList" :key="index" class="fav-tag">
+                <span class="fav-num">{{ item }}</span>
+                <button @click="removeFavorite(index)" class="del-fav">×</button>
+              </div>
+            </div>
+          </div>
+          <!-- PROFIL JOUR -->
+          <div class="control-group" style="background-color: #e8f5e9; border: 1px solid #c8e6c9;">
+            <h3 style="color: #2e7d32;">📅 Profil du Jour</h3>
+            <div class="input-group">
+              <label>Jour :</label>
+              <select v-model="habitDayIndex">
+                <option value="0">Lundi</option><option value="1">Mardi</option><option value="2">Mercredi</option><option value="3">Jeudi</option><option value="4">Vendredi</option><option value="5">Samedi</option><option value="6">Dimanche</option>
+              </select>
+            </div>
+            <div class="input-group">
+              <label>Heure :</label>
+              <select v-model="habitTime">
+                <option value="">Toute la journée</option><option value="07H00">07H00</option><option value="10H00">10H00</option><option value="13H00">13H00</option><option value="16H00">16H00</option><option value="19H00">19H00</option><option value="21H00">21H00</option><option value="22H00">22H00</option><option value="23H00">23H00</option>
+              </select>
+            </div>
+            <!-- SELECTION DATES -->
+            <div class="input-group">
+              <label>Période d'analyse :</label>
+              <div class="date-row" style="display:flex; gap:5px;">
+                <input type="date" v-model="habitStart" title="Début">
+                <input type="date" v-model="habitEnd" title="Fin">
+              </div>
+            </div>
+            <button @click="analyzeHabits" class="action-btn purple-btn">Générer le Profil</button>
+          </div>
+          <!-- AUTRES -->
+          <div class="control-group">
+            <h3>Semaine & Fréquence</h3>
+            <input type="date" v-model="selectedDate" class="date-picker" />
+            <div class="btn-row"><button @click="highlightDay" class="action-btn blue-btn">Surlign. Jour</button><button @click="highlightWeek" class="action-btn blue-btn">Surlign. Sem.</button></div>
+            <div class="btn-col"><button @click="getDailyRank" class="action-btn blue-btn">Top Jour</button><button @click="getWeeklyRank" class="action-btn blue-btn">Top Semaine</button></div>
+            <input v-model="companionNumber" placeholder="N° Compagnon" class="num-input" /><button @click="analyzeCompanions" class="action-btn grey-btn">Analyser</button>
+          </div>
+          <div class="control-group">
+            <h3>Prophète & IA</h3>
+            <input v-model="prophetObserved" placeholder="Numéro vu (Ex: 42)" class="num-input" /><button @click="launchProphet" class="action-btn purple-btn">Futur Probable</button>
+            <input v-model="multiProphetInput" placeholder="Tirage complet" class="num-input" /><button @click="launchMultiProphet" class="action-btn purple-btn">Projection</button>
+            <div class="separator">___</div>
+            <div class="btn-row"><button @click="kantaHighlightDay" class="action-btn blue-btn">Kanta J</button><button @click="kantaHighlightWeek" class="action-btn blue-btn">Kanta S</button></div>
+          </div>
+        </aside>
+        <main class="main-content">
+          <div v-if="currentTab === 'dashboard'" class="dashboard-view">
+            <div class="dashboard-header"><h2>Tableau de Bord</h2><button @click="getDashboard" class="refresh-btn">🔄</button></div>
+            <div v-if="favoritesList.length===0" class="empty-dash">Ajoutez des favoris.</div>
+            <div v-else-if="dashboardLoading" class="loading-dash">Analyse...</div>
+            <div v-else class="cards-grid">
+              <div v-for="(stat, idx) in dashboardData.dashboard_data" :key="idx" class="stat-card">
+                <div class="card-header"><span class="card-num">{{ stat.item }}</span><span class="card-status">{{ stat.status }}</span></div>
+                <div class="card-body">
+                  <div class="stat-row"><span>Sorties:</span><strong>{{ stat.frequency }}</strong></div>
+                  <div class="stat-row"><span>Ami:</span><strong>{{ stat.best_companion }}</strong></div>
+                  <div class="stat-row"><span>Décl:</span><strong>{{ stat.best_trigger }}</strong></div>
+                  <div class="stat-row"><span>Préd:</span><strong>{{ stat.prophet_prediction }}</strong></div>
+                </div>
+                <button @click="analyzeFavorite(stat.item)" class="mini-analyze-btn">Analyser</button>
+              </div>
+            </div>
+          </div>
+          <div v-if="currentTab === 'analysis'" class="results-view">
+            <h2>Résultats</h2>
+            <div v-if="loading" class="loading-box">Chargement...</div>
+            <div v-else-if="error" class="error-box">{{ error }}</div>
+            <div v-else-if="!apiResponse.message && !apiResponse.rankings" class="empty-state">Sélectionnez une analyse.</div>
+            <div v-else class="results-content">
+              <div class="result-header"><h3>{{ apiResponse.message }}</h3><a v-if="apiResponse.worksheet_gid" :href="`https://docs.google.com/spreadsheets/d/1HepqMzkcshKbrsLWwpEOOy5oO9ntK2CgdV7F_ijmjlo/edit#gid=${apiResponse.worksheet_gid}`" target="_blank" class="sheet-link">Sheet ↗</a></div>
+              <div v-if="viewMode === 'table'" class="data-table-wrapper">
+                <table class="data-table">
+                  <thead><tr><th>#</th><th>{{ getHeaderLabel(1) }}</th><th>{{ getHeaderLabel(2) }}</th><th>{{ getHeaderLabel(3) }}</th></tr></thead>
+                  <tbody>
+                    <tr v-for="(row, index) in getTableData()" :key="index">
+                      <td>#{{ index + 1 }}</td>
+                      <td class="main-cell">{{ row.col1 }}</td>
+                      <td>{{ row.col2 }}</td>
+                      <td>{{ row.col3 }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="ai-insights">
+                <!-- EXPLICATION EXPERTE -->
+                <div v-if="apiResponse.ai_strategic_analysis" class="ai-box strategy"><h4>🧠 Analyse Expert</h4><p>{{ apiResponse.ai_strategic_analysis }}</p></div>
+                <div v-if="apiResponse.ai_strategic_profile" class="ai-box profile"><h4>🧠 Profil</h4><p>{{ apiResponse.ai_strategic_profile }}</p></div>
+                <div v-if="apiResponse.ai_sequence_analysis" class="ai-box sequence"><h4>🧬 Suites</h4><p>{{ apiResponse.ai_sequence_analysis }}</p></div>
+                <div v-if="apiResponse.ai_trigger_analysis" class="ai-box trigger"><h4>⚡ Déclencheurs</h4><p>{{ apiResponse.ai_trigger_analysis }}</p></div>
+                <div v-if="apiResponse.ai_prediction_analysis" class="ai-box prediction"><h4>🔮 Prédiction</h4><p>{{ apiResponse.ai_prediction_analysis }}</p></div>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+  </div>
+</template>
+
 <script setup>
 import { ref, onMounted, computed } from 'vue';
 import { auth, db } from './firebase';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebase/auth";
-import { doc, getDoc, setDoc, updateDoc, arrayUnion, arrayRemove } from "firebase/firestore";
-import { Bar } from 'vue-chartjs';
-import { Chart as ChartJS, Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale } from 'chart.js';
+import { doc, getDoc } from "firebase/firestore";
 
-ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale);
+const API_URL = "https://loto-analyzer-backend.onrender.com"; 
+const GOOGLE_SHEET_ID = "1HepqMzKcsbKbRsLWwpEOoy5oO9ntK2CgdV7F_ijmjlo";
 
-const GOOGLE_SHEET_ID = "1HepqMzKcshKbRsLWwpEOOy5oO9ntK2CgdV7F_ijmjIo";
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
+const user = ref(null); const userRole = ref(''); const email = ref(''); const password = ref(''); const authError = ref(''); const isAuthReady = ref(false); const isLoading = ref(false);
+const currentTab = ref('dashboard'); const error = ref(null); const apiResponse = ref({}); const activeSheetGid = ref(null); const loadingGlobal = ref(true); const viewMode = ref('table');
+const favoritesList = ref([]); const newFavorite = ref(""); const dashboardData = ref({ dashboard_data: [] }); const dashboardLoading = ref(false); const dashStart = ref("2025-01-01"); const dashEnd = ref(new Date().toISOString().substr(0, 10));
+const selectedDate = ref(new Date().toISOString().substr(0, 10)); const startDate = ref("2025-01-01"); const endDate = ref(new Date().toISOString().substr(0, 10));
+const companionNumber = ref(''); const profileNumber = ref(''); const triggerTarget = ref(''); const triggerCompanion = ref(''); const prophetObserved = ref(''); const prophetCompanion = ref(''); const multiProphetInput = ref('');
+const habitDayIndex = ref('0'); const habitTime = ref(''); 
+const habitStart = ref("2025-01-01"); const habitEnd = ref(new Date().toISOString().substr(0, 10));
 
-const user = ref(null);
-const userRole = ref('');
-const email = ref('');
-const password = ref('');
-const authError = ref('');
-const isAuthReady = ref(false);
-const userFavorites = ref([]); 
-const newFavoriteInput = ref('');
-const predictionNumber = ref('');
-const predictionCompanion = ref('');
-const multiPredictionInput = ref('');
-
-// --- INITIALISATION ---
 onMounted(() => {
-  const today = new Date();
-  const year = today.getFullYear();
-  const month = (today.getMonth() + 1).toString().padStart(2, '0');
-  const day = today.getDate().toString().padStart(2, '0');
-  selectedDate.value = `${year}-${month}-${day}`;
-  endDate.value = `${year}-${month}-${day}`;
-  
-  const oneMonthAgo = new Date();
-  oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
-  const startYear = oneMonthAgo.getFullYear();
-  const startMonth = (oneMonthAgo.getMonth() + 1).toString().padStart(2, '0');
-  const startDay = oneMonthAgo.getDate().toString().padStart(2, '0');
-  startDate.value = `${startYear}-${startMonth}-${startDay}`;
-
-  onAuthStateChanged(auth, async (firebaseUser) => {
-    if (firebaseUser) {
-      user.value = firebaseUser;
-      const docRef = doc(db, "users", firebaseUser.uid);
-      try {
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          userRole.value = data.role || 'user';
-          userFavorites.value = data.favorites || []; 
-        } else {
-          userRole.value = 'user';
-          userFavorites.value = [];
-          // CRITIQUE : Utilisation de merge: true pour créer le doc s'il n'existe pas
-          await setDoc(docRef, { role: 'user', favorites: [] }, { merge: true });
-        }
-      } catch (e) {
-        console.error("Erreur Firebase:", e);
-      }
-    } else {
-      user.value = null; userRole.value = ''; userFavorites.value = [];
+  const savedFavs = localStorage.getItem('lotoFavorites'); if (savedFavs) favoritesList.value = JSON.parse(savedFavs);
+  onAuthStateChanged(auth, async (u) => {
+    user.value = u; loadingGlobal.value = false;
+    if (u) {
+      const s = await getDoc(doc(db, "users", u.uid)); userRole.value = s.exists() ? s.data().role : 'user';
+      if (favoritesList.value.length > 0) getDashboard();
     }
     isAuthReady.value = true;
   });
 });
+const isAdmin = computed(() => userRole.value === 'admin' || user.value?.email === 'aboucho92@gmail.com');
+const login = async () => { try { isLoading.value=true; await signInWithEmailAndPassword(auth, email.value, password.value); } catch { authError.value="Erreur"; } finally { isLoading.value=false; } };
+const logout = async () => signOut(auth);
+const addFavorite = () => { if (newFavorite.value && !favoritesList.value.includes(newFavorite.value)) { favoritesList.value.push(newFavorite.value); newFavorite.value=""; localStorage.setItem('lotoFavorites', JSON.stringify(favoritesList.value)); getDashboard(); } };
+const removeFavorite = (i) => { favoritesList.value.splice(i, 1); localStorage.setItem('lotoFavorites', JSON.stringify(favoritesList.value)); getDashboard(); };
 
-const login = async () => {
-  try { authError.value = ''; isLoading.value = true; await signInWithEmailAndPassword(auth, email.value, password.value); } 
-  catch (error) { authError.value = "Email ou mot de passe incorrect."; } finally { isLoading.value = false; }
-};
-const logout = async () => { await signOut(auth); };
-
-// --- GESTION FAVORIS ---
-async function addFavorite() {
-  const input = newFavoriteInput.value.trim();
-  if (!input) return;
-  
-  const isSingleNumber = /^[0-9]{1,2}$/.test(input);
-  const isPair = /^[0-9]{1,2}-[0-9]{1,2}$/.test(input);
-
-  if (!isSingleNumber && !isPair) {
-    alert("Format invalide. Entrez un numéro (ex: 7) ou une paire (ex: 12-45)."); return;
-  }
-  if (userFavorites.value.includes(input)) { newFavoriteInput.value = ''; return; }
-
+async function callApi(ep, m='GET', b=null) {
+  if (!user.value) return;
+  isLoading.value=true; error.value=null; apiResponse.value={}; if(!ep.includes('dashboard')) currentTab.value='analysis';
   try {
-    const userRef = doc(db, "users", user.value.uid);
-    userFavorites.value.push(input); 
-    // SAUVEGARDE SECURISEE
-    await setDoc(userRef, { favorites: arrayUnion(input) }, { merge: true }); 
-    newFavoriteInput.value = '';
-  } catch (e) {
-    console.error("Erreur sauvegarde:", e);
-    let msg = "Erreur technique.";
-    if (e.code === 'permission-denied') msg = "PERMISSION REFUSÉE: Vous devez mettre à jour les Règles Firebase dans la Console.";
-    alert(msg);
-    userFavorites.value = userFavorites.value.filter(item => item !== input);
+    const res = await fetch(`${API_URL}${ep}`, { method:m, headers:{'Authorization':`Bearer ${await user.value.getIdToken()}`, 'Content-Type':'application/json'}, body:b?JSON.stringify(b):null });
+    const d = await res.json();
+    if(!res.ok) throw new Error(d.detail);
+    if(ep.includes('dashboard')) dashboardData.value=d; else { apiResponse.value=d; if(d.worksheet_gid) activeSheetGid.value=d.worksheet_gid; }
+  } catch(e) { error.value=e.message; } finally { isLoading.value=false; dashboardLoading.value=false; }
+}
+
+const getDashboard = () => callApi(`/analysis/favorites-dashboard?start_date=${dashStart.value}&end_date=${dashEnd.value}`, 'POST', favoritesList.value);
+const analyzeHabits = () => callApi(`/analysis/day-specific-profile?day_index=${habitDayIndex.value}&start_date=${habitStart.value}&end_date=${habitEnd.value}${habitTime.value?'&time_slot='+habitTime.value:''}`);
+const triggerUpdate = () => callApi('/collection/update-recent-weeks', 'POST');
+const triggerRebuild = () => { if(confirm('Sûr?')) callApi('/collection/start-full-rebuild', 'POST'); };
+const highlightDay = () => callApi(`/analysis/highlight-day/${selectedDate.value}`, 'POST');
+const highlightWeek = () => callApi(`/analysis/process-entire-week/${selectedDate.value}`, 'POST');
+const getDailyRank = () => callApi(`/analysis/daily-frequency/${selectedDate.value}`);
+const getWeeklyRank = () => callApi(`/analysis/weekly-frequency/${selectedDate.value}`);
+const analyzeCompanions = () => { if(companionNumber.value) callApi(`/analysis/companions/${companionNumber.value}?week_date_str=${selectedDate.value}`); };
+const getNumberProfile = () => { if(profileNumber.value) callApi(`/analysis/number-profile?target_number=${profileNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`); };
+const detectSequences = () => callApi(`/analysis/sequence-detection?start_date=${startDate.value}&end_date=${endDate.value}`);
+const findTriggers = () => { if(triggerTarget.value) callApi(`/analysis/trigger-numbers?target_number=${triggerTarget.value}&start_date=${startDate.value}&end_date=${endDate.value}${triggerCompanion.value?'&companion_number='+triggerCompanion.value:''}`); };
+const kantaHighlightDay = () => callApi(`/analysis/kanta-highlight-day/${selectedDate.value}`, 'POST');
+const kantaHighlightWeek = () => callApi(`/analysis/kanta-highlight-week/${selectedDate.value}`, 'POST');
+const getKantaDailyRank = () => callApi(`/analysis/kanta-daily-rank/${selectedDate.value}`);
+const getKantaWeeklyRank = () => callApi(`/analysis/kanta-weekly-rank/${selectedDate.value}`);
+const launchProphet = () => { if(prophetObserved.value) callApi(`/analysis/predict-next?observed_number=${prophetObserved.value}&start_date=${startDate.value}&end_date=${endDate.value}${prophetCompanion.value?'&observed_companion='+prophetCompanion.value:''}`); };
+const launchMultiProphet = () => { if(multiProphetInput.value) callApi(`/analysis/multi-prediction?numbers_str=${multiProphetInput.value}&start_date=${startDate.value}&end_date=${endDate.value}`); };
+const analyzeFavorite = (i) => { currentTab.value='analysis'; if(i.includes('-')) { triggerTarget.value=i.split('-')[0]; findTriggers(); } else { profileNumber.value=i; getNumberProfile(); } };
+
+const getHeaderLabel = (i) => {
+  const r = apiResponse.value;
+  // CORRECTION ICI : Ajout des valeurs par défaut pour éviter les erreurs de syntaxe
+  if(r.habits) {
+    if(i===1) return "Numéro";
+    if(i===2) return "Déclencheur";
+    if(i===3) return "Compagnon";
+    return "";
   }
-}
-
-async function removeFavorite(item) {
-  if (!confirm(`Retirer ${item} ?`)) return;
-  try {
-    const userRef = doc(db, "users", user.value.uid);
-    userFavorites.value = userFavorites.value.filter(n => n !== item);
-    await updateDoc(userRef, { favorites: arrayRemove(item) });
-  } catch (e) { console.error(e); }
-}
-
-function analyzeFavorite(item, mode) {
-  if (!startDate.value || !endDate.value) { alert("Vérifiez les dates de début et fin."); }
-  if (item.includes('-')) {
-    const parts = item.split('-');
-    triggerTargetNumber.value = parts[0]; triggerCompanionNumber.value = parts[1];
-    runTriggerAnalysis(); 
-  } else {
-    if (mode === 'companion') {
-      selectedNumber.value = item;
-      if (!selectedDate.value) { alert("Sélectionnez une date pour l'analyse compagnon."); return; }
-      runReport('companions');
-    } else if (mode === 'trigger') {
-      triggerTargetNumber.value = item; triggerCompanionNumber.value = ''; 
-      runTriggerAnalysis();
-    }
+  if(r.prediction_ranking) {
+    if(i===1) return "Suivant Probable";
+    if(i===2) return "Score";
+    return "";
   }
+  // CAS PAR DEFAUT
+  if(i===1) return "Numéro";
+  if(i===2) return "Fréquence";
+  return "";
 }
 
-// --- VARIABLES ---
-const selectedDate = ref('');
-const startDate = ref('');
-const endDate = ref('');
-const selectedNumber = ref('');
-const profileNumber = ref('');
-const triggerTargetNumber = ref('');
-const triggerCompanionNumber = ref('');
-const apiResponse = ref(null);
-const isLoading = ref(false);
-const error = ref(null);
-const lastOperationType = ref('');
-const activeSheetGid = ref(null);
-const showWelcomeMessage = ref(true);
-const viewMode = ref('table');
-
-const isAdmin = computed(() => userRole.value === 'admin');
-const sheetDirectLink = computed(() => {
-  const base = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}`;
-  return activeSheetGid.value ? `${base}/edit#gid=${activeSheetGid.value}` : `${base}/edit`;
-});
-
-const tableHeaders = computed(() => {
-  if (lastOperationType.value.includes('frequency')) return ['#', 'Numéro', 'Apparitions'];
-  if (lastOperationType.value === 'companions') return ['#', 'Compagnon', 'Apparu avec'];
-  if (lastOperationType.value === 'trigger') return ['#', 'N° Déclencheur', 'Fréquence'];
-  if (lastOperationType.value === 'prediction') return ['#', 'Numéro Suivant (Probable)', 'Fréquence']; 
-  if (lastOperationType.value.includes('kanta-rank')) return ['Paire Kanta', 'Apparitions'];
-  return [];
-});
-
-const tableData = computed(() => {
-  if (apiResponse.value?.frequency_ranking) return apiResponse.value.frequency_ranking;
-  if (apiResponse.value?.companion_ranking) return apiResponse.value.companion_ranking;
-  if (apiResponse.value?.trigger_numbers_ranking) return apiResponse.value.trigger_numbers_ranking;
-  if (apiResponse.value?.prediction_ranking) return apiResponse.value.prediction_ranking;
-  if (apiResponse.value?.kanta_pairs) return apiResponse.value.kanta_pairs;
-  if (apiResponse.value?.kanta_pairs_ranking) return apiResponse.value.kanta_pairs_ranking;
-  return [];
-});
-const isTableVisible = computed(() => tableData.value.length > 0);
-
-const chartOptions = {
-  responsive: true, maintainAspectRatio: false,
-  plugins: { legend: { display: false }, title: { display: true, text: 'Analyse Visuelle (Top 20)' } },
-  scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
-};
-const chartData = computed(() => {
-  const data = tableData.value;
-  if (!data || data.length === 0) return null;
-  const limitedData = data.slice(0, 20);
-  let labels = [], counts = [];
-  limitedData.forEach(row => {
-    if (row.pair) labels.push(row.pair);
-    else if (row.number) labels.push(row.number.toString());
-    else if (row.companion) labels.push(row.companion.toString());
-    else labels.push('?');
-    counts.push(row.count);
+const getTableData = () => {
+  const r = apiResponse.value;
+  const l = r.frequency_ranking||r.companion_ranking||r.trigger_numbers_ranking||r.prediction_ranking||r.kanta_pairs_ranking||r.habits||[];
+  return l.map(x => {
+    if(x.trigger) return { col1:x.number, col2:`Décl: ${x.trigger}`, col3:`Ami: ${x.companion}` };
+    if(x.number!==undefined) return { col1:x.number, col2:x.count, col3:"" };
+    if(x.pair) return { col1:x.pair, col2:x.count, col3:"" };
+    return { col1:"?", col2:"?", col3:"" };
   });
-  return { labels, datasets: [{ label: 'Occurrences', backgroundColor: '#007bff', borderRadius: 4, data: counts }] };
-});
-
-// --- API CALLS ---
-async function callApi(url, method = 'GET') {
-  showWelcomeMessage.value = false; isLoading.value = true; error.value = null; apiResponse.value = null;
-  try {
-    const token = await user.value.getIdToken();
-    const headers = { 'Authorization': `Bearer ${token}` };
-    const fullUrl = `${API_BASE_URL}${url}`;
-    const response = await fetch(fullUrl, { method, headers });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || `Erreur ${response.status}`);
-    apiResponse.value = data;
-    if (data.worksheet_gid) activeSheetGid.value = data.worksheet_gid;
-    viewMode.value = 'table';
-  } catch (err) { error.value = err.message; } finally { isLoading.value = false; }
-}
-
-async function runDataUpdate(endpoint) { lastOperationType.value = 'update'; await callApi(`/collection/${endpoint}`, 'POST'); }
-async function runVisualAnalysis(endpoint) {
-  if (!selectedDate.value) { error.value = "Selectionnez une date."; return; }
-  lastOperationType.value = 'visual'; await callApi(`/analysis/${endpoint}/${selectedDate.value}`, 'POST');
-}
-async function runReport(reportType) {
-  if (!selectedDate.value) { error.value = "Selectionnez une date."; return; }
-  let url = '';
-  if (reportType === 'weekly-frequency') { lastOperationType.value = 'weekly-frequency'; url = `/analysis/weekly-frequency/${selectedDate.value}`; }
-  else if (reportType === 'daily-frequency') { lastOperationType.value = 'daily-frequency'; url = `/analysis/daily-frequency/${selectedDate.value}`; }
-  else if (reportType === 'companions') {
-    if (!selectedNumber.value) { error.value = "Entrez un numéro."; return; }
-    lastOperationType.value = 'companions'; url = `/analysis/companions/${selectedNumber.value}?week_date_str=${selectedDate.value}`;
-  }
-  await callApi(url);
-}
-
-// --- FONCTIONS MANQUANTES ET NOUVELLES ---
-
-// 1. FREQUENCE SUR PERIODE
-async function runRangeAnalysis() {
-  if (!startDate.value || !endDate.value) { error.value = "Sélectionnez date début ET fin."; return; }
-  lastOperationType.value = 'frequency';
-  await callApi(`/analysis/frequency-by-range?start_date=${startDate.value}&end_date=${endDate.value}`);
-}
-
-// 2. PROFIL DU NUMERO
-async function runProfileAnalysis() {
-  if (!startDate.value || !endDate.value || !profileNumber.value) { error.value = "Période ET numéro requis."; return; }
-  lastOperationType.value = 'profile';
-  await callApi(`/analysis/number-profile?target_number=${profileNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`);
-}
-
-// 3. SUITES & DECLENCHEURS
-async function runSequenceAnalysis() {
-  if (!startDate.value || !endDate.value) { error.value = "Période requise."; return; }
-  lastOperationType.value = 'sequence'; await callApi(`/analysis/sequence-detection?start_date=${startDate.value}&end_date=${endDate.value}`);
-}
-async function runTriggerAnalysis() {
-  if (!startDate.value || !endDate.value || !triggerTargetNumber.value) { error.value = "Période et cible requises."; return; }
-  lastOperationType.value = 'trigger';
-  let url = `/analysis/trigger-numbers?target_number=${triggerTargetNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`;
-  if (triggerCompanionNumber.value) url += `&companion_number=${triggerCompanionNumber.value}`;
-  await callApi(url);
-}
-
-// 4. NOUVEAU : LE PROPHETE
-async function runPredictionAnalysis() {
-  if (!startDate.value || !endDate.value || !predictionNumber.value) { error.value = "Période et numéro vus requis."; return; }
-  lastOperationType.value = 'prediction';
-  let url = `/analysis/predict-next?observed_number=${predictionNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`;
-  if (predictionCompanion.value) url += `&observed_companion=${predictionCompanion.value}`;
-  await callApi(url);
-}
-
-// 5. NOUVEAU : ANALYSE CROISEE
-async function runMultiPrediction() {
-  if (!startDate.value || !endDate.value || !multiPredictionInput.value) { error.value = "Période et numéros requis."; return; }
-  const cleanInput = multiPredictionInput.value.replace(/[\s-]+/g, ',');
-  lastOperationType.value = 'prediction';
-  await callApi(`/analysis/multi-prediction?numbers_str=${cleanInput}&start_date=${startDate.value}&end_date=${endDate.value}`);
-}
-
-async function runKantaAnalysis(endpoint) {
-  if (!selectedDate.value) { error.value = "Date requise."; return; }
-  lastOperationType.value = 'visual'; await callApi(`/analysis/${endpoint}/${selectedDate.value}`, 'POST');
-}
-async function runKantaReport(reportType) {
-  if (!selectedDate.value) { error.value = "Date requise."; return; }
-  lastOperationType.value = 'kanta-rank'; await callApi(`/analysis/kanta-${reportType}/${selectedDate.value}`);
 }
 </script>
 
-<template>
-  <div v-if="!isAuthReady" class="loading-screen"><p>Chargement...</p></div>
-  <div v-else-if="!user" class="login-wrapper">
-    <div class="login-box">
-      <h2>LE GUIDE DES FOURCASTER</h2>
-      <form @submit.prevent="login">
-        <div class="input-group"><label>Email</label><input type="email" v-model="email" required /></div>
-        <div class="input-group"><label>Mot de passe</label><input type="password" v-model="password" required /></div>
-        <button type="submit" class="login-button" :disabled="isLoading">{{ isLoading ? '...' : 'Connexion' }}</button>
-        <p v-if="authError" class="auth-error">{{ authError }}</p>
-      </form>
-    </div>
-  </div>
-
-  <main v-else class="dashboard">
-    <header>
-      <h1>LE GUIDE DES FOURCASTER</h1>
-      <div class="user-info">
-        <span>Connecté : <strong>{{ user.email }}</strong></span>
-        <button @click="logout" class="logout-button">Déconnexion</button>
-      </div>
-    </header>
-
-    <div class="main-layout">
-      <div class="controls-column">
-        <section v-if="isAdmin" class="card data-update">
-          <h2>Maintenance (Admin)</h2>
-          <div class="button-group-horizontal">
-            <button @click="runDataUpdate('update-recent-weeks')" :disabled="isLoading">Mise à Jour Rapide</button>
-            <button @click="runDataUpdate('start-full-rebuild')" :disabled="isLoading" class="danger">Reconstruction</button>
-          </div>
-        </section>
-
-        <!-- FAVORIS -->
-        <section class="card">
-          <h2>⭐ Mes Numéros Favoris</h2>
-          <div class="favorites-input-group">
-            <input type="text" v-model="newFavoriteInput" placeholder="Ex: 7 ou 12-45" @keyup.enter="addFavorite"/>
-            <button @click="addFavorite" :disabled="!newFavoriteInput" class="btn-small">Ajouter</button>
-          </div>
-          <div v-if="userFavorites.length > 0" class="favorites-list">
-            <div v-for="item in userFavorites" :key="item" class="favorite-chip">
-              <span class="fav-label">{{ item }}</span>
-              <div class="fav-actions">
-                <button v-if="!item.includes('-')" @click="analyzeFavorite(item, 'companion')" class="icon-btn" title="Compagnons (Avec)">👥</button>
-                <button @click="analyzeFavorite(item, 'trigger')" class="icon-btn" title="Déclencheurs (Avant)">⚡</button>
-              </div>
-              <span @click="removeFavorite(item)" class="fav-delete">×</span>
-            </div>
-          </div>
-          <p v-else class="empty-msg">Ajoutez vos numéros fétiches.</p>
-        </section>
-
-        <section class="card">
-          <h2>Analyse par Semaine</h2>
-          <input type="date" v-model="selectedDate" />
-          <div class="button-group-vertical">
-            <button @click="runVisualAnalysis('highlight-day')" :disabled="isLoading || !selectedDate">Surlignage (Jour)</button>
-            <button @click="runVisualAnalysis('process-entire-week')" :disabled="isLoading || !selectedDate">Surlignage (Semaine)</button>
-            <hr />
-            <button @click="runReport('daily-frequency')" :disabled="isLoading || !selectedDate">Classement Jour</button>
-            <button @click="runReport('weekly-frequency')" :disabled="isLoading || !selectedDate">Classement Semaine</button>
-            <hr />
-            <input type="number" v-model="selectedNumber" placeholder="N° pour analyse compagnons" />
-            <button @click="runReport('companions')" :disabled="isLoading || !selectedDate || !selectedNumber">Analyser Compagnons</button>
-          </div>
-        </section>
-
-        <!-- ICI SONT LES FONCTIONS QUE VOUS PENSIEZ MANQUANTES -->
-        <section class="card">
-          <h2>Période & Profilage</h2>
-          <label>Début :</label><input type="date" v-model="startDate" />
-          <label>Fin :</label><input type="date" v-model="endDate" />
-          
-          <button @click="runRangeAnalysis" :disabled="isLoading || !startDate || !endDate">Fréquence sur Période</button>
-          
-          <hr />
-          <input type="number" v-model="profileNumber" placeholder="N° pour profil complet" />
-          <button @click="runProfileAnalysis" :disabled="isLoading || !startDate || !endDate || !profileNumber">Générer Profil du Numéro</button>
-        </section>
-
-        <!-- NOUVELLES FONCTIONS PROPHETE -->
-        <section class="card prophet-card">
-          <h2>🔮 Le Prophète</h2>
-          <p class="small-text">Ce numéro vient de sortir. La suite ?</p>
-          <input type="number" v-model="predictionNumber" placeholder="Numéro vu (Ex: 42)" />
-          <input type="number" v-model="predictionCompanion" placeholder="Compagnon vu (Optionnel)" />
-          <button @click="runPredictionAnalysis" :disabled="isLoading || !startDate || !endDate || !predictionNumber" class="prophet-btn">Voir Futur Probable</button>
-        </section>
-
-        <section class="card multi-prophet-card">
-          <h2>🔮 Analyse Croisée</h2>
-          <p class="small-text">Dernier tirage complet (ou sélection).</p>
-          <input type="text" v-model="multiPredictionInput" placeholder="Ex: 5 12 34 56 78" @keyup.enter="runMultiPrediction"/>
-          <button @click="runMultiPrediction" :disabled="isLoading || !startDate || !endDate || !multiPredictionInput" class="multi-btn">Lancer Projection</button>
-        </section>
-
-        <section class="card">
-          <h2>IA Avancée & Kanta</h2>
-          <button @click="runSequenceAnalysis" :disabled="isLoading || !startDate || !endDate">Détecter Suites</button>
-          <hr />
-          <input type="number" v-model="triggerTargetNumber" placeholder="Cible (ex: 18)" />
-          <input type="number" v-model="triggerCompanionNumber" placeholder="Compagnon (Optionnel)" />
-          <button @click="runTriggerAnalysis" :disabled="isLoading || !startDate || !endDate || !triggerTargetNumber">Trouver Déclencheurs ⚡</button>
-          <hr />
-          <div class="button-group-horizontal">
-             <button @click="runKantaAnalysis('kanta-highlight-day')">Surlign. Kanta J</button>
-             <button @click="runKantaAnalysis('kanta-highlight-week')">Surlign. Kanta S</button>
-          </div>
-          <div class="button-group-horizontal" style="margin-top:5px;">
-             <button @click="runKantaReport('daily-rank')">Class. Kanta J</button>
-             <button @click="runKantaReport('weekly-rank')">Class. Kanta S</button>
-          </div>
-        </section>
-      </div>
-
-      <div class="results-column">
-        <section class="card results-card">
-          <h2>Résultats</h2>
-          <div v-if="showWelcomeMessage" class="welcome-message">
-            <h3>Bienvenue !</h3>
-            <p>Utilisez les ⭐ Favoris pour lancer des analyses rapides.</p>
-            <button @click="showWelcomeMessage = false" class="close-welcome">OK</button>
-          </div>
-          <div v-else>
-            <div v-if="isLoading" class="loader">Chargement...</div>
-            <div v-if="error" class="error-box">{{ error }}</div>
-            
-            <div v-if="apiResponse">
-              <div v-if="apiResponse.message || apiResponse.analysis_period" class="success-box large">
-                <p>✅ {{ apiResponse.message || `Analyse : ${apiResponse.analysis_period}` }}</p>
-                <a v-if="apiResponse.worksheet_gid" :href="sheetDirectLink" target="_blank" class="button-link">Voir l'Onglet ↗</a>
-              </div>
-
-              <div v-if="isTableVisible && !lastOperationType.includes('visual')" class="view-controls">
-                <button @click="viewMode = 'table'" :class="{ active: viewMode === 'table' }" class="toggle-btn">📋 Tableau</button>
-                <button @click="viewMode = 'chart'" :class="{ active: viewMode === 'chart' }" class="toggle-btn">📊 Graphique</button>
-              </div>
-
-              <div v-if="isTableVisible && viewMode === 'chart' && !lastOperationType.includes('visual')" class="chart-container">
-                <Bar :data="chartData" :options="chartOptions" />
-              </div>
-
-              <table v-else-if="isTableVisible" class="styled-table">
-                <thead><tr><th v-for="h in tableHeaders" :key="h">{{ h }}</th></tr></thead>
-                <tbody>
-                  <tr v-for="(row, index) in tableData" :key="index">
-                    <td v-if="lastOperationType.includes('kanta-rank')">{{ row.pair }}</td>
-                    <td v-else>#{{ index + 1 }}</td>
-                    <td v-if="!lastOperationType.includes('kanta-rank')">{{ row.number }}</td>
-                    <td>{{ row.count }}</td>
-                  </tr>
-                </tbody>
-              </table>
-
-              <div v-if="apiResponse.ai_strategic_analysis" class="ai-analysis"><h3>🧠 Stratégie</h3><p>{{ apiResponse.ai_strategic_analysis }}</p></div>
-              <div v-if="apiResponse.ai_strategic_profile" class="ai-analysis"><h3>🧠 Profil Numéro</h3><p>{{ apiResponse.ai_strategic_profile }}</p></div>
-              <div v-if="apiResponse.ai_sequence_analysis" class="ai-analysis"><h3>🧠 Suites</h3><p>{{ apiResponse.ai_sequence_analysis }}</p></div>
-              <div v-if="apiResponse.ai_trigger_analysis" class="ai-analysis"><h3>🧠 Déclencheurs</h3><p>{{ apiResponse.ai_trigger_analysis }}</p></div>
-              <div v-if="apiResponse.ai_prediction_analysis" class="ai-analysis prophet-analysis"><h3>🔮 Prédiction</h3><p>{{ apiResponse.ai_prediction_analysis }}</p></div>
-            </div>
-          </div>
-        </section>
-      </div>
-    </div>
-  </main>
-</template>
-
 <style scoped>
-  /* STYLES IDENTIQUES AU PRECEDENT - CLEAN */
-  .loading-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; font-size: 1.5rem; color: #666; }
-  .login-wrapper { display: flex; align-items: center; justify-content: center; min-height: 100vh; background-color: #f0f2f5; }
-  .login-box { background: white; padding: 2.5rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
-  .input-group { margin-bottom: 1rem; }
-  .input-group label { display: block; margin-bottom: 0.5rem; font-weight: 500; }
-  input { width: 100%; padding: 0.8rem; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-  button { padding: 0.8rem; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; width: 100%; font-weight: bold; }
-  button:disabled { background-color: #ccc; }
-  .dashboard { max-width: 95%; margin: 1rem auto; font-family: sans-serif; }
-  header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 1rem; border-bottom: 1px solid #eee; margin-bottom: 2rem; }
-  .user-info { display: flex; gap: 1rem; align-items: center; }
-  .logout-button { background-color: #6c757d; padding: 0.5rem 1rem; width: auto; }
-  .main-layout { display: grid; grid-template-columns: 350px 1fr; gap: 2rem; }
-  .card { background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 1.5rem; }
-  .card h2 { margin-top: 0; font-size: 1.2rem; border-bottom: 1px solid #eee; padding-bottom: 0.5rem; margin-bottom: 1rem; }
-  .button-group-vertical { display: flex; flex-direction: column; gap: 0.5rem; }
-  .button-group-horizontal { display: flex; gap: 1rem; }
-  .danger { background-color: #dc3545; }
-  .styled-table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
-  .styled-table th, .styled-table td { border: 1px solid #ddd; padding: 8px; text-align: center; }
-  .styled-table th { background-color: #f2f2f2; }
-  .ai-analysis { background-color: #fffbe6; border-left: 5px solid #ffc107; padding: 1rem; margin-top: 1rem; border-radius: 4px; }
-  .success-box { background-color: #e8f5e9; color: #2e7d32; padding: 1rem; border-radius: 4px; text-align: center; }
-  .button-link { display: inline-block; padding: 0.5rem 1rem; background-color: #28a745; color: white; text-decoration: none; border-radius: 4px; margin-top: 0.5rem; }
-  .view-controls { display: flex; justify-content: center; gap: 1rem; margin: 1rem 0; }
-  .toggle-btn { background: #e0e0e0; color: #333; width: auto; padding: 0.5rem 1.5rem; }
-  .toggle-btn.active { background: #007bff; color: white; }
-  .chart-container { height: 400px; width: 100%; }
-  .favorites-input-group { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
-  .btn-small { width: auto; padding: 0.5rem 1rem; }
-  .favorites-list { display: flex; flex-wrap: wrap; gap: 0.8rem; }
-  .favorite-chip { display: flex; align-items: center; background: #e3f2fd; border: 1px solid #90caf9; border-radius: 20px; padding: 0.3rem 0.5rem 0.3rem 1rem; }
-  .fav-label { font-weight: bold; color: #1565c0; margin-right: 0.5rem; }
-  .fav-actions { display: flex; gap: 0.2rem; margin-right: 0.5rem; }
-  .icon-btn { background: white; border: 1px solid #bbdefb; color: #333; border-radius: 50%; width: 28px; height: 28px; padding: 0; font-size: 0.8rem; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
-  .icon-btn:hover { background: #bbdefb; transform: scale(1.1); }
-  .fav-delete { cursor: pointer; color: #ef5350; font-weight: bold; font-size: 1.2rem; padding: 0 5px; }
-  .empty-msg { font-style: italic; color: #999; font-size: 0.9rem; }
-  .small-text { font-size: 0.8rem; color: #666; margin-top: -0.5rem; margin-bottom: 1rem; }
-  hr { border: none; border-top: 1px solid #eee; margin: 1.5rem 0; }
-  .prophet-card { border: 1px solid #d1c4e9; background: linear-gradient(to bottom right, #ffffff, #f3e5f5); }
-  .prophet-btn { background-color: #7b1fa2; }
-  .prophet-btn:hover { background-color: #4a148c; }
-  .prophet-analysis { background-color: #f3e5f5; border-left: 5px solid #7b1fa2; }
-  .multi-prophet-card { border: 2px solid #6f42c1; background-color: #f8f0fc; }
-  .multi-btn { background: linear-gradient(45deg, #6f42c1, #007bff); border: none; }
-  .multi-btn:hover { opacity: 0.9; transform: scale(1.02); }
+* { box-sizing: border-box; } body { font-family: 'Segoe UI', sans-serif; margin: 0; background: #f4f6f9; color: #333; }
+.loading-screen, .login-wrapper { display: flex; justify-content: center; align-items: center; height: 100vh; }
+.login-box { background: white; padding: 2rem; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); text-align: center; width: 350px; }
+.auth-input, .input-group input, .input-group select, .num-input { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; margin-bottom: 5px; }
+.auth-btn, .btn-primary, .btn-secondary, .btn-purple, .action-btn { width: 100%; padding: 10px; border: none; border-radius: 5px; cursor: pointer; color: white; margin-top: 5px; font-weight: bold; }
+.auth-btn { background: #3498db; } .btn-primary { background: #8e44ad; } .btn-secondary { background: #95a5a6; } .btn-purple { background: #9b59b6; }
+.blue-btn { background: #3498db; } .red-btn { background: #e74c3c; } .grey-btn { background: #7f8c8d; }
+.app-layout { display: flex; flex-direction: column; height: 100vh; }
+.top-bar { background: #2c3e50; color: white; padding: 0 20px; height: 60px; display: flex; justify-content: space-between; align-items: center; }
+.sidebar { width: 300px; background: white; border-right: 1px solid #ddd; overflow-y: auto; display: flex; flex-direction: column; }
+.tabs { display: flex; } .tabs button { flex: 1; padding: 15px; border: none; background: #f8f9fa; cursor: pointer; } .tabs button.active { background: white; color: #3498db; border-bottom: 3px solid #3498db; }
+.control-group { padding: 15px; border-bottom: 1px solid #eee; } .control-group h3 { margin: 0 0 10px 0; font-size: 1rem; color: #2c3e50; }
+.main-content { flex: 1; padding: 20px; overflow-y: auto; background: #ecf0f1; }
+.cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px; }
+.stat-card { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+.card-header { display: flex; justify-content: space-between; margin-bottom: 10px; border-bottom: 1px solid #eee; padding-bottom: 5px; font-weight: bold; }
+.stat-row { display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 5px; }
+.mini-analyze-btn { width: 100%; padding: 5px; background: #f39c12; border: none; border-radius: 4px; cursor: pointer; margin-top: 5px; }
+.data-table { width: 100%; border-collapse: collapse; background: white; } .data-table th, .data-table td { padding: 10px; border: 1px solid #eee; text-align: center; } .data-table th { background: #f8f9fa; }
+.main-cell { font-weight: bold; color: #2c3e50; font-size: 1.1em; }
+.ai-box { background: white; border-left: 4px solid #f1c40f; padding: 15px; margin-bottom: 15px; border-radius: 4px; line-height: 1.6; white-space: pre-wrap; }
+.ai-box h4 { margin: 0 0 5px 0; color: #f39c12; }
+.loader { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 20px auto; }
+@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+.loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.9); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 999; }
 </style>
