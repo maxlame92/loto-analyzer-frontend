@@ -1,60 +1,62 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue';
-// CORRECTION ICI : On importe directement auth et db, on ne réinitialise pas l'app
+import { ref, onMounted, computed, watch } from 'vue';
 import { auth, db } from './firebase';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, updateDoc, arrayUnion, arrayRemove } from "firebase/firestore";
+import { Bar } from 'vue-chartjs';
+import { Chart as ChartJS, Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale } from 'chart.js';
 
-// --- CONFIGURATION ---
-// Mettez ici l'URL de votre Backend Render
-const API_URL = "https://loto-analyzer-backend.onrender.com"; 
-const GOOGLE_SHEET_ID = "1HepqMzKcsbKbRsLWwpEOoy5oO9ntK2CgdV7F_ijmjlo";
+ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale);
 
-// --- AUTHENTIFICATION ---
+const GOOGLE_SHEET_ID = "1HepqMzKcshKbRsLWwpEOOy5oO9ntK2CgdV7F_ijmjIo";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
+
 const user = ref(null);
 const userRole = ref('');
 const email = ref('');
 const password = ref('');
 const authError = ref('');
 const isAuthReady = ref(false);
-const isLoading = ref(false);
-
-// --- NAVIGATION & ETAT ---
-const currentTab = ref('dashboard'); // 'dashboard' ou 'analysis'
-const error = ref(null);
-const apiResponse = ref({});
-const activeSheetGid = ref(null);
-
-// --- DONNEES FAVORIS & DASHBOARD ---
-const favoritesList = ref([]);
-const newFavorite = ref("");
-const dashboardData = ref({ dashboard_data: [] });
-const dashboardLoading = ref(false);
-const dashStart = ref("2025-01-01");
-const dashEnd = ref(new Date().toISOString().substr(0, 10));
-
-// --- INPUTS ANALYSES ---
-const selectedDate = ref(new Date().toISOString().substr(0, 10));
-const startDate = ref("2025-01-01");
-const endDate = ref(new Date().toISOString().substr(0, 10));
-const companionNumber = ref('');
+const userFavorites = ref([]); 
+const newFavoriteInput = ref('');
+const currentView = ref('dashboard');
+const dashboardData = ref(null);
+const isDashboardLoading = ref(false);
+const dashStartDate = ref('');
+const dashEndDate = ref('');
+const selectedDate = ref('');
+const startDate = ref('');
+const endDate = ref('');
+const selectedNumber = ref('');
 const profileNumber = ref('');
-const triggerTarget = ref('');
-const triggerCompanion = ref('');
-const prophetObserved = ref('');
-const prophetCompanion = ref('');
-const multiProphetInput = ref('');
-
-// --- INPUTS HABITUDES ---
-const habitDayIndex = ref('0'); // 0=Lundi
-const habitTime = ref('');
-const habitPeriod = ref('365');
+const triggerTargetNumber = ref('');
+const triggerCompanionNumber = ref('');
+const predictionNumber = ref('');
+const predictionCompanion = ref('');
+const multiPredictionInput = ref('');
+const apiResponse = ref(null);
+const isLoading = ref(false);
+const error = ref(null);
+const lastOperationType = ref('');
+const activeSheetGid = ref(null);
+const viewMode = ref('table');
 
 // --- INITIALISATION ---
 onMounted(() => {
-  // Chargement des favoris locaux
-  const savedFavs = localStorage.getItem('lotoFavorites');
-  if (savedFavs) favoritesList.value = JSON.parse(savedFavs);
+  const today = new Date();
+  const todayStr = today.toISOString().split('T')[0];
+  
+  selectedDate.value = todayStr;
+  endDate.value = todayStr;
+  dashEndDate.value = todayStr; 
+
+  // Date de début (Mois précédent pour avoir des données)
+  const oneMonthAgo = new Date();
+  oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+  const startStr = oneMonthAgo.toISOString().split('T')[0];
+  
+  startDate.value = startStr;
+  dashStartDate.value = startStr; 
 
   onAuthStateChanged(auth, async (firebaseUser) => {
     if (firebaseUser) {
@@ -62,508 +64,438 @@ onMounted(() => {
       const docRef = doc(db, "users", firebaseUser.uid);
       try {
         const docSnap = await getDoc(docRef);
-        userRole.value = docSnap.exists() ? docSnap.data().role : 'user';
-      } catch (e) { console.log("Erreur role", e); }
-      
-      // Charger le dashboard dès la connexion
-      if (favoritesList.value.length > 0) getDashboard();
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          userRole.value = data.role || 'user';
+          userFavorites.value = data.favorites || []; 
+        } else {
+          userRole.value = 'user';
+          userFavorites.value = [];
+          await setDoc(docRef, { role: 'user', favorites: [] }, { merge: true });
+        }
+      } catch (e) { console.error(e); }
     } else {
-      user.value = null; userRole.value = '';
+      user.value = null; userRole.value = ''; userFavorites.value = [];
     }
     isAuthReady.value = true;
   });
 });
 
-const isAdmin = computed(() => userRole.value === 'admin' || user.value?.email === 'aboucho92@gmail.com');
-
-// --- ACTIONS AUTH ---
 const login = async () => {
-  try {
-    authError.value = ''; isLoading.value = true;
-    await signInWithEmailAndPassword(auth, email.value, password.value);
-  } catch (err) { authError.value = "Email ou mot de passe incorrect."; }
-  finally { isLoading.value = false; }
+  try { authError.value = ''; isLoading.value = true; await signInWithEmailAndPassword(auth, email.value, password.value); } 
+  catch (error) { authError.value = "Email ou mot de passe incorrect."; } finally { isLoading.value = false; }
 };
 const logout = async () => { await signOut(auth); };
 
-// --- GESTION FAVORIS ---
-const addFavorite = () => {
-  if (newFavorite.value && !favoritesList.value.includes(newFavorite.value)) {
-    favoritesList.value.push(newFavorite.value);
-    newFavorite.value = "";
-    saveFavorites();
-    getDashboard();
-  }
-};
-const removeFavorite = (index) => {
-  favoritesList.value.splice(index, 1);
-  saveFavorites();
-  getDashboard();
-};
-const saveFavorites = () => localStorage.setItem('lotoFavorites', JSON.stringify(favoritesList.value));
+function switchView(viewName) {
+  currentView.value = viewName;
+  if (viewName === 'dashboard') loadDashboard();
+}
 
-// --- API CALL GENERIQUE ---
-async function callApi(endpoint, method = 'GET', body = null) {
-  if (!user.value) return;
-  isLoading.value = true; error.value = null; apiResponse.value = {};
-  
-  // Si ce n'est pas le dashboard, on switch sur l'onglet résultats
-  if (!endpoint.includes('favorites-dashboard')) currentTab.value = 'analysis';
+async function addFavorite() {
+  const input = newFavoriteInput.value.trim();
+  if (!input) return;
+  const isSingleNumber = /^[0-9]{1,2}$/.test(input);
+  const isPair = /^[0-9]{1,2}-[0-9]{1,2}$/.test(input);
+  if (!isSingleNumber && !isPair) { alert("Format invalide."); return; }
+  if (userFavorites.value.includes(input)) { newFavoriteInput.value = ''; return; }
+  try {
+    const userRef = doc(db, "users", user.value.uid);
+    userFavorites.value.push(input); 
+    await setDoc(userRef, { favorites: arrayUnion(input) }, { merge: true }); 
+    newFavoriteInput.value = '';
+  } catch (e) { console.error(e); userFavorites.value = userFavorites.value.filter(item => item !== input); }
+}
 
+async function removeFavorite(item) {
+  if (!confirm(`Retirer ${item} ?`)) return;
+  try {
+    const userRef = doc(db, "users", user.value.uid);
+    userFavorites.value = userFavorites.value.filter(n => n !== item);
+    await updateDoc(userRef, { favorites: arrayRemove(item) });
+  } catch (e) { console.error(e); }
+}
+
+async function loadDashboard() {
+  if (userFavorites.value.length === 0 || !dashStartDate.value || !dashEndDate.value) return;
+  isDashboardLoading.value = true;
   try {
     const token = await user.value.getIdToken();
-    const headers = { 
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    };
-    
-    const options = { method, headers };
-    if (body) options.body = JSON.stringify(body);
-
-    const response = await fetch(`${API_URL}${endpoint}`, options);
+    const url = `${API_BASE_URL}/analysis/favorites-dashboard?start_date=${dashStartDate.value}&end_date=${dashEndDate.value}`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(userFavorites.value)
+    });
     const data = await response.json();
+    dashboardData.value = data;
+  } catch (e) { console.error(e); } finally { isDashboardLoading.value = false; }
+}
 
-    if (!response.ok) throw new Error(data.detail || `Erreur ${response.status}`);
-    
-    // Gestion spécifique Dashboard
-    if (endpoint.includes('favorites-dashboard')) {
-      dashboardData.value = data;
-    } else {
-      apiResponse.value = data;
-      if (data.worksheet_gid) activeSheetGid.value = data.worksheet_gid;
+watch(userFavorites, (newFavs) => { if (newFavs && newFavs.length > 0) loadDashboard(); });
+
+function analyzeFavorite(item, mode) {
+  if (!startDate.value || !endDate.value) { alert("Vérifiez les dates."); }
+  if (item.includes('-')) {
+    const parts = item.split('-');
+    triggerTargetNumber.value = parts[0]; triggerCompanionNumber.value = parts[1];
+    runTriggerAnalysis(); 
+  } else {
+    if (mode === 'companion') {
+      selectedNumber.value = item;
+      if (!selectedDate.value) { alert("Date requise."); return; }
+      runReport('companions');
+    } else if (mode === 'trigger') {
+      triggerTargetNumber.value = item; triggerCompanionNumber.value = ''; 
+      runTriggerAnalysis();
     }
-  } catch (err) {
-    error.value = err.message;
-  } finally {
-    isLoading.value = false;
-    dashboardLoading.value = false;
   }
 }
 
-// --- FONCTIONS ANALYSE ---
-const getDashboard = () => {
-  if (favoritesList.value.length === 0) return;
-  dashboardLoading.value = true;
-  callApi(`/analysis/favorites-dashboard?start_date=${dashStart.value}&end_date=${dashEnd.value}`, 'POST', favoritesList.value);
-};
+async function callApi(url, method = 'GET') {
+  currentView.value = 'results';
+  isLoading.value = true; error.value = null; apiResponse.value = null;
+  try {
+    const token = await user.value.getIdToken();
+    const headers = { 'Authorization': `Bearer ${token}` };
+    const fullUrl = `${API_BASE_URL}${url}`;
+    const response = await fetch(fullUrl, { method, headers });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || `Erreur ${response.status}`);
+    apiResponse.value = data;
+    if (data.worksheet_gid) activeSheetGid.value = data.worksheet_gid;
+    viewMode.value = 'table';
+  } catch (err) { error.value = err.message; } finally { isLoading.value = false; }
+}
 
-const runHabitAnalysis = async () => {
-  // On utilise habitDayIndex qui est toujours défini
-  let url = `/analysis/day-specific-profile?day_index=${habitDayIndex.value}&days_count=${habitPeriod.value}`;
-  if (habitTime.value) url += `&time_slot=${habitTime.value}`;
-  
+async function runDataUpdate(endpoint) { lastOperationType.value = 'update'; await callApi(`/collection/${endpoint}`, 'POST'); }
+async function runVisualAnalysis(endpoint) { if (!selectedDate.value) { error.value = "Date requise."; return; } lastOperationType.value = 'visual'; await callApi(`/analysis/${endpoint}/${selectedDate.value}`, 'POST'); }
+async function runReport(reportType) {
+  if (!selectedDate.value) { error.value = "Date requise."; return; }
+  let url = '';
+  if (reportType === 'weekly-frequency') { lastOperationType.value = 'weekly-frequency'; url = `/analysis/weekly-frequency/${selectedDate.value}`; }
+  else if (reportType === 'daily-frequency') { lastOperationType.value = 'daily-frequency'; url = `/analysis/daily-frequency/${selectedDate.value}`; }
+  else if (reportType === 'companions') { if (!selectedNumber.value) { error.value = "Numéro requis."; return; } lastOperationType.value = 'companions'; url = `/analysis/companions/${selectedNumber.value}?week_date_str=${selectedDate.value}`; }
   await callApi(url);
-  
-  // Ajout automatique aux favoris
-  if (apiResponse.value.habits) {
-    let added = 0;
-    apiResponse.value.habits.forEach(h => {
-      const s = h.number.toString();
-      if (!favoritesList.value.includes(s)) {
-        favoritesList.value.push(s);
-        added++;
-      }
-    });
-    if (added > 0) {
-      saveFavorites();
-      getDashboard();
-      alert(`✅ ${added} numéros ajoutés aux favoris !`);
-    }
-  }
-};
+}
+async function runRangeAnalysis() { if (!startDate.value || !endDate.value) { error.value = "Dates requises."; return; } lastOperationType.value = 'frequency'; await callApi(`/analysis/frequency-by-range?start_date=${startDate.value}&end_date=${endDate.value}`); }
+async function runProfileAnalysis() { if (!startDate.value || !endDate.value || !profileNumber.value) { error.value = "Infos requises."; return; } lastOperationType.value = 'profile'; await callApi(`/analysis/number-profile?target_number=${profileNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`); }
+async function runSequenceAnalysis() { if (!startDate.value || !endDate.value) { error.value = "Période requise."; return; } lastOperationType.value = 'sequence'; await callApi(`/analysis/sequence-detection?start_date=${startDate.value}&end_date=${endDate.value}`); }
+async function runTriggerAnalysis() {
+  if (!startDate.value || !endDate.value || !triggerTargetNumber.value) { error.value = "Infos requises."; return; }
+  lastOperationType.value = 'trigger';
+  let url = `/analysis/trigger-numbers?target_number=${triggerTargetNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`;
+  if (triggerCompanionNumber.value) url += `&companion_number=${triggerCompanionNumber.value}`;
+  await callApi(url);
+}
+async function runPredictionAnalysis() {
+  if (!startDate.value || !endDate.value || !predictionNumber.value) { error.value = "Infos requises."; return; }
+  lastOperationType.value = 'prediction';
+  let url = `/analysis/predict-next?observed_number=${predictionNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`;
+  if (predictionCompanion.value) url += `&observed_companion=${predictionCompanion.value}`;
+  await callApi(url);
+}
+async function runMultiPrediction() {
+  if (!startDate.value || !endDate.value || !multiPredictionInput.value) { error.value = "Infos requises."; return; }
+  const cleanInput = multiPredictionInput.value.replace(/[\s-]+/g, ',');
+  lastOperationType.value = 'prediction';
+  await callApi(`/analysis/multi-prediction?numbers_str=${cleanInput}&start_date=${startDate.value}&end_date=${endDate.value}`);
+}
+async function runKantaAnalysis(endpoint) { if (!selectedDate.value) { error.value = "Date requise."; return; } lastOperationType.value = 'visual'; await callApi(`/analysis/${endpoint}/${selectedDate.value}`, 'POST'); }
+async function runKantaReport(reportType) { if (!selectedDate.value) { error.value = "Date requise."; return; } lastOperationType.value = 'kanta-rank'; await callApi(`/analysis/kanta-${reportType}/${selectedDate.value}`); }
 
-// Wrappers simples
-const triggerUpdate = () => callApi('/collection/update-recent-weeks', 'POST');
-const triggerRebuild = () => { if(confirm('Sûr ?')) callApi('/collection/start-full-rebuild', 'POST'); };
-const highlightDay = () => callApi(`/analysis/highlight-day/${selectedDate.value}`, 'POST');
-const highlightWeek = () => callApi(`/analysis/process-entire-week/${selectedDate.value}`, 'POST');
-const getDailyRank = () => callApi(`/analysis/daily-frequency/${selectedDate.value}`);
-const getWeeklyRank = () => callApi(`/analysis/weekly-frequency/${selectedDate.value}`);
-const analyzeCompanions = () => { if(companionNumber.value) callApi(`/analysis/companions/${companionNumber.value}?week_date_str=${selectedDate.value}`); };
-const getNumberProfile = () => { if(profileNumber.value) callApi(`/analysis/number-profile?target_number=${profileNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`); };
-const detectSequences = () => callApi(`/analysis/sequence-detection?start_date=${startDate.value}&end_date=${endDate.value}`);
-const findTriggers = () => {
-  if(!triggerTarget.value) return;
-  let url = `/analysis/trigger-numbers?target_number=${triggerTarget.value}&start_date=${startDate.value}&end_date=${endDate.value}`;
-  if(triggerCompanion.value) url += `&companion_number=${triggerCompanion.value}`;
-  callApi(url);
-};
-const launchProphet = () => {
-  if(!prophetObserved.value) return;
-  let url = `/analysis/predict-next?observed_number=${prophetObserved.value}&start_date=${startDate.value}&end_date=${endDate.value}`;
-  if(prophetCompanion.value) url += `&observed_companion=${prophetCompanion.value}`;
-  callApi(url);
-};
-const launchMultiProphet = () => { if(multiProphetInput.value) callApi(`/analysis/multi-prediction?numbers_str=${multiProphetInput.value}&start_date=${startDate.value}&end_date=${endDate.value}`); };
-
-// Kanta
-const kantaHighlightDay = () => callApi(`/analysis/kanta-highlight-day/${selectedDate.value}`, 'POST');
-const kantaHighlightWeek = () => callApi(`/analysis/kanta-highlight-week/${selectedDate.value}`, 'POST');
-const getKantaDailyRank = () => callApi(`/analysis/kanta-daily-rank/${selectedDate.value}`);
-const getKantaWeeklyRank = () => callApi(`/analysis/kanta-weekly-rank/${selectedDate.value}`);
-
-const analyzeFavorite = (item) => {
-  // Raccourci depuis le dashboard
-  currentTab.value = 'analysis';
-  if (item.includes('-')) {
-    triggerTarget.value = item.split('-')[0];
-    triggerCompanion.value = item.split('-')[1];
-    findTriggers();
-  } else {
-    profileNumber.value = item;
-    getNumberProfile();
-  }
-};
-
-// --- COMPUTED POUR AFFICHAGE ---
-const tableData = computed(() => {
-  const r = apiResponse.value;
-  if (!r) return [];
-  // Fusion de toutes les listes possibles en un format unique pour le tableau
-  const list = r.frequency_ranking || r.companion_ranking || r.trigger_numbers_ranking || r.prediction_ranking || r.kanta_pairs_ranking || r.habits || [];
-  
-  return list.map(item => {
-    // Adapter selon le type de réponse
-    if (item.pair && item.count) return { col1: item.pair, col2: item.count };
-    if (item.number !== undefined) return { col1: item.number, col2: item.count };
-    return { col1: '?', col2: '?' };
-  });
-});
-
-const tableHeaders = computed(() => {
-  const r = apiResponse.value;
-  if (r?.companion_ranking) return ['#', 'Compagnon', 'Fréquence'];
-  if (r?.trigger_numbers_ranking) return ['#', 'Déclencheur', 'Fréquence'];
-  if (r?.prediction_ranking) return ['#', 'Suivant Probable', 'Score'];
-  if (r?.habits) return ['#', 'Habitué', 'Sorties'];
-  return ['#', 'Numéro', 'Fréquence'];
-});
-
-const sheetEmbedUrl = computed(() => {
+const isAdmin = computed(() => userRole.value === 'admin');
+const sheetDirectLink = computed(() => {
   const base = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}`;
-  let url = activeSheetGid.value 
-    ? `${base}/htmlembed?gid=${activeSheetGid.value}&widget=true&headers=false`
-    : `${base}/htmlembed?widget=true&headers=false`;
-  return url;
+  return activeSheetGid.value ? `${base}/edit#gid=${activeSheetGid.value}` : `${base}/edit`;
+});
+const tableHeaders = computed(() => {
+  if (lastOperationType.value.includes('frequency')) return ['#', 'Numéro', 'Apparitions'];
+  if (lastOperationType.value === 'companions') return ['#', 'Compagnon', 'Apparu avec'];
+  if (lastOperationType.value === 'trigger') return ['#', 'N° Déclencheur', 'Fréquence'];
+  if (lastOperationType.value === 'prediction') return ['#', 'Numéro Suivant (Probable)', 'Fréquence']; 
+  if (lastOperationType.value.includes('kanta-rank')) return ['Paire Kanta', 'Apparitions'];
+  return [];
+});
+const tableData = computed(() => {
+  if (apiResponse.value?.frequency_ranking) return apiResponse.value.frequency_ranking;
+  if (apiResponse.value?.companion_ranking) return apiResponse.value.companion_ranking;
+  if (apiResponse.value?.trigger_numbers_ranking) return apiResponse.value.trigger_numbers_ranking;
+  if (apiResponse.value?.prediction_ranking) return apiResponse.value.prediction_ranking;
+  if (apiResponse.value?.kanta_pairs) return apiResponse.value.kanta_pairs;
+  if (apiResponse.value?.kanta_pairs_ranking) return apiResponse.value.kanta_pairs_ranking;
+  return [];
+});
+const isTableVisible = computed(() => tableData.value.length > 0);
+const chartOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, title: { display: true, text: 'Analyse Visuelle (Top 20)' } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } };
+const chartData = computed(() => {
+  const data = tableData.value;
+  if (!data || data.length === 0) return null;
+  const limitedData = data.slice(0, 20);
+  let labels = [], counts = [];
+  limitedData.forEach(row => {
+    if (row.pair) labels.push(row.pair);
+    else if (row.number) labels.push(row.number.toString());
+    else if (row.companion) labels.push(row.companion.toString());
+    else labels.push('?');
+    counts.push(row.count);
+  });
+  return { labels, datasets: [{ label: 'Occurrences', backgroundColor: '#007bff', borderRadius: 4, data: counts }] };
 });
 </script>
 
 <template>
-  <div v-if="!isAuthReady" class="loading-screen">Chargement...</div>
-
+  <div v-if="!isAuthReady" class="loading-screen"><p>Chargement...</p></div>
   <div v-else-if="!user" class="login-wrapper">
     <div class="login-box">
       <h2>LE GUIDE DES FOURCASTER</h2>
-      <input type="email" v-model="email" placeholder="Email" class="input-field" />
-      <input type="password" v-model="password" placeholder="Mot de passe" class="input-field" />
-      <button @click="login" class="btn-primary" :disabled="isLoading">Connexion</button>
-      <p v-if="authError" class="error-text">{{ authError }}</p>
+      <form @submit.prevent="login">
+        <div class="input-group"><label>Email</label><input type="email" v-model="email" required /></div>
+        <div class="input-group"><label>Mot de passe</label><input type="password" v-model="password" required /></div>
+        <button type="submit" class="login-button" :disabled="isLoading">{{ isLoading ? '...' : 'Connexion' }}</button>
+        <p v-if="authError" class="auth-error">{{ authError }}</p>
+      </form>
     </div>
   </div>
 
-  <div v-else class="app-layout">
-    <!-- HEADER -->
-    <header class="top-header">
-      <div class="logo">LE GUIDE DES FOURCASTER</div>
-      <div class="user-menu">
-        <span>{{ user.email }}</span>
-        <button @click="logout" class="btn-logout">Déconnexion</button>
+  <main v-else class="dashboard">
+    <header>
+      <h1>LE GUIDE DES FOURCASTER</h1>
+      <div class="user-info">
+        <span>Connecté : <strong>{{ user.email }}</strong></span>
+        <button @click="logout" class="logout-button">Déconnexion</button>
       </div>
     </header>
 
-    <div class="main-container">
-      
-      <!-- SIDEBAR (CONTROLES) -->
-      <aside class="sidebar">
-        
-        <!-- NAVIGATION -->
-        <div class="nav-tabs">
-          <button :class="{ active: currentTab === 'dashboard' }" @click="currentTab = 'dashboard'">🏠 Tableau de Bord</button>
-          <button :class="{ active: currentTab === 'analysis' }" @click="currentTab = 'analysis'">📊 Analyses</button>
-        </div>
+    <nav class="main-nav">
+      <button @click="switchView('dashboard')" :class="{ active: currentView === 'dashboard' }" class="nav-item">🏠 Mon Tableau de Bord</button>
+      <button @click="switchView('results')" :class="{ active: currentView === 'results' }" class="nav-item">📊 Résultats d'Analyse</button>
+    </nav>
 
-        <div class="scrollable-content">
-          
-          <!-- ADMIN -->
-          <div v-if="isAdmin" class="control-box admin">
-            <h3>Maintenance</h3>
-            <div class="btn-group">
-              <button @click="triggerUpdate">Mise à Jour Rapide</button>
-              <button @click="triggerRebuild" class="danger">Reconstruction</button>
-            </div>
+    <div class="main-layout">
+      <div class="controls-column">
+        <section v-if="isAdmin" class="card data-update">
+          <h2>Maintenance (Admin)</h2>
+          <div class="button-group-horizontal">
+            <button @click="runDataUpdate('update-recent-weeks')" :disabled="isLoading">Mise à Jour Rapide</button>
+            <button @click="runDataUpdate('start-full-rebuild')" :disabled="isLoading" class="danger">Reconstruction</button>
           </div>
+        </section>
 
-          <!-- FAVORIS -->
-          <div class="control-box">
-            <h3>⭐ Mes Favoris</h3>
-            <div class="input-row">
-              <input v-model="newFavorite" placeholder="Ex: 7 ou 12-45" @keyup.enter="addFavorite">
-              <button @click="addFavorite" class="btn-small">OK</button>
-            </div>
-            <div class="fav-tags">
-              <span v-for="(fav, i) in favoritesList" :key="i" class="tag">
-                {{ fav }} <span @click="removeFavorite(i)" class="close">×</span>
-              </span>
-            </div>
+        <section class="card">
+          <h2>⭐ Mes Numéros Favoris</h2>
+          <div class="favorites-input-group">
+            <input type="text" v-model="newFavoriteInput" placeholder="Ex: 7 ou 12-45" @keyup.enter="addFavorite"/>
+            <button @click="addFavorite" :disabled="!newFavoriteInput" class="btn-small">Ajouter</button>
           </div>
-
-          <!-- HABITUDES (NOUVEAU) -->
-          <div class="control-box highlight">
-            <h3>📅 Habitudes & Tendances</h3>
-            
-            <label>Jour de la semaine</label>
-            <select v-model="habitDayIndex">
-              <option value="0">Lundi</option>
-              <option value="1">Mardi</option>
-              <option value="2">Mercredi</option>
-              <option value="3">Jeudi</option>
-              <option value="4">Vendredi</option>
-              <option value="5">Samedi</option>
-              <option value="6">Dimanche</option>
-            </select>
-            
-            <label>Heure</label>
-            <select v-model="habitTime">
-              <option value="">Toute la journée</option>
-              <option value="07H00">07H00</option>
-              <option value="10H00">10H00</option>
-              <option value="13H00">13H00</option>
-              <option value="16H00">16H00</option>
-              <option value="19H00">19H00</option>
-              <option value="21H00">21H00</option>
-              <option value="22H00">22H00</option>
-              <option value="23H00">23H00</option>
-            </select>
-
-            <label>Période</label>
-            <select v-model="habitPeriod">
-              <option value="7">1 Semaine</option>
-              <option value="14">2 Semaines</option>
-              <option value="21">3 Semaines</option>
-              <option value="30">1 Mois</option>
-              <option value="60">2 Mois</option>
-              <option value="90">3 Mois</option>
-              <option value="120">4 Mois</option>
-              <option value="150">5 Mois</option>
-              <option value="180">6 Mois</option>
-              <option value="210">7 Mois</option>
-              <option value="240">8 Mois</option>
-              <option value="270">9 Mois</option>
-              <option value="365">1 An</option>
-            </select>
-
-            <button @click="runHabitAnalysis" class="btn-primary">🕵️ Analyser & Ajouter</button>
-          </div>
-
-          <!-- ANALYSE SEMAINE -->
-          <div class="control-box">
-            <h3>Semaine & Fréquence</h3>
-            <input type="date" v-model="selectedDate">
-            <div class="btn-group">
-              <button @click="highlightDay">Surlign. Jour</button>
-              <button @click="highlightWeek">Surlign. Sem.</button>
-            </div>
-            <div class="btn-group">
-              <button @click="getDailyRank">Top Jour</button>
-              <button @click="getWeeklyRank">Top Semaine</button>
-            </div>
-            <input v-model="companionNumber" placeholder="N° Compagnon" class="mt-1">
-            <button @click="analyzeCompanions" class="btn-secondary">Analyser</button>
-          </div>
-
-          <!-- PROFIL & PERIODE -->
-          <div class="control-box">
-            <h3>Profilage</h3>
-            <div class="date-row">
-              <input type="date" v-model="startDate">
-              <input type="date" v-model="endDate">
-            </div>
-            <input v-model="profileNumber" placeholder="Numéro à profiler" class="mt-1">
-            <button @click="getNumberProfile" class="btn-secondary">Voir Profil</button>
-          </div>
-
-          <!-- PROPHETE -->
-          <div class="control-box">
-            <h3>🔮 Le Prophète</h3>
-            <input v-model="prophetObserved" placeholder="Numéro sorti (Ex: 42)">
-            <button @click="launchProphet" class="btn-purple">Voir le Futur</button>
-            <hr>
-            <input v-model="multiProphetInput" placeholder="Tirage complet (Ex: 5 12 34)">
-            <button @click="launchMultiProphet" class="btn-purple">Projection</button>
-          </div>
-
-          <!-- KANTA -->
-          <div class="control-box">
-            <h3>⚡ Kanta & IA</h3>
-            <div class="btn-group">
-              <button @click="kantaHighlightDay">Kanta Jour</button>
-              <button @click="kantaHighlightWeek">Kanta Sem.</button>
-            </div>
-            <input v-model="triggerTarget" placeholder="Cible (ex: 18)" class="mt-1">
-            <button @click="findTriggers" class="btn-secondary">Trouver Déclencheurs</button>
-          </div>
-
-        </div>
-      </aside>
-
-      <!-- CONTENU CENTRAL -->
-      <main class="content-area">
-        
-        <!-- ONGLET DASHBOARD -->
-        <div v-if="currentTab === 'dashboard'" class="dashboard-view">
-          <div class="dash-header">
-            <h2>Tableau de Bord</h2>
-            <button @click="getDashboard" class="btn-refresh">🔄 Actualiser</button>
-          </div>
-
-          <div v-if="dashboardLoading" class="loading-msg">Analyse en cours...</div>
-          <div v-else-if="favoritesList.length === 0" class="empty-msg">Ajoutez des favoris à gauche pour commencer.</div>
-          
-          <div v-else class="cards-grid">
-            <div v-for="(stat, i) in dashboardData.dashboard_data" :key="i" class="stat-card">
-              <div class="card-top">
-                <span class="num">{{ stat.item }}</span>
-                <span class="status">{{ stat.status }}</span>
+          <div v-if="userFavorites.length > 0" class="favorites-list">
+            <div v-for="item in userFavorites" :key="item" class="favorite-chip">
+              <span class="fav-label">{{ item }}</span>
+              <div class="fav-actions">
+                <button v-if="!item.includes('-')" @click="analyzeFavorite(item, 'companion')" class="icon-btn" title="Compagnons">👥</button>
+                <button @click="analyzeFavorite(item, 'trigger')" class="icon-btn" title="Déclencheurs">⚡</button>
               </div>
-              <div class="card-details">
-                <p>Sorties: <b>{{ stat.frequency }}</b></p>
-                <p>Ami: <b>{{ stat.best_companion }}</b></p>
-                <p>Décl: <b>{{ stat.best_trigger }}</b></p>
-                <p>Préd: <b>{{ stat.prophet_prediction }}</b></p>
-              </div>
-              <button @click="analyzeFavorite(stat.item)" class="btn-card">Analyser</button>
+              <span @click="removeFavorite(item)" class="fav-delete">×</span>
             </div>
           </div>
+          <p v-else class="empty-msg">Ajoutez vos numéros fétiches.</p>
+        </section>
+
+        <section class="card">
+          <h2>Analyse par Semaine</h2>
+          <input type="date" v-model="selectedDate" />
+          <div class="button-group-vertical">
+            <button @click="runVisualAnalysis('highlight-day')" :disabled="isLoading || !selectedDate">Surlignage (Jour)</button>
+            <button @click="runVisualAnalysis('process-entire-week')" :disabled="isLoading || !selectedDate">Surlignage (Semaine)</button>
+            <hr />
+            <button @click="runReport('daily-frequency')" :disabled="isLoading || !selectedDate">Classement Jour</button>
+            <button @click="runReport('weekly-frequency')" :disabled="isLoading || !selectedDate">Classement Semaine</button>
+            <hr />
+            <input type="number" v-model="selectedNumber" placeholder="N° pour analyse compagnons" />
+            <button @click="runReport('companions')" :disabled="isLoading || !selectedDate || !selectedNumber">Analyser Compagnons</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Période & Profilage</h2>
+          <label>Début :</label><input type="date" v-model="startDate" />
+          <label>Fin :</label><input type="date" v-model="endDate" />
+          <button @click="runRangeAnalysis" :disabled="isLoading || !startDate || !endDate">Fréquence sur Période</button>
+          <hr />
+          <input type="number" v-model="profileNumber" placeholder="N° pour profil complet" />
+          <button @click="runProfileAnalysis" :disabled="isLoading || !startDate || !endDate || !profileNumber">Générer Profil du Numéro</button>
+        </section>
+
+        <section class="card prophet-card">
+          <h2>🔮 Le Prophète</h2>
+          <p class="small-text">Ce numéro vient de sortir. La suite ?</p>
+          <input type="number" v-model="predictionNumber" placeholder="Numéro vu (Ex: 42)" />
+          <input type="number" v-model="predictionCompanion" placeholder="Compagnon vu (Optionnel)" />
+          <button @click="runPredictionAnalysis" :disabled="isLoading || !startDate || !endDate || !predictionNumber" class="prophet-btn">Voir Futur Probable</button>
+        </section>
+
+        <section class="card multi-prophet-card">
+          <h2>🔮 Analyse Croisée</h2>
+          <p class="small-text">Dernier tirage complet (ou sélection).</p>
+          <input type="text" v-model="multiPredictionInput" placeholder="Ex: 5 12 34 56 78" @keyup.enter="runMultiPrediction"/>
+          <button @click="runMultiPrediction" :disabled="isLoading || !startDate || !endDate || !multiPredictionInput" class="multi-btn">Lancer Projection</button>
+        </section>
+
+        <section class="card">
+          <h2>IA Avancée & Kanta</h2>
+          <button @click="runSequenceAnalysis" :disabled="isLoading || !startDate || !endDate">Détecter Suites</button>
+          <hr />
+          <input type="number" v-model="triggerTargetNumber" placeholder="Cible (ex: 18)" />
+          <input type="number" v-model="triggerCompanionNumber" placeholder="Compagnon (Optionnel)" />
+          <button @click="runTriggerAnalysis" :disabled="isLoading || !startDate || !endDate || !triggerTargetNumber">Trouver Déclencheurs ⚡</button>
+          <hr />
+          <div class="button-group-horizontal">
+             <button @click="runKantaAnalysis('kanta-highlight-day')">Surlign. Kanta J</button>
+             <button @click="runKantaAnalysis('kanta-highlight-week')">Surlign. Kanta S</button>
+          </div>
+          <div class="button-group-horizontal" style="margin-top:5px;">
+             <button @click="runKantaReport('daily-rank')">Class. Kanta J</button>
+             <button @click="runKantaReport('weekly-rank')">Class. Kanta S</button>
+          </div>
+        </section>
+      </div>
+
+      <div class="results-column">
+        <div v-if="currentView === 'dashboard'" class="personal-dashboard">
+            <div class="dash-header">
+              <h3>👋 Tableau de Bord Personnalisé</h3>
+              <div class="date-selectors">
+                <input type="date" v-model="dashStartDate" />
+                <span>à</span>
+                <input type="date" v-model="dashEndDate" />
+                <button @click="loadDashboard" class="refresh-btn">🔄 Actualiser</button>
+              </div>
+            </div>
+            <div v-if="userFavorites.length === 0" class="empty-dashboard"><p>👈 Ajoutez des numéros "Favoris" pour activer votre tableau de bord.</p></div>
+            <div v-else-if="isDashboardLoading" class="loader">Analyse de vos favoris en cours...</div>
+            <div v-else-if="dashboardData" class="dash-grid">
+              <div v-for="stat in dashboardData.dashboard_data" :key="stat.item" class="dash-card" :class="{ 'is-hot': stat.status.includes('🔥') }">
+                <div class="dash-main"><span class="dash-number">{{ stat.item }}</span><span class="dash-status">{{ stat.status }}</span></div>
+                <div class="dash-details">
+                  <div class="detail-row"><span>Sorties ({{ dashboardData.analysis_period }}):</span><strong>{{ stat.frequency }} fois</strong></div>
+                  <div class="detail-row" v-if="stat.type === 'number'"><span>Meilleur Ami (Sort avec):</span><strong>{{ stat.best_companion }}</strong></div>
+                  <div class="detail-row" v-if="stat.frequency > 0"><span>⚡ Déclencheur (Appelé par):</span><strong>{{ stat.best_trigger }}</strong></div>
+                  <div class="detail-row prop-row" v-if="stat.frequency > 0"><span>🔮 Prophète (A suivre):</span><strong>{{ stat.prophet_prediction }}</strong></div>
+                </div>
+                <div class="dash-actions"><button @click="analyzeFavorite(stat.item, 'trigger')" class="dash-act-btn">⚡ Analyse Complète</button></div>
+              </div>
+            </div>
         </div>
 
-        <!-- ONGLET RESULTATS -->
-        <div v-if="currentTab === 'analysis'" class="analysis-view">
+        <section v-else-if="currentView === 'results'" class="card results-card">
+          <h2>Résultats d'Analyse</h2>
           <div v-if="isLoading" class="loader">Chargement...</div>
-          <div v-if="error" class="error-msg">{{ error }}</div>
-
-          <div v-if="!isLoading && apiResponse.message" class="result-box">
-            <div class="res-header">
-              <h3>{{ apiResponse.message }}</h3>
-              <a v-if="activeSheetGid" :href="`https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/edit#gid=${activeSheetGid}`" target="_blank" class="link-sheet">Ouvrir Sheet ↗</a>
+          <div v-if="error" class="error-box">{{ error }}</div>
+          <div v-if="!isLoading && !apiResponse && !error" class="empty-state"><p>Sélectionnez une analyse à gauche pour voir les résultats ici.</p></div>
+          <div v-if="apiResponse">
+            <div v-if="apiResponse.message || apiResponse.analysis_period" class="success-box large">
+              <p>✅ {{ apiResponse.message || `Analyse : ${apiResponse.analysis_period}` }}</p>
+              <a v-if="apiResponse.worksheet_gid" :href="sheetDirectLink" target="_blank" class="button-link">Voir l'Onglet ↗</a>
             </div>
-
-            <!-- BLOCS IA -->
-            <div class="ai-container">
-              <div v-if="apiResponse.ai_strategic_analysis" class="ai-box">🧠 {{ apiResponse.ai_strategic_analysis }}</div>
-              <div v-if="apiResponse.ai_strategic_profile" class="ai-box">👤 {{ apiResponse.ai_strategic_profile }}</div>
-              <div v-if="apiResponse.ai_sequence_analysis" class="ai-box">🧬 {{ apiResponse.ai_sequence_analysis }}</div>
-              <div v-if="apiResponse.ai_trigger_analysis" class="ai-box">⚡ {{ apiResponse.ai_trigger_analysis }}</div>
-              <div v-if="apiResponse.ai_prediction_analysis" class="ai-box">🔮 {{ apiResponse.ai_prediction_analysis }}</div>
+            <div v-if="isTableVisible && !lastOperationType.includes('visual')" class="view-controls">
+              <button @click="viewMode = 'table'" :class="{ active: viewMode === 'table' }" class="toggle-btn">📋 Tableau</button>
+              <button @click="viewMode = 'chart'" :class="{ active: viewMode === 'chart' }" class="toggle-btn">📊 Graphique</button>
             </div>
-
-            <!-- TABLEAU DONNEES -->
-            <div class="table-container" v-if="tableData.length > 0">
-              <table>
-                <thead>
-                  <tr>
-                    <th>{{ tableHeaders[0] }}</th>
-                    <th>{{ tableHeaders[1] }}</th>
-                    <th>{{ tableHeaders[2] }}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="(row, idx) in tableData" :key="idx">
-                    <td>#{{ idx + 1 }}</td>
-                    <td>{{ row.col1 }}</td>
-                    <td>{{ row.col2 }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            <!-- SHEET EMBED -->
-            <div class="sheet-embed">
-              <iframe :src="sheetEmbedUrl"></iframe>
-            </div>
+            <div v-if="isTableVisible && viewMode === 'chart' && !lastOperationType.includes('visual')" class="chart-container"><Bar :data="chartData" :options="chartOptions" /></div>
+            <table v-else-if="isTableVisible" class="styled-table">
+              <thead><tr><th v-for="h in tableHeaders" :key="h">{{ h }}</th></tr></thead>
+              <tbody>
+                <tr v-for="(row, index) in tableData" :key="index">
+                  <td v-if="lastOperationType.includes('kanta-rank')">{{ row.pair }}</td>
+                  <td v-else>#{{ index + 1 }}</td>
+                  <td v-if="!lastOperationType.includes('kanta-rank')">{{ row.number }}</td>
+                  <td>{{ row.count }}</td>
+                </tr>
+              </tbody>
+            </table>
+            <div v-if="apiResponse.ai_strategic_analysis" class="ai-analysis"><h3>🧠 Stratégie</h3><p>{{ apiResponse.ai_strategic_analysis }}</p></div>
+            <div v-if="apiResponse.ai_strategic_profile" class="ai-analysis"><h3>🧠 Profil Numéro</h3><p>{{ apiResponse.ai_strategic_profile }}</p></div>
+            <div v-if="apiResponse.ai_sequence_analysis" class="ai-analysis"><h3>🧠 Suites</h3><p>{{ apiResponse.ai_sequence_analysis }}</p></div>
+            <div v-if="apiResponse.ai_trigger_analysis" class="ai-analysis"><h3>🧠 Déclencheurs</h3><p>{{ apiResponse.ai_trigger_analysis }}</p></div>
+            <div v-if="apiResponse.ai_prediction_analysis" class="ai-analysis prophet-analysis"><h3>🔮 Prédiction</h3><p>{{ apiResponse.ai_prediction_analysis }}</p></div>
           </div>
-        </div>
-
-      </main>
+        </section>
+      </div>
     </div>
-  </div>
+  </main>
 </template>
 
 <style scoped>
-/* RESET & BASE */
-* { box-sizing: border-box; }
-body { font-family: 'Segoe UI', sans-serif; margin: 0; background: #f4f6f9; color: #333; }
-.loading-screen { display: flex; justify-content: center; align-items: center; height: 100vh; font-size: 1.2rem; color: #666; }
-
-/* AUTH */
-.login-wrapper { display: flex; justify-content: center; align-items: center; height: 100vh; background: #e9ecef; }
-.login-box { background: white; padding: 2rem; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 350px; text-align: center; }
-.input-field { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 5px; }
-.btn-primary { width: 100%; padding: 10px; background: #3498db; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
-.btn-primary:hover { background: #2980b9; }
-.error-text { color: red; margin-top: 10px; font-size: 0.9rem; }
-
-/* LAYOUT */
-.app-layout { display: flex; flex-direction: column; height: 100vh; }
-.top-header { background: #2c3e50; color: white; padding: 0 20px; height: 60px; display: flex; align-items: center; justify-content: space-between; }
-.logo { font-weight: bold; font-size: 1.2rem; }
-.btn-logout { background: #e74c3c; color: white; border: none; padding: 5px 15px; border-radius: 4px; cursor: pointer; margin-left: 10px; }
-
-.main-container { display: flex; flex: 1; overflow: hidden; }
-
-/* SIDEBAR */
-.sidebar { width: 320px; background: white; border-right: 1px solid #ddd; display: flex; flex-direction: column; }
-.nav-tabs { display: flex; border-bottom: 1px solid #eee; }
-.nav-tabs button { flex: 1; padding: 15px; border: none; background: #f8f9fa; cursor: pointer; font-weight: bold; }
-.nav-tabs button.active { background: white; color: #3498db; border-bottom: 3px solid #3498db; }
-.scrollable-content { overflow-y: auto; padding: 15px; flex: 1; }
-
-.control-box { background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #eee; }
-.control-box.highlight { background: #eef2f7; border-color: #dbeafe; }
-.control-box h3 { margin: 0 0 10px 0; font-size: 1rem; color: #2c3e50; border-bottom: 2px solid #ddd; padding-bottom: 5px; }
-.control-box label { display: block; font-size: 0.85rem; margin-top: 8px; color: #666; }
-.control-box input, .control-box select { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; margin-top: 2px; }
-.btn-group { display: flex; gap: 5px; margin-top: 10px; }
-.btn-group button { flex: 1; padding: 8px; border: none; border-radius: 4px; cursor: pointer; background: #bdc3c7; color: #333; font-size: 0.85rem; }
-.btn-group button:hover { background: #95a5a6; }
-.danger { background: #e74c3c !important; color: white !important; }
-.mt-1 { margin-top: 10px; }
-.btn-secondary { width: 100%; padding: 8px; margin-top: 10px; background: #95a5a6; color: white; border: none; border-radius: 4px; cursor: pointer; }
-.btn-purple { width: 100%; padding: 8px; margin-top: 10px; background: #9b59b6; color: white; border: none; border-radius: 4px; cursor: pointer; }
-.date-row { display: flex; gap: 5px; }
-
-/* FAVORIS TAGS */
-.input-row { display: flex; gap: 5px; }
-.btn-small { padding: 0 15px; background: #2ecc71; color: white; border: none; border-radius: 4px; cursor: pointer; }
-.fav-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
-.tag { background: #34495e; color: white; padding: 3px 8px; border-radius: 12px; font-size: 0.9rem; display: flex; align-items: center; }
-.close { margin-left: 5px; cursor: pointer; color: #e74c3c; font-weight: bold; }
-
-/* MAIN CONTENT */
-.content-area { flex: 1; padding: 20px; overflow-y: auto; background: #ecf0f1; }
-
-/* DASHBOARD */
-.dash-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-.btn-refresh { padding: 8px 15px; background: #27ae60; color: white; border: none; border-radius: 4px; cursor: pointer; }
-.cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 15px; }
-.stat-card { background: white; border-radius: 8px; padding: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); transition: transform 0.2s; }
-.stat-card:hover { transform: translateY(-3px); }
-.card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
-.num { font-size: 1.5rem; font-weight: bold; color: #2c3e50; }
-.status { font-size: 0.9rem; font-weight: bold; }
-.card-details p { margin: 5px 0; font-size: 0.9rem; color: #555; }
-.btn-card { width: 100%; margin-top: 10px; padding: 6px; background: #f1c40f; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; color: #333; }
-
-/* RESULTS */
-.result-box { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
-.res-header { display: flex; justify-content: space-between; margin-bottom: 15px; border-bottom: 2px solid #f1f1f1; padding-bottom: 10px; }
-.link-sheet { color: #27ae60; text-decoration: none; font-weight: bold; border: 1px solid #27ae60; padding: 5px 10px; border-radius: 4px; }
-.ai-container { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
-.ai-box { background: #fffbe6; border-left: 4px solid #f1c40f; padding: 10px; border-radius: 0 4px 4px 0; font-size: 0.95rem; line-height: 1.5; white-space: pre-wrap; }
-.table-container { overflow-x: auto; margin-bottom: 20px; }
-table { width: 100%; border-collapse: collapse; }
-th, td { padding: 10px; border: 1px solid #eee; text-align: center; }
-th { background: #f8f9fa; color: #666; font-weight: 600; }
-.sheet-embed iframe { width: 100%; height: 500px; border: none; border-radius: 4px; border: 1px solid #ddd; }
-.loader { text-align: center; font-style: italic; color: #999; margin: 20px 0; }
-.error-msg { background: #ff7675; color: white; padding: 10px; border-radius: 4px; text-align: center; }
+  .main-nav { display: flex; justify-content: center; gap: 2rem; margin-bottom: 2rem; padding-bottom: 1rem; border-bottom: 1px solid #e0e0e0; }
+  .nav-item { background: none; border: none; font-size: 1.2rem; font-weight: bold; color: #666; padding: 0.8rem 1.5rem; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.3s; width: auto; }
+  .nav-item:hover { color: #007bff; background-color: #f8f9fa; border-radius: 5px 5px 0 0; }
+  .nav-item.active { color: #007bff; border-bottom: 3px solid #007bff; }
+  .loading-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; font-size: 1.5rem; color: #666; }
+  .login-wrapper { display: flex; align-items: center; justify-content: center; min-height: 100vh; background-color: #f0f2f5; }
+  .login-box { background: white; padding: 2.5rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
+  .input-group { margin-bottom: 1rem; }
+  .input-group label { display: block; margin-bottom: 0.5rem; font-weight: 500; }
+  input { width: 100%; padding: 0.8rem; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+  button { padding: 0.8rem; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; width: 100%; font-weight: bold; }
+  button:disabled { background-color: #ccc; }
+  .dashboard { max-width: 95%; margin: 1rem auto; font-family: sans-serif; }
+  header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 1rem; border-bottom: 1px solid #eee; margin-bottom: 2rem; }
+  .user-info { display: flex; gap: 1rem; align-items: center; }
+  .logout-button { background-color: #6c757d; padding: 0.5rem 1rem; width: auto; }
+  .main-layout { display: grid; grid-template-columns: 350px 1fr; gap: 2rem; }
+  .card { background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 1.5rem; }
+  .card h2 { margin-top: 0; font-size: 1.2rem; border-bottom: 1px solid #eee; padding-bottom: 0.5rem; margin-bottom: 1rem; }
+  .button-group-vertical { display: flex; flex-direction: column; gap: 0.5rem; }
+  .button-group-horizontal { display: flex; gap: 1rem; }
+  .danger { background-color: #dc3545; }
+  .styled-table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+  .styled-table th, .styled-table td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+  .styled-table th { background-color: #f2f2f2; }
+  .ai-analysis { background-color: #fffbe6; border-left: 5px solid #ffc107; padding: 1rem; margin-top: 1rem; border-radius: 4px; }
+  .success-box { background-color: #e8f5e9; color: #2e7d32; padding: 1rem; border-radius: 4px; text-align: center; }
+  .button-link { display: inline-block; padding: 0.5rem 1rem; background-color: #28a745; color: white; text-decoration: none; border-radius: 4px; margin-top: 0.5rem; }
+  .view-controls { display: flex; justify-content: center; gap: 1rem; margin: 1rem 0; }
+  .toggle-btn { background: #e0e0e0; color: #333; width: auto; padding: 0.5rem 1.5rem; }
+  .toggle-btn.active { background: #007bff; color: white; }
+  .chart-container { height: 400px; width: 100%; }
+  .favorites-input-group { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+  .btn-small { width: auto; padding: 0.5rem 1rem; }
+  .favorites-list { display: flex; flex-wrap: wrap; gap: 0.8rem; }
+  .favorite-chip { display: flex; align-items: center; background: #e3f2fd; border: 1px solid #90caf9; border-radius: 20px; padding: 0.3rem 0.5rem 0.3rem 1rem; }
+  .fav-label { font-weight: bold; color: #1565c0; margin-right: 0.5rem; }
+  .fav-actions { display: flex; gap: 0.2rem; margin-right: 0.5rem; }
+  .icon-btn { background: white; border: 1px solid #bbdefb; color: #333; border-radius: 50%; width: 28px; height: 28px; padding: 0; font-size: 0.8rem; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+  .icon-btn:hover { background: #bbdefb; transform: scale(1.1); }
+  .fav-delete { cursor: pointer; color: #ef5350; font-weight: bold; font-size: 1.2rem; padding: 0 5px; }
+  .empty-msg { font-style: italic; color: #999; font-size: 0.9rem; }
+  .small-text { font-size: 0.8rem; color: #666; margin-top: -0.5rem; margin-bottom: 1rem; }
+  hr { border: none; border-top: 1px solid #eee; margin: 1.5rem 0; }
+  .prophet-card { border: 1px solid #d1c4e9; background: linear-gradient(to bottom right, #ffffff, #f3e5f5); }
+  .prophet-btn { background-color: #7b1fa2; }
+  .prophet-btn:hover { background-color: #4a148c; }
+  .prophet-analysis { background-color: #f3e5f5; border-left: 5px solid #7b1fa2; }
+  .multi-prophet-card { border: 2px solid #6f42c1; background-color: #f8f0fc; }
+  .multi-btn { background: linear-gradient(45deg, #6f42c1, #007bff); border: none; }
+  .multi-btn:hover { opacity: 0.9; transform: scale(1.02); }
+  .personal-dashboard { background-color: #f8f9fa; padding: 1.5rem; border-radius: 12px; border: 1px solid #e9ecef; margin-bottom: 2rem; }
+  .dash-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;}
+  .dash-header h3 { margin: 0; color: #333; }
+  .date-selectors { display: flex; gap: 0.5rem; align-items: center; }
+  .date-selectors input { width: auto; padding: 0.4rem; font-size: 0.9rem; }
+  .refresh-btn { width: auto; padding: 0.4rem 1rem; font-size: 0.9rem; background: #6c757d; }
+  .dash-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1.5rem; }
+  .dash-card { background: white; border-radius: 10px; padding: 1.2rem; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border-top: 4px solid #ccc; transition: transform 0.2s; }
+  .dash-card:hover { transform: translateY(-3px); }
+  .dash-card.is-hot { border-top-color: #ff5722; background: #fff5f2; }
+  .dash-main { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; border-bottom: 1px solid #eee; padding-bottom: 0.5rem; }
+  .dash-number { font-size: 1.8rem; font-weight: bold; color: #007bff; }
+  .dash-status { font-size: 0.9rem; font-weight: bold; color: #555; }
+  .detail-row { display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 0.4rem; color: #555; }
+  .prop-row { margin-top: 0.8rem; padding-top: 0.5rem; border-top: 1px dashed #ddd; color: #6f42c1; }
+  .dash-actions { margin-top: 1rem; text-align: center; }
+  .dash-act-btn { background: none; border: 1px solid #007bff; color: #007bff; padding: 0.3rem 0.8rem; font-size: 0.8rem; border-radius: 20px; cursor: pointer; width: 100%; }
+  .dash-act-btn:hover { background: #007bff; color: white; }
+  .empty-state { text-align: center; padding: 3rem; color: #999; font-style: italic; font-size: 1.1rem; }
+  .empty-dashboard { text-align: center; padding: 2rem; color: #666; background: #fff; border-radius: 8px; }
+  .error-box { background-color: #ffebee; color: #c62828; padding: 1rem; border-radius: 4px; text-align: center; margin-bottom: 1rem; white-space: pre-wrap;}
 </style>
