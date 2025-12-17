@@ -29,8 +29,8 @@ const triggerCompanionNumber = ref('');
 // VARIABLES SÉPARÉES POUR DASHBOARD MULTI-VUES
 const selectedDayName = ref('Mercredi');
 const selectedHour = ref('Toute la journée'); 
-const dayAnalysisResult = ref(null); // Stocke le Spécialiste
-const standardResult = ref(null);    // Stocke les autres analyses (Standard)
+const dayAnalysisResult = ref(null); 
+const standardResult = ref(null);
 
 const selectedDate = ref('');
 const startDate = ref('');
@@ -180,10 +180,9 @@ function analyzeFavorite(item, mode) {
   }
 }
 
-// --- API CALL GENÉRIQUE ET INTELLIGENT ---
+// --- API CALL GENÉRIQUE (GET UNIQUEMENT) ---
 async function callApi(url, targetVar = 'standard') {
   showWelcomeMessage.value = false; isLoading.value = true; error.value = null;
-  // On ne reset pas TOUT, juste la variable cible pour éviter le scintillement
   if (targetVar === 'standard') standardResult.value = null;
   
   try {
@@ -191,31 +190,30 @@ async function callApi(url, targetVar = 'standard') {
     const headers = { 'Authorization': `Bearer ${token}` };
     const fullUrl = `${API_BASE_URL}${url}`;
     
-    // METHODE DYNAMIQUE (Si l'URL contient POST, on envoie POST)
-    const method = url.includes('POST') ? 'POST' : 'GET';
-    const response = await fetch(fullUrl, { method, headers });
+    // METHODE FORCEE A GET (Correctif 405 Method Not Allowed)
+    const response = await fetch(fullUrl, { method: 'GET', headers });
     
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || `Erreur ${response.status}`);
     
     if (targetVar === 'specialist') dayAnalysisResult.value = data;
-    else standardResult.value = data; // Le feedback visuel va dans standard
+    else standardResult.value = data;
 
     if (data.worksheet_gid) activeSheetGid.value = data.worksheet_gid;
     viewMode.value = 'table';
   } catch (err) { error.value = err.message; } finally { isLoading.value = false; }
 }
 
-// WRAPPERS API (CORRIGÉS POUR MAINTENANCE ADMIN)
+// WRAPPERS API (TOUS SIMPLIFIÉS EN GET)
 async function runDataUpdate(endpoint) { 
   lastOperationType.value = 'update'; 
-  await callApi(`/collection/${endpoint}`, 'standard'); // GET par défaut
+  await callApi(`/collection/${endpoint}`, 'standard'); 
 }
 
 async function runVisualAnalysis(endpoint) {
   if (!selectedDate.value) { error.value = "Selectionnez une date."; return; }
   lastOperationType.value = 'visual'; 
-  await callApi(`/analysis/${endpoint}/${selectedDate.value}`, 'standard'); // CallApi détectera le POST si besoin
+  await callApi(`/analysis/${endpoint}/${selectedDate.value}`, 'standard'); 
 }
 async function runReport(reportType) {
   if (!selectedDate.value) { error.value = "Selectionnez une date."; return; }
@@ -266,7 +264,7 @@ async function runMultiPrediction() {
 async function runKantaAnalysis(endpoint) {
   if (!selectedDate.value) { error.value = "Date requise."; return; }
   lastOperationType.value = 'visual'; 
-  await callApi(`/analysis/${endpoint}/${selectedDate.value}`, 'standard');
+  await callApi(`/analysis/${endpoint}/${selectedDate.value}`, 'standard'); 
 }
 async function runKantaReport(reportType) {
   if (!selectedDate.value) { error.value = "Date requise."; return; }
@@ -277,7 +275,6 @@ async function runKantaReport(reportType) {
 // FONCTION SPECIALISTE JOUR (Cible variable 'specialist')
 async function runDayAnalysis() {
   if (!startDate.value || !endDate.value) { error.value = "Dates requises."; return; }
-  // Pas de modif de lastOperationType ici pour ne pas perturber l'affichage standard
   await callApi(`/analysis/specific-day-recurrence?day_name=${selectedDayName.value}&target_hour=${selectedHour.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'specialist');
 }
 </script>
