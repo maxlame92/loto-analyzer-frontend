@@ -22,7 +22,10 @@ const newFavoriteInput = ref('');
 const predictionNumber = ref('');
 const predictionCompanion = ref('');
 const multiPredictionInput = ref('');
-const bossResult = ref(null); // RESULTAT DU BOSS
+
+// VARIABLES SPECIALISTE JOUR
+const selectedDayName = ref('Lundi');
+const dayAnalysisResult = ref(null);
 
 // --- INITIALISATION ---
 onMounted(() => {
@@ -253,22 +256,15 @@ async function runKantaReport(reportType) {
   lastOperationType.value = 'kanta-rank'; await callApi(`/analysis/kanta-${reportType}/${selectedDate.value}`);
 }
 
-// --- FONCTIONS BOSS ---
-async function runUltraLearning() {
+// --- FONCTION SPECIALISTE JOUR ---
+async function runDayAnalysis() {
   if (!startDate.value || !endDate.value) { error.value = "Dates requises."; return; }
-  lastOperationType.value = 'boss';
-  bossResult.value = null;
-  await callApi(`/analysis/boss-ultra-learning?start_date=${startDate.value}&end_date=${endDate.value}`);
-  if (apiResponse.value && apiResponse.value.two_short) {
-    bossResult.value = apiResponse.value;
+  lastOperationType.value = 'specialist';
+  dayAnalysisResult.value = null;
+  await callApi(`/analysis/specific-day-recurrence?day_name=${selectedDayName.value}&start_date=${startDate.value}&end_date=${endDate.value}`);
+  if (apiResponse.value && apiResponse.value.recurrence_data) {
+    dayAnalysisResult.value = apiResponse.value;
   }
-}
-
-function addBossToFavorites() {
-    if(bossResult.value) {
-        newFavoriteInput.value = bossResult.value.two_short;
-        addFavorite();
-    }
 }
 </script>
 
@@ -298,36 +294,29 @@ function addBossToFavorites() {
     <div class="main-layout">
       <div class="controls-column">
         
-        <!-- SECTION BOSS ULTRA NEURAL (PRIORITAIRE) -->
-        <section class="card ultra-card">
+        <!-- SECTION SPECIALISTE JOUR (NOUVEAU) -->
+        <section class="card spec-card">
           <div class="boss-header">
-            <h2>🧠 BOSS NEURAL (MÉMOIRE ACTIVE)</h2>
-            <span class="badge-ai">IA VIVE</span>
+            <h2>📅 ANALYSTE SPÉCIALISTE</h2>
+            <span class="badge-spec">FOCUS JOUR</span>
           </div>
-          <p class="small-text" style="color:#b0bec5">L'IA analyse ses erreurs passées pour calibrer le tirage.</p>
-          <button @click="runUltraLearning" :disabled="isLoading" class="ultra-btn">
-            <span v-if="isLoading">SYNCHRONISATION NEURALE...</span>
-            <span v-else>🔮 GÉNÉRER LE TWO SHORT OPTIMISÉ</span>
+          <p class="small-text" style="color:#555">Trouvez les Habitués de chaque jour.</p>
+          
+          <label>Jour à analyser :</label>
+          <select v-model="selectedDayName" class="day-select">
+            <option>Lundi</option><option>Mardi</option><option>Mercredi</option>
+            <option>Jeudi</option><option>Vendredi</option><option>Samedi</option><option>Dimanche</option>
+          </select>
+          
+          <label>Période d'analyse :</label>
+          <div style="display:flex; gap:5px; margin-bottom:10px;">
+             <input type="date" v-model="startDate" />
+             <input type="date" v-model="endDate" />
+          </div>
+
+          <button @click="runDayAnalysis" :disabled="isLoading" class="spec-btn">
+            SCANNER LES {{ selectedDayName.toUpperCase() }}S
           </button>
-          <div v-if="bossResult" class="ultra-result">
-            <div class="memory-bar"><span class="mem-icon">💾</span> {{ bossResult.memory_status }}</div>
-            <div class="big-numbers">
-              <div class="number-circle">{{ bossResult.two_short.split('-')[0] }}</div>
-              <div class="link-line"></div>
-              <div class="number-circle">{{ bossResult.two_short.split('-')[1] }}</div>
-            </div>
-            <div class="ai-speech">
-              <div class="ai-avatar">🤖</div>
-              <div class="ai-text">{{ bossResult.ai_justification }}</div>
-            </div>
-            <div class="strategies-used">
-              <h4>🔍 Preuves Techniques :</h4>
-              <div v-for="det in bossResult.details" :key="det.number" style="margin-bottom:5px; font-size:0.8rem; color:#ccc;">
-                 <strong>{{ det.number }}</strong> : <span v-for="s in det.sources" :key="s" class="w-tag">{{ s }}</span>
-              </div>
-            </div>
-            <button @click="addBossToFavorites" class="save-btn">Enregistrer ce Couple</button>
-          </div>
         </section>
 
         <section v-if="isAdmin" class="card data-update">
@@ -372,19 +361,8 @@ function addBossToFavorites() {
           </div>
         </section>
 
-        <section class="card">
-          <h2>Période & Profilage</h2>
-          <label>Début :</label><input type="date" v-model="startDate" />
-          <label>Fin :</label><input type="date" v-model="endDate" />
-          <button @click="runRangeAnalysis" :disabled="isLoading || !startDate || !endDate">Fréquence sur Période</button>
-          <hr />
-          <input type="number" v-model="profileNumber" placeholder="N° pour profil complet" />
-          <button @click="runProfileAnalysis" :disabled="isLoading || !startDate || !endDate || !profileNumber">Générer Profil du Numéro</button>
-        </section>
-
         <section class="card prophet-card">
           <h2>🔮 Le Prophète</h2>
-          <p class="small-text">Ce numéro vient de sortir. La suite ?</p>
           <input type="number" v-model="predictionNumber" placeholder="Numéro vu (Ex: 42)" />
           <input type="number" v-model="predictionCompanion" placeholder="Compagnon vu (Optionnel)" />
           <button @click="runPredictionAnalysis" :disabled="isLoading || !startDate || !endDate || !predictionNumber" class="prophet-btn">Voir Futur Probable</button>
@@ -392,43 +370,58 @@ function addBossToFavorites() {
 
         <section class="card multi-prophet-card">
           <h2>🔮 Analyse Croisée</h2>
-          <p class="small-text">Dernier tirage complet (ou sélection).</p>
           <input type="text" v-model="multiPredictionInput" placeholder="Ex: 5 12 34 56 78" @keyup.enter="runMultiPrediction"/>
           <button @click="runMultiPrediction" :disabled="isLoading || !startDate || !endDate || !multiPredictionInput" class="multi-btn">Lancer Projection</button>
-        </section>
-
-        <section class="card">
-          <h2>IA Avancée & Kanta</h2>
-          <button @click="runSequenceAnalysis" :disabled="isLoading || !startDate || !endDate">Détecter Suites</button>
-          <hr />
-          <input type="number" v-model="triggerTargetNumber" placeholder="Cible (ex: 18)" />
-          <input type="number" v-model="triggerCompanionNumber" placeholder="Compagnon (Optionnel)" />
-          <button @click="runTriggerAnalysis" :disabled="isLoading || !startDate || !endDate || !triggerTargetNumber">Trouver Déclencheurs ⚡</button>
-          <hr />
-          <div class="button-group-horizontal">
-             <button @click="runKantaAnalysis('kanta-highlight-day')">Surlign. Kanta J</button>
-             <button @click="runKantaAnalysis('kanta-highlight-week')">Surlign. Kanta S</button>
-          </div>
-          <div class="button-group-horizontal" style="margin-top:5px;">
-             <button @click="runKantaReport('daily-rank')">Class. Kanta J</button>
-             <button @click="runKantaReport('weekly-rank')">Class. Kanta S</button>
-          </div>
         </section>
       </div>
 
       <div class="results-column">
-        <section class="card results-card">
-          <h2>Résultats</h2>
+        <!-- RESULTAT SPECIALISTE JOUR -->
+        <div v-if="dayAnalysisResult" class="card result-spec-card">
+          <div class="spec-header">
+            <h3>📊 TOP 5 : {{ dayAnalysisResult.day_analyzed.toUpperCase() }}</h3>
+            <span class="total-badge">{{ dayAnalysisResult.total_draws_found }} Tirages analysés</span>
+          </div>
+          
+          <table class="spec-table">
+            <thead>
+              <tr>
+                <th>Numéro</th>
+                <th>Sorties</th>
+                <th>Heure Préférée</th>
+                <th>Meilleur Compagnon</th>
+                <th>Déclencheur (Avant)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in dayAnalysisResult.recurrence_data" :key="row.number">
+                <td class="num-cell">{{ row.number }}</td>
+                <td>{{ row.count }}</td>
+                <td>{{ row.best_time }}</td>
+                <td class="comp-cell">{{ row.best_companion }}</td>
+                <td class="trig-cell">{{ row.best_trigger }}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="ai-analysis">
+            <h4>🧠 Conseil Stratégique du Jour :</h4>
+            <p>{{ dayAnalysisResult.ai_analysis }}</p>
+          </div>
+        </div>
+
+        <section v-if="!dayAnalysisResult" class="card results-card">
+          <h2>Résultats Standards</h2>
           <div v-if="showWelcomeMessage" class="welcome-message">
             <h3>Bienvenue !</h3>
-            <p>Utilisez les ⭐ Favoris pour lancer des analyses rapides.</p>
+            <p>Utilisez l'Analyste Spécialiste à gauche pour cibler un jour précis.</p>
             <button @click="showWelcomeMessage = false" class="close-welcome">OK</button>
           </div>
           <div v-else>
             <div v-if="isLoading" class="loader">Chargement...</div>
             <div v-if="error" class="error-box">{{ error }}</div>
             
-            <div v-if="apiResponse">
+            <div v-if="apiResponse && !dayAnalysisResult">
               <div v-if="apiResponse.message || apiResponse.analysis_period" class="success-box large">
                 <p>✅ {{ apiResponse.message || `Analyse : ${apiResponse.analysis_period}` }}</p>
                 <a v-if="apiResponse.worksheet_gid" :href="sheetDirectLink" target="_blank" class="button-link">Voir l'Onglet ↗</a>
@@ -454,7 +447,7 @@ function addBossToFavorites() {
                   </tr>
                 </tbody>
               </table>
-
+              
               <div v-if="apiResponse.ai_strategic_analysis" class="ai-analysis"><h3>🧠 Stratégie</h3><p>{{ apiResponse.ai_strategic_analysis }}</p></div>
               <div v-if="apiResponse.ai_strategic_profile" class="ai-analysis"><h3>🧠 Profil Numéro</h3><p>{{ apiResponse.ai_strategic_profile }}</p></div>
               <div v-if="apiResponse.ai_sequence_analysis" class="ai-analysis"><h3>🧠 Suites</h3><p>{{ apiResponse.ai_sequence_analysis }}</p></div>
@@ -469,13 +462,13 @@ function addBossToFavorites() {
 </template>
 
 <style scoped>
-  /* STYLES CLEAN & FUTURISTE */
+  /* STYLES CLEAN & PRO */
   .loading-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; font-size: 1.5rem; color: #666; }
   .login-wrapper { display: flex; align-items: center; justify-content: center; min-height: 100vh; background-color: #f0f2f5; }
   .login-box { background: white; padding: 2.5rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
   .input-group { margin-bottom: 1rem; }
   .input-group label { display: block; margin-bottom: 0.5rem; font-weight: 500; }
-  input { width: 100%; padding: 0.8rem; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+  input, select { width: 100%; padding: 0.8rem; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
   button { padding: 0.8rem; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; width: 100%; font-weight: bold; }
   button:disabled { background-color: #ccc; }
   .dashboard { max-width: 95%; margin: 1rem auto; font-family: sans-serif; }
@@ -518,32 +511,21 @@ function addBossToFavorites() {
   .multi-btn { background: linear-gradient(45deg, #6f42c1, #007bff); border: none; }
   .multi-btn:hover { opacity: 0.9; transform: scale(1.02); }
 
-  /* ULTRA BOSS NEURAL */
-  .ultra-card {
-    background: #1a1a2e; color: #fff; border: 1px solid #16213e;
-    box-shadow: 0 0 20px rgba(0, 168, 255, 0.2);
-  }
-  .badge-ai { background: #00d2d3; color: #000; font-weight: 900; padding: 2px 8px; border-radius: 4px; animation: pulse 2s infinite; font-size: 0.7rem; }
-  .ultra-btn {
-    background: linear-gradient(90deg, #0f2027, #203a43, #2c5364);
-    border: 1px solid #00d2d3; color: #00d2d3; font-family: monospace; letter-spacing: 2px;
-    padding: 1rem; width: 100%; cursor: pointer; margin-top: 10px; font-weight: bold;
-  }
-  .ultra-btn:hover { background: #00d2d3; color: #000; box-shadow: 0 0 15px #00d2d3; }
-
-  .memory-bar { background: #16213e; padding: 8px; font-size: 0.75rem; color: #a4b0be; border-radius: 4px; margin-top: 15px; border-left: 3px solid #ff9f43; }
-  .big-numbers { display: flex; align-items: center; justify-content: center; margin: 20px 0; }
-  .number-circle {
-    width: 60px; height: 60px; border-radius: 50%; background: #fff; color: #000;
-    font-weight: 900; font-size: 1.8rem; display: flex; align-items: center; justify-content: center;
-    box-shadow: 0 0 15px rgba(255,255,255,0.5);
-  }
-  .link-line { width: 30px; height: 4px; background: #fff; margin: 0 10px; }
-  .ai-speech { display: flex; gap: 10px; background: #0f2027; padding: 15px; border-radius: 8px; border: 1px solid #2c5364; margin-bottom: 15px; }
-  .ai-text { font-size: 0.9rem; line-height: 1.4; color: #e0f7fa; font-style: italic; text-align: left; }
-  .w-tag { background: #333; font-size: 0.7rem; padding: 2px 6px; border-radius: 3px; color: #81d4fa; margin-right: 4px; border: 1px solid #444; }
-  .save-btn { width: 100%; background: transparent; border: 1px solid #fff; color: #fff; padding: 8px; margin-top: 10px; cursor: pointer; }
-  .save-btn:hover { background: #fff; color: #000; }
-
-  @keyframes pulse { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
+  /* STYLE SPECIALISTE JOUR */
+  .spec-card { border: 2px solid #009688; background-color: #e0f2f1; }
+  .boss-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
+  .badge-spec { background: #009688; color: white; font-weight: bold; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; }
+  .day-select { margin-bottom: 10px; font-weight: bold; color: #00796b; }
+  .spec-btn { background: #00796b; color: white; margin-top: 10px; }
+  .spec-btn:hover { background: #004d40; }
+  
+  .result-spec-card { border-top: 4px solid #009688; }
+  .spec-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+  .total-badge { background: #eee; padding: 4px 8px; border-radius: 10px; font-size: 0.8rem; color: #555; }
+  .spec-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+  .spec-table th { background: #009688; color: white; padding: 10px; font-size: 0.9rem; }
+  .spec-table td { border-bottom: 1px solid #eee; padding: 8px; text-align: center; }
+  .num-cell { font-weight: bold; color: #00796b; font-size: 1.1rem; }
+  .comp-cell { color: #0277bd; font-weight: 500; }
+  .trig-cell { color: #e65100; font-weight: 500; }
 </style>
