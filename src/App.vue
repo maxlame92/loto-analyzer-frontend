@@ -22,6 +22,7 @@ const newFavoriteInput = ref('');
 const predictionNumber = ref('');
 const predictionCompanion = ref('');
 const multiPredictionInput = ref('');
+const bossResult = ref(null); // RESULTAT DU BOSS
 
 // --- INITIALISATION ---
 onMounted(() => {
@@ -52,12 +53,9 @@ onMounted(() => {
         } else {
           userRole.value = 'user';
           userFavorites.value = [];
-          // CRITIQUE : Utilisation de merge: true pour créer le doc s'il n'existe pas
           await setDoc(docRef, { role: 'user', favorites: [] }, { merge: true });
         }
-      } catch (e) {
-        console.error("Erreur Firebase:", e);
-      }
+      } catch (e) { console.error("Erreur Firebase:", e); }
     } else {
       user.value = null; userRole.value = ''; userFavorites.value = [];
     }
@@ -75,26 +73,18 @@ const logout = async () => { await signOut(auth); };
 async function addFavorite() {
   const input = newFavoriteInput.value.trim();
   if (!input) return;
-  
   const isSingleNumber = /^[0-9]{1,2}$/.test(input);
   const isPair = /^[0-9]{1,2}-[0-9]{1,2}$/.test(input);
-
-  if (!isSingleNumber && !isPair) {
-    alert("Format invalide. Entrez un numéro (ex: 7) ou une paire (ex: 12-45)."); return;
-  }
+  if (!isSingleNumber && !isPair) { alert("Format invalide."); return; }
   if (userFavorites.value.includes(input)) { newFavoriteInput.value = ''; return; }
 
   try {
     const userRef = doc(db, "users", user.value.uid);
     userFavorites.value.push(input); 
-    // SAUVEGARDE SECURISEE
     await setDoc(userRef, { favorites: arrayUnion(input) }, { merge: true }); 
     newFavoriteInput.value = '';
   } catch (e) {
-    console.error("Erreur sauvegarde:", e);
-    let msg = "Erreur technique.";
-    if (e.code === 'permission-denied') msg = "PERMISSION REFUSÉE: Vous devez mettre à jour les Règles Firebase dans la Console.";
-    alert(msg);
+    alert("Erreur sauvegarde favoris.");
     userFavorites.value = userFavorites.value.filter(item => item !== input);
   }
 }
@@ -109,7 +99,6 @@ async function removeFavorite(item) {
 }
 
 function analyzeFavorite(item, mode) {
-  if (!startDate.value || !endDate.value) { alert("Vérifiez les dates de début et fin."); }
   if (item.includes('-')) {
     const parts = item.split('-');
     triggerTargetNumber.value = parts[0]; triggerCompanionNumber.value = parts[1];
@@ -117,7 +106,6 @@ function analyzeFavorite(item, mode) {
   } else {
     if (mode === 'companion') {
       selectedNumber.value = item;
-      if (!selectedDate.value) { alert("Sélectionnez une date pour l'analyse compagnon."); return; }
       runReport('companions');
     } else if (mode === 'trigger') {
       triggerTargetNumber.value = item; triggerCompanionNumber.value = ''; 
@@ -221,23 +209,17 @@ async function runReport(reportType) {
   await callApi(url);
 }
 
-// --- FONCTIONS MANQUANTES ET NOUVELLES ---
-
-// 1. FREQUENCE SUR PERIODE
+// FONCTIONS STANDARD
 async function runRangeAnalysis() {
-  if (!startDate.value || !endDate.value) { error.value = "Sélectionnez date début ET fin."; return; }
+  if (!startDate.value || !endDate.value) { error.value = "Dates requises."; return; }
   lastOperationType.value = 'frequency';
   await callApi(`/analysis/frequency-by-range?start_date=${startDate.value}&end_date=${endDate.value}`);
 }
-
-// 2. PROFIL DU NUMERO
 async function runProfileAnalysis() {
   if (!startDate.value || !endDate.value || !profileNumber.value) { error.value = "Période ET numéro requis."; return; }
   lastOperationType.value = 'profile';
   await callApi(`/analysis/number-profile?target_number=${profileNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`);
 }
-
-// 3. SUITES & DECLENCHEURS
 async function runSequenceAnalysis() {
   if (!startDate.value || !endDate.value) { error.value = "Période requise."; return; }
   lastOperationType.value = 'sequence'; await callApi(`/analysis/sequence-detection?start_date=${startDate.value}&end_date=${endDate.value}`);
@@ -249,8 +231,6 @@ async function runTriggerAnalysis() {
   if (triggerCompanionNumber.value) url += `&companion_number=${triggerCompanionNumber.value}`;
   await callApi(url);
 }
-
-// 4. NOUVEAU : LE PROPHETE
 async function runPredictionAnalysis() {
   if (!startDate.value || !endDate.value || !predictionNumber.value) { error.value = "Période et numéro vus requis."; return; }
   lastOperationType.value = 'prediction';
@@ -258,15 +238,12 @@ async function runPredictionAnalysis() {
   if (predictionCompanion.value) url += `&observed_companion=${predictionCompanion.value}`;
   await callApi(url);
 }
-
-// 5. NOUVEAU : ANALYSE CROISEE
 async function runMultiPrediction() {
   if (!startDate.value || !endDate.value || !multiPredictionInput.value) { error.value = "Période et numéros requis."; return; }
   const cleanInput = multiPredictionInput.value.replace(/[\s-]+/g, ',');
   lastOperationType.value = 'prediction';
   await callApi(`/analysis/multi-prediction?numbers_str=${cleanInput}&start_date=${startDate.value}&end_date=${endDate.value}`);
 }
-
 async function runKantaAnalysis(endpoint) {
   if (!selectedDate.value) { error.value = "Date requise."; return; }
   lastOperationType.value = 'visual'; await callApi(`/analysis/${endpoint}/${selectedDate.value}`, 'POST');
@@ -274,6 +251,24 @@ async function runKantaAnalysis(endpoint) {
 async function runKantaReport(reportType) {
   if (!selectedDate.value) { error.value = "Date requise."; return; }
   lastOperationType.value = 'kanta-rank'; await callApi(`/analysis/kanta-${reportType}/${selectedDate.value}`);
+}
+
+// --- FONCTIONS BOSS ---
+async function runUltraLearning() {
+  if (!startDate.value || !endDate.value) { error.value = "Dates requises."; return; }
+  lastOperationType.value = 'boss';
+  bossResult.value = null;
+  await callApi(`/analysis/boss-ultra-learning?start_date=${startDate.value}&end_date=${endDate.value}`);
+  if (apiResponse.value && apiResponse.value.two_short) {
+    bossResult.value = apiResponse.value;
+  }
+}
+
+function addBossToFavorites() {
+    if(bossResult.value) {
+        newFavoriteInput.value = bossResult.value.two_short;
+        addFavorite();
+    }
 }
 </script>
 
@@ -302,6 +297,39 @@ async function runKantaReport(reportType) {
 
     <div class="main-layout">
       <div class="controls-column">
+        
+        <!-- SECTION BOSS ULTRA NEURAL (PRIORITAIRE) -->
+        <section class="card ultra-card">
+          <div class="boss-header">
+            <h2>🧠 BOSS NEURAL (MÉMOIRE ACTIVE)</h2>
+            <span class="badge-ai">IA VIVE</span>
+          </div>
+          <p class="small-text" style="color:#b0bec5">L'IA analyse ses erreurs passées pour calibrer le tirage.</p>
+          <button @click="runUltraLearning" :disabled="isLoading" class="ultra-btn">
+            <span v-if="isLoading">SYNCHRONISATION NEURALE...</span>
+            <span v-else>🔮 GÉNÉRER LE TWO SHORT OPTIMISÉ</span>
+          </button>
+          <div v-if="bossResult" class="ultra-result">
+            <div class="memory-bar"><span class="mem-icon">💾</span> {{ bossResult.memory_status }}</div>
+            <div class="big-numbers">
+              <div class="number-circle">{{ bossResult.two_short.split('-')[0] }}</div>
+              <div class="link-line"></div>
+              <div class="number-circle">{{ bossResult.two_short.split('-')[1] }}</div>
+            </div>
+            <div class="ai-speech">
+              <div class="ai-avatar">🤖</div>
+              <div class="ai-text">{{ bossResult.ai_justification }}</div>
+            </div>
+            <div class="strategies-used">
+              <h4>🔍 Preuves Techniques :</h4>
+              <div v-for="det in bossResult.details" :key="det.number" style="margin-bottom:5px; font-size:0.8rem; color:#ccc;">
+                 <strong>{{ det.number }}</strong> : <span v-for="s in det.sources" :key="s" class="w-tag">{{ s }}</span>
+              </div>
+            </div>
+            <button @click="addBossToFavorites" class="save-btn">Enregistrer ce Couple</button>
+          </div>
+        </section>
+
         <section v-if="isAdmin" class="card data-update">
           <h2>Maintenance (Admin)</h2>
           <div class="button-group-horizontal">
@@ -310,7 +338,6 @@ async function runKantaReport(reportType) {
           </div>
         </section>
 
-        <!-- FAVORIS -->
         <section class="card">
           <h2>⭐ Mes Numéros Favoris</h2>
           <div class="favorites-input-group">
@@ -321,8 +348,8 @@ async function runKantaReport(reportType) {
             <div v-for="item in userFavorites" :key="item" class="favorite-chip">
               <span class="fav-label">{{ item }}</span>
               <div class="fav-actions">
-                <button v-if="!item.includes('-')" @click="analyzeFavorite(item, 'companion')" class="icon-btn" title="Compagnons (Avec)">👥</button>
-                <button @click="analyzeFavorite(item, 'trigger')" class="icon-btn" title="Déclencheurs (Avant)">⚡</button>
+                <button v-if="!item.includes('-')" @click="analyzeFavorite(item, 'companion')" class="icon-btn" title="Compagnons">👥</button>
+                <button @click="analyzeFavorite(item, 'trigger')" class="icon-btn" title="Déclencheurs">⚡</button>
               </div>
               <span @click="removeFavorite(item)" class="fav-delete">×</span>
             </div>
@@ -345,20 +372,16 @@ async function runKantaReport(reportType) {
           </div>
         </section>
 
-        <!-- ICI SONT LES FONCTIONS QUE VOUS PENSIEZ MANQUANTES -->
         <section class="card">
           <h2>Période & Profilage</h2>
           <label>Début :</label><input type="date" v-model="startDate" />
           <label>Fin :</label><input type="date" v-model="endDate" />
-          
           <button @click="runRangeAnalysis" :disabled="isLoading || !startDate || !endDate">Fréquence sur Période</button>
-          
           <hr />
           <input type="number" v-model="profileNumber" placeholder="N° pour profil complet" />
           <button @click="runProfileAnalysis" :disabled="isLoading || !startDate || !endDate || !profileNumber">Générer Profil du Numéro</button>
         </section>
 
-        <!-- NOUVELLES FONCTIONS PROPHETE -->
         <section class="card prophet-card">
           <h2>🔮 Le Prophète</h2>
           <p class="small-text">Ce numéro vient de sortir. La suite ?</p>
@@ -446,7 +469,7 @@ async function runKantaReport(reportType) {
 </template>
 
 <style scoped>
-  /* STYLES IDENTIQUES AU PRECEDENT - CLEAN */
+  /* STYLES CLEAN & FUTURISTE */
   .loading-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; font-size: 1.5rem; color: #666; }
   .login-wrapper { display: flex; align-items: center; justify-content: center; min-height: 100vh; background-color: #f0f2f5; }
   .login-box { background: white; padding: 2.5rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
@@ -494,4 +517,33 @@ async function runKantaReport(reportType) {
   .multi-prophet-card { border: 2px solid #6f42c1; background-color: #f8f0fc; }
   .multi-btn { background: linear-gradient(45deg, #6f42c1, #007bff); border: none; }
   .multi-btn:hover { opacity: 0.9; transform: scale(1.02); }
+
+  /* ULTRA BOSS NEURAL */
+  .ultra-card {
+    background: #1a1a2e; color: #fff; border: 1px solid #16213e;
+    box-shadow: 0 0 20px rgba(0, 168, 255, 0.2);
+  }
+  .badge-ai { background: #00d2d3; color: #000; font-weight: 900; padding: 2px 8px; border-radius: 4px; animation: pulse 2s infinite; font-size: 0.7rem; }
+  .ultra-btn {
+    background: linear-gradient(90deg, #0f2027, #203a43, #2c5364);
+    border: 1px solid #00d2d3; color: #00d2d3; font-family: monospace; letter-spacing: 2px;
+    padding: 1rem; width: 100%; cursor: pointer; margin-top: 10px; font-weight: bold;
+  }
+  .ultra-btn:hover { background: #00d2d3; color: #000; box-shadow: 0 0 15px #00d2d3; }
+
+  .memory-bar { background: #16213e; padding: 8px; font-size: 0.75rem; color: #a4b0be; border-radius: 4px; margin-top: 15px; border-left: 3px solid #ff9f43; }
+  .big-numbers { display: flex; align-items: center; justify-content: center; margin: 20px 0; }
+  .number-circle {
+    width: 60px; height: 60px; border-radius: 50%; background: #fff; color: #000;
+    font-weight: 900; font-size: 1.8rem; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 0 15px rgba(255,255,255,0.5);
+  }
+  .link-line { width: 30px; height: 4px; background: #fff; margin: 0 10px; }
+  .ai-speech { display: flex; gap: 10px; background: #0f2027; padding: 15px; border-radius: 8px; border: 1px solid #2c5364; margin-bottom: 15px; }
+  .ai-text { font-size: 0.9rem; line-height: 1.4; color: #e0f7fa; font-style: italic; text-align: left; }
+  .w-tag { background: #333; font-size: 0.7rem; padding: 2px 6px; border-radius: 3px; color: #81d4fa; margin-right: 4px; border: 1px solid #444; }
+  .save-btn { width: 100%; background: transparent; border: 1px solid #fff; color: #fff; padding: 8px; margin-top: 10px; cursor: pointer; }
+  .save-btn:hover { background: #fff; color: #000; }
+
+  @keyframes pulse { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
 </style>
