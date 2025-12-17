@@ -31,6 +31,7 @@ const selectedHour = ref('Toute la journée');
 const dayAnalysisResult = ref(null); 
 const standardResult = ref(null);
 const deepFavoriteResult = ref(null);
+const profileResult = ref(null); // Nouveau pour Profil
 
 const selectedDate = ref('');
 const startDate = ref('');
@@ -165,6 +166,7 @@ async function callApi(url, targetVar = 'standard') {
     
     if (targetVar === 'specialist') dayAnalysisResult.value = data;
     else if (targetVar === 'deep') deepFavoriteResult.value = data;
+    else if (targetVar === 'profile') profileResult.value = data; // Nouveau
     else standardResult.value = data;
 
     if (data.worksheet_gid) activeSheetGid.value = data.worksheet_gid;
@@ -178,6 +180,14 @@ async function runBatchVisualAnalysis(mode) {
   if (!startDate.value || !endDate.value) { error.value = "Période requise."; return; }
   lastOperationType.value = 'visual'; 
   await callApi(`/analysis/highlight-range?start_date=${startDate.value}&end_date=${endDate.value}&mode=${mode}`, 'standard'); 
+}
+
+// WRAPPER SPECIFIQUE JOURNEE (Appelle le batch sur la date sélectionnée)
+async function runSingleDayVisual(mode) {
+  if (!selectedDate.value) { error.value = "Sélectionnez une date."; return; }
+  lastOperationType.value = 'visual'; 
+  // Astuce : Start = End = selectedDate
+  await callApi(`/analysis/highlight-range?start_date=${selectedDate.value}&end_date=${selectedDate.value}&mode=${mode}`, 'standard'); 
 }
 
 async function runReport(reportType) {
@@ -200,7 +210,8 @@ async function runRangeAnalysis() {
 async function runProfileAnalysis() {
   if (!startDate.value || !endDate.value || !profileNumber.value) { error.value = "Numéro requis."; return; }
   lastOperationType.value = 'profile';
-  await callApi(`/analysis/number-profile?target_number=${profileNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'standard');
+  profileResult.value = null; // Reset
+  await callApi(`/analysis/number-profile?target_number=${profileNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'profile');
 }
 async function runSequenceAnalysis() {
   if (!startDate.value || !endDate.value) { error.value = "Dates requises."; return; }
@@ -225,11 +236,6 @@ async function runMultiPrediction() {
   const cleanInput = multiPredictionInput.value.replace(/[\s-]+/g, ',');
   lastOperationType.value = 'prediction';
   await callApi(`/analysis/multi-prediction?numbers_str=${cleanInput}&start_date=${startDate.value}&end_date=${endDate.value}`, 'standard');
-}
-async function runKantaAnalysis(endpoint) {
-  if (!selectedDate.value) { error.value = "Date requise."; return; }
-  lastOperationType.value = 'visual'; 
-  await callApi(`/analysis/${endpoint}/${selectedDate.value}`, 'standard'); 
 }
 async function runKantaReport(reportType) {
   if (!selectedDate.value) { error.value = "Date requise."; return; }
@@ -266,6 +272,7 @@ async function runDayAnalysis() {
     </header>
 
     <div class="main-layout">
+      <!-- COLONNE GAUCHE AVEC SCROLLBAR -->
       <div class="controls-column">
         
         <section class="card spec-card">
@@ -323,8 +330,15 @@ async function runDayAnalysis() {
         </section>
 
         <section class="card">
-          <h2>Rapports Ponctuels (1 Jour/Semaine)</h2>
+          <h2>Rapports Ponctuels (1 Semaine)</h2>
           <input type="date" v-model="selectedDate" />
+          
+          <!-- BOUTONS JOURS RESTAURÉS -->
+          <div class="button-group-vertical" style="margin-top:10px;">
+             <button @click="runSingleDayVisual('frequency')" :disabled="isLoading || !selectedDate" style="border:1px solid #ef5350; background:transparent; color:#d32f2f;">🎨 Surlignage Jour Unique</button>
+             <button @click="runSingleDayVisual('kanta')" :disabled="isLoading || !selectedDate" style="border:1px solid #66bb6a; background:transparent; color:#388e3c;">🎨 Surlignage Kanta Jour Unique</button>
+          </div>
+          <hr>
           <div class="button-group-vertical">
             <button @click="runReport('daily-frequency')" :disabled="isLoading || !selectedDate">Classement Jour</button>
             <button @click="runReport('weekly-frequency')" :disabled="isLoading || !selectedDate">Classement Semaine</button>
@@ -372,6 +386,11 @@ async function runDayAnalysis() {
 
       <div class="results-column">
         
+        <!-- BOUTON PERMANENT GOOGLE SHEETS -->
+        <div class="quick-link-box">
+           <a :href="sheetDirectLink" target="_blank" class="gsheet-btn">📂 OUVRIR GOOGLE SHEETS</a>
+        </div>
+
         <!-- RESULTAT SPECIALISTE JOUR -->
         <div v-if="dayAnalysisResult" class="card result-spec-card">
           <div class="spec-header">
@@ -448,6 +467,25 @@ async function runDayAnalysis() {
           </div>
         </div>
 
+        <!-- NOUVEAU RESULTAT : PROFIL NUMERO (TABLEAU) -->
+        <div v-if="profileResult" class="card result-spec-card" style="border-top:4px solid #ab47bc;">
+          <div class="spec-header">
+            <h3>👤 PROFIL COMPLET : {{ profileResult.profile_data.number }}</h3>
+            <button @click="profileResult = null" class="close-btn">×</button>
+          </div>
+          
+          <div class="stats-grid">
+             <div class="stat-item"><strong>Sorties Totales</strong><br>{{ profileResult.profile_data.hits }}</div>
+             <div class="stat-item"><strong>Jour Favori</strong><br>{{ profileResult.profile_data.best_day }}</div>
+             <div class="stat-item"><strong>Heure Favorite</strong><br>{{ profileResult.profile_data.best_time }}</div>
+          </div>
+          <div style="margin:15px 0; padding:10px; background:#f3e5f5; border-radius:8px;">
+             <strong>Top 5 Compagnons :</strong> {{ profileResult.profile_data.top_companions }}
+          </div>
+
+          <div class="ai-analysis"><h4>🧠 Analyse Expert :</h4><p>{{ profileResult.ai_strategic_profile }}</p></div>
+        </div>
+
         <!-- RESULTATS STANDARDS -->
         <section v-if="standardResult" class="card results-card fade-in">
           <div class="spec-header">
@@ -456,7 +494,6 @@ async function runDayAnalysis() {
           </div>
           <div v-if="standardResult.message || standardResult.analysis_period" class="success-box large">
             <p>✅ {{ standardResult.message || `Analyse : ${standardResult.analysis_period}` }}</p>
-            <a v-if="standardResult.worksheet_gid" :href="sheetDirectLink" target="_blank" class="button-link">Voir l'Onglet ↗</a>
           </div>
           <div v-if="isTableVisible && !lastOperationType.includes('visual')" class="view-controls">
             <button @click="viewMode = 'table'" :class="{ active: viewMode === 'table' }" class="toggle-btn">📋 Tableau</button>
@@ -477,13 +514,12 @@ async function runDayAnalysis() {
             </tbody>
           </table>
           <div v-if="standardResult.ai_strategic_analysis" class="ai-analysis"><h3>🧠 Stratégie</h3><p>{{ standardResult.ai_strategic_analysis }}</p></div>
-          <div v-if="standardResult.ai_strategic_profile" class="ai-analysis"><h3>🧠 Profil Numéro</h3><p>{{ standardResult.ai_strategic_profile }}</p></div>
           <div v-if="standardResult.ai_sequence_analysis" class="ai-analysis"><h3>🧠 Suites</h3><p>{{ standardResult.ai_sequence_analysis }}</p></div>
           <div v-if="standardResult.ai_trigger_analysis" class="ai-analysis"><h3>🧠 Déclencheurs</h3><p>{{ standardResult.ai_trigger_analysis }}</p></div>
           <div v-if="standardResult.ai_prediction_analysis" class="ai-analysis prophet-analysis"><h3>🔮 Prédiction</h3><p>{{ standardResult.ai_prediction_analysis }}</p></div>
         </section>
 
-        <div v-if="!dayAnalysisResult && !standardResult && !deepFavoriteResult && !isLoading" class="welcome-message">
+        <div v-if="!dayAnalysisResult && !standardResult && !deepFavoriteResult && !profileResult && !isLoading" class="welcome-message">
             <h3>Prêt à analyser</h3>
             <p>Sélectionnez une fonction à gauche pour commencer.</p>
         </div>
@@ -572,8 +608,20 @@ async function runDayAnalysis() {
   .stats-row { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
   .badge-stat { background: #eee; padding: 5px 10px; border-radius: 20px; font-size: 0.85rem; font-weight: bold; color: #333; }
   
+  .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; text-align: center; margin-bottom: 15px; }
+  .stat-item { background: #fff; padding: 10px; border-radius: 8px; border: 1px solid #eee; }
+
   .close-btn { background: transparent; border: none; color: #999; font-size: 1.5rem; cursor: pointer; width: auto; padding: 0 10px; }
   .close-btn:hover { color: #333; }
   .fade-in { animation: fadeIn 0.5s ease-in; }
   @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* SCROLLBAR POUR LA COLONNE GAUCHE */
+  .controls-column { max-height: 90vh; overflow-y: auto; padding-right: 10px; }
+  .controls-column::-webkit-scrollbar { width: 8px; }
+  .controls-column::-webkit-scrollbar-thumb { background-color: #ccc; border-radius: 4px; }
+  
+  .quick-link-box { text-align: center; margin-bottom: 20px; }
+  .gsheet-btn { background: #0f9d58; color: white; padding: 10px 20px; border-radius: 30px; text-decoration: none; font-weight: bold; display: inline-block; box-shadow: 0 4px 10px rgba(15, 157, 88, 0.3); }
+  .gsheet-btn:hover { background: #0b8043; transform: scale(1.05); transition: 0.2s; }
 </style>
