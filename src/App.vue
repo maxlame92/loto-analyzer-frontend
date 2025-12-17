@@ -26,11 +26,11 @@ const profileNumber = ref('');
 const triggerTargetNumber = ref('');
 const triggerCompanionNumber = ref('');
 
-// VARIABLES SÉPARÉES POUR DASHBOARD MULTI-VUES
 const selectedDayName = ref('Mercredi');
 const selectedHour = ref('Toute la journée'); 
 const dayAnalysisResult = ref(null); 
 const standardResult = ref(null);
+const deepFavoriteResult = ref(null); // Nouveau résultat Favori Profond
 
 const selectedDate = ref('');
 const startDate = ref('');
@@ -90,7 +90,6 @@ const chartData = computed(() => {
   return { labels, datasets: [{ label: 'Occurrences', backgroundColor: '#007bff', borderRadius: 4, data: counts }] };
 });
 
-// --- INITIALISATION ---
 onMounted(() => {
   const today = new Date();
   const year = today.getFullYear();
@@ -135,7 +134,6 @@ const login = async () => {
 };
 const logout = async () => { await signOut(auth); };
 
-// --- GESTION FAVORIS ---
 async function addFavorite() {
   const input = newFavoriteInput.value.trim();
   if (!input) return;
@@ -143,16 +141,12 @@ async function addFavorite() {
   const isPair = /^[0-9]{1,2}-[0-9]{1,2}$/.test(input);
   if (!isSingleNumber && !isPair) { alert("Format invalide."); return; }
   if (userFavorites.value.includes(input)) { newFavoriteInput.value = ''; return; }
-
   try {
     const userRef = doc(db, "users", user.value.uid);
     userFavorites.value.push(input); 
     await setDoc(userRef, { favorites: arrayUnion(input) }, { merge: true }); 
     newFavoriteInput.value = '';
-  } catch (e) {
-    alert("Erreur sauvegarde favoris.");
-    userFavorites.value = userFavorites.value.filter(item => item !== input);
-  }
+  } catch (e) { alert("Erreur sauvegarde favoris."); }
 }
 
 async function removeFavorite(item) {
@@ -164,23 +158,13 @@ async function removeFavorite(item) {
   } catch (e) { console.error(e); }
 }
 
-function analyzeFavorite(item, mode) {
-  if (item.includes('-')) {
-    const parts = item.split('-');
-    triggerTargetNumber.value = parts[0]; triggerCompanionNumber.value = parts[1];
-    runTriggerAnalysis(); 
-  } else {
-    if (mode === 'companion') {
-      selectedNumber.value = item;
-      runReport('companions');
-    } else if (mode === 'trigger') {
-      triggerTargetNumber.value = item; triggerCompanionNumber.value = ''; 
-      runTriggerAnalysis();
-    }
-  }
+// NOUVEAU : Analyse Profonde Favoris
+async function analyzeDeepFavorite(item) {
+  if (!startDate.value || !endDate.value) { alert("Vérifiez les dates."); return; }
+  deepFavoriteResult.value = null;
+  await callApi(`/analysis/deep-favorite?target=${item}&start_date=${startDate.value}&end_date=${endDate.value}`, 'deep');
 }
 
-// --- API CALL GENÉRIQUE (GET UNIQUEMENT) ---
 async function callApi(url, targetVar = 'standard') {
   showWelcomeMessage.value = false; isLoading.value = true; error.value = null;
   if (targetVar === 'standard') standardResult.value = null;
@@ -189,14 +173,13 @@ async function callApi(url, targetVar = 'standard') {
     const token = await user.value.getIdToken();
     const headers = { 'Authorization': `Bearer ${token}` };
     const fullUrl = `${API_BASE_URL}${url}`;
-    
-    // METHODE FORCEE A GET (Correctif 405 Method Not Allowed)
     const response = await fetch(fullUrl, { method: 'GET', headers });
     
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || `Erreur ${response.status}`);
     
     if (targetVar === 'specialist') dayAnalysisResult.value = data;
+    else if (targetVar === 'deep') deepFavoriteResult.value = data;
     else standardResult.value = data;
 
     if (data.worksheet_gid) activeSheetGid.value = data.worksheet_gid;
@@ -204,17 +187,15 @@ async function callApi(url, targetVar = 'standard') {
   } catch (err) { error.value = err.message; } finally { isLoading.value = false; }
 }
 
-// WRAPPERS API (TOUS SIMPLIFIÉS EN GET)
-async function runDataUpdate(endpoint) { 
-  lastOperationType.value = 'update'; 
-  await callApi(`/collection/${endpoint}`, 'standard'); 
+async function runDataUpdate(endpoint) { lastOperationType.value = 'update'; await callApi(`/collection/${endpoint}`, 'standard'); }
+
+// NOUVEAU : Surlignage Batch
+async function runBatchVisualAnalysis(mode) {
+  if (!startDate.value || !endDate.value) { error.value = "Période requise."; return; }
+  lastOperationType.value = 'visual'; 
+  await callApi(`/analysis/highlight-range?start_date=${startDate.value}&end_date=${endDate.value}&mode=${mode}`, 'standard'); 
 }
 
-async function runVisualAnalysis(endpoint) {
-  if (!selectedDate.value) { error.value = "Selectionnez une date."; return; }
-  lastOperationType.value = 'visual'; 
-  await callApi(`/analysis/${endpoint}/${selectedDate.value}`, 'standard'); 
-}
 async function runReport(reportType) {
   if (!selectedDate.value) { error.value = "Selectionnez une date."; return; }
   let url = '';
@@ -261,18 +242,11 @@ async function runMultiPrediction() {
   lastOperationType.value = 'prediction';
   await callApi(`/analysis/multi-prediction?numbers_str=${cleanInput}&start_date=${startDate.value}&end_date=${endDate.value}`, 'standard');
 }
-async function runKantaAnalysis(endpoint) {
-  if (!selectedDate.value) { error.value = "Date requise."; return; }
-  lastOperationType.value = 'visual'; 
-  await callApi(`/analysis/${endpoint}/${selectedDate.value}`, 'standard'); 
-}
 async function runKantaReport(reportType) {
   if (!selectedDate.value) { error.value = "Date requise."; return; }
   lastOperationType.value = 'kanta-rank'; 
   await callApi(`/analysis/kanta-${reportType}/${selectedDate.value}`, 'standard');
 }
-
-// FONCTION SPECIALISTE JOUR (Cible variable 'specialist')
 async function runDayAnalysis() {
   if (!startDate.value || !endDate.value) { error.value = "Dates requises."; return; }
   await callApi(`/analysis/specific-day-recurrence?day_name=${selectedDayName.value}&target_hour=${selectedHour.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'specialist');
@@ -305,23 +279,16 @@ async function runDayAnalysis() {
     <div class="main-layout">
       <div class="controls-column">
         
-        <!-- SECTION SPECIALISTE JOUR -->
         <section class="card spec-card">
-          <div class="boss-header">
-            <h2>📅 ANALYSTE SPÉCIALISTE</h2>
-            <span class="badge-spec">360°</span>
-          </div>
-          <p class="small-text" style="color:#555">Trouvez les Habitués de chaque jour.</p>
-          <label>Jour à analyser :</label>
+          <div class="boss-header"><h2>📅 ANALYSTE SPÉCIALISTE</h2><span class="badge-spec">360°</span></div>
+          <p class="small-text">Trouvez les Habitués de chaque jour.</p>
+          <label>Jour :</label>
           <select v-model="selectedDayName" class="day-select">
-            <option>Lundi</option><option>Mardi</option><option>Mercredi</option>
-            <option>Jeudi</option><option>Vendredi</option><option>Samedi</option><option>Dimanche</option>
+            <option>Lundi</option><option>Mardi</option><option>Mercredi</option><option>Jeudi</option><option>Vendredi</option><option>Samedi</option><option>Dimanche</option>
           </select>
-          <label>Heure du Tirage (Optionnel) :</label>
+          <label>Heure :</label>
           <select v-model="selectedHour" class="day-select">
-            <option>Toute la journée</option>
-            <option>10H</option><option>13H</option><option>16H</option>
-            <option>19H</option><option>21H</option><option>22H</option><option>23H</option>
+            <option>Toute la journée</option><option>10H</option><option>13H</option><option>16H</option><option>19H</option><option>21H</option><option>22H</option><option>23H</option>
           </select>
           <label>Période d'analyse :</label>
           <div style="display:flex; gap:5px; margin-bottom:10px;">
@@ -349,8 +316,7 @@ async function runDayAnalysis() {
             <div v-for="item in userFavorites" :key="item" class="favorite-chip">
               <span class="fav-label">{{ item }}</span>
               <div class="fav-actions">
-                <button v-if="!item.includes('-')" @click="analyzeFavorite(item, 'companion')" class="icon-btn" title="Compagnons">👥</button>
-                <button @click="analyzeFavorite(item, 'trigger')" class="icon-btn" title="Déclencheurs">⚡</button>
+                <button @click="analyzeDeepFavorite(item)" class="icon-btn" title="Scan Profond (Période)">⚡</button>
               </div>
               <span @click="removeFavorite(item)" class="fav-delete">×</span>
             </div>
@@ -358,14 +324,19 @@ async function runDayAnalysis() {
           <p v-else class="empty-msg">Ajoutez vos numéros fétiches.</p>
         </section>
 
-        <!-- CARTES RESTAURÉES -->
         <section class="card">
-          <h2>Analyse par Semaine</h2>
+          <h2>Analyse Visuelle (Batch)</h2>
+          <p class="small-text">Applique les couleurs sur toute la période choisie.</p>
+          <div class="button-group-vertical">
+            <button @click="runBatchVisualAnalysis('frequency')" :disabled="isLoading || !startDate || !endDate" style="background:#ef5350;">Surlignage Rouge/Bleu (Période)</button>
+            <button @click="runBatchVisualAnalysis('kanta')" :disabled="isLoading || !startDate || !endDate" style="background:#66bb6a;">Surlignage Kanta (Période)</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Rapports Ponctuels (1 Jour/Semaine)</h2>
           <input type="date" v-model="selectedDate" />
           <div class="button-group-vertical">
-            <button @click="runVisualAnalysis('highlight-day')" :disabled="isLoading || !selectedDate">Surlignage (Jour)</button>
-            <button @click="runVisualAnalysis('process-entire-week')" :disabled="isLoading || !selectedDate">Surlignage (Semaine)</button>
-            <hr />
             <button @click="runReport('daily-frequency')" :disabled="isLoading || !selectedDate">Classement Jour</button>
             <button @click="runReport('weekly-frequency')" :disabled="isLoading || !selectedDate">Classement Semaine</button>
             <hr />
@@ -403,10 +374,6 @@ async function runDayAnalysis() {
           <input type="number" v-model="triggerCompanionNumber" placeholder="Compagnon (Optionnel)" />
           <button @click="runTriggerAnalysis" :disabled="isLoading || !startDate || !endDate || !triggerTargetNumber">Trouver Déclencheurs ⚡</button>
           <hr />
-          <div class="button-group-horizontal">
-             <button @click="runKantaAnalysis('kanta-highlight-day')">Surlign. Kanta J</button>
-             <button @click="runKantaAnalysis('kanta-highlight-week')">Surlign. Kanta S</button>
-          </div>
           <div class="button-group-horizontal" style="margin-top:5px;">
              <button @click="runKantaReport('daily-rank')">Class. Kanta J</button>
              <button @click="runKantaReport('weekly-rank')">Class. Kanta S</button>
@@ -416,32 +383,21 @@ async function runDayAnalysis() {
 
       <div class="results-column">
         
-        <!-- BLOC 1 : RESULTAT SPECIALISTE JOUR (Reste affiché) -->
+        <!-- RESULTAT SPECIALISTE JOUR -->
         <div v-if="dayAnalysisResult" class="card result-spec-card">
           <div class="spec-header">
             <h3>📊 TOP 5 : {{ dayAnalysisResult.day_analyzed.toUpperCase() }} ({{ dayAnalysisResult.hour_analyzed }})</h3>
             <span class="total-badge">{{ dayAnalysisResult.total_draws_found }} Tirages</span>
             <button @click="dayAnalysisResult = null" class="close-btn">×</button>
           </div>
-
           <div class="best-duo-box">
              <span class="duo-label">🔥 LE DUO EN OR :</span>
              <span class="duo-val">{{ dayAnalysisResult.best_duo }}</span>
              <span class="duo-count">(Vu {{ dayAnalysisResult.best_duo_count }} fois)</span>
           </div>
-          
           <div class="table-responsive">
             <table class="spec-table">
-              <thead>
-                <tr>
-                  <th>N°</th>
-                  <th>Forme</th>
-                  <th>Kanta</th>
-                  <th>2 Compagnons (Présent)</th>
-                  <th>2 Déclencheurs (Passé)</th>
-                  <th>Prophète (Futur)</th>
-                </tr>
-              </thead>
+              <thead><tr><th>N°</th><th>Forme</th><th>Kanta</th><th>2 Compagnons (Présent)</th><th>2 Déclencheurs (Passé)</th><th>Prophète (Futur)</th></tr></thead>
               <tbody>
                 <tr v-for="row in dayAnalysisResult.recurrence_data" :key="row.number">
                   <td class="num-cell">{{ row.number }}</td>
@@ -454,34 +410,41 @@ async function runDayAnalysis() {
               </tbody>
             </table>
           </div>
+          <div class="ai-analysis"><h4>🧠 Conseil Stratégique :</h4><p>{{ dayAnalysisResult.ai_analysis }}</p></div>
+        </div>
 
-          <div class="ai-analysis">
-            <h4>🧠 Conseil Stratégique :</h4>
-            <p>{{ dayAnalysisResult.ai_analysis }}</p>
+        <!-- RESULTAT DEEP FAVORITE (NOUVEAU) -->
+        <div v-if="deepFavoriteResult" class="card result-spec-card" style="border-top:4px solid #fdd835;">
+          <div class="spec-header">
+            <h3>⭐ ANALYSE PROFONDE : {{ deepFavoriteResult.favorite }}</h3>
+            <button @click="deepFavoriteResult = null" class="close-btn">×</button>
+          </div>
+          <div v-if="deepFavoriteResult.data === null">
+             <p>Ce favori n'est jamais sorti sur la période.</p>
+          </div>
+          <div v-else>
+             <p><strong>Sorties Totales :</strong> {{ deepFavoriteResult.hits }}</p>
+             <div class="ai-analysis"><h4>🧠 Stratégie Favori :</h4><p>{{ deepFavoriteResult.ai_analysis }}</p></div>
           </div>
         </div>
 
-        <!-- BLOC 2 : RESULTATS STANDARDS (S'affiche EN DESSOUS, sans écraser) -->
+        <!-- RESULTATS STANDARDS -->
         <section v-if="standardResult" class="card results-card fade-in">
           <div class="spec-header">
-             <h2>Résultat Analyse Standard</h2>
+             <h2>Résultat Standard</h2>
              <button @click="standardResult = null" class="close-btn">Fermer</button>
           </div>
-          
           <div v-if="standardResult.message || standardResult.analysis_period" class="success-box large">
             <p>✅ {{ standardResult.message || `Analyse : ${standardResult.analysis_period}` }}</p>
             <a v-if="standardResult.worksheet_gid" :href="sheetDirectLink" target="_blank" class="button-link">Voir l'Onglet ↗</a>
           </div>
-
           <div v-if="isTableVisible && !lastOperationType.includes('visual')" class="view-controls">
             <button @click="viewMode = 'table'" :class="{ active: viewMode === 'table' }" class="toggle-btn">📋 Tableau</button>
             <button @click="viewMode = 'chart'" :class="{ active: viewMode === 'chart' }" class="toggle-btn">📊 Graphique</button>
           </div>
-
           <div v-if="isTableVisible && viewMode === 'chart' && !lastOperationType.includes('visual')" class="chart-container">
             <Bar :data="chartData" :options="chartOptions" />
           </div>
-
           <table v-else-if="isTableVisible" class="styled-table">
             <thead><tr><th v-for="h in tableHeaders" :key="h">{{ h }}</th></tr></thead>
             <tbody>
@@ -493,7 +456,6 @@ async function runDayAnalysis() {
               </tr>
             </tbody>
           </table>
-          
           <div v-if="standardResult.ai_strategic_analysis" class="ai-analysis"><h3>🧠 Stratégie</h3><p>{{ standardResult.ai_strategic_analysis }}</p></div>
           <div v-if="standardResult.ai_strategic_profile" class="ai-analysis"><h3>🧠 Profil Numéro</h3><p>{{ standardResult.ai_strategic_profile }}</p></div>
           <div v-if="standardResult.ai_sequence_analysis" class="ai-analysis"><h3>🧠 Suites</h3><p>{{ standardResult.ai_sequence_analysis }}</p></div>
@@ -501,7 +463,7 @@ async function runDayAnalysis() {
           <div v-if="standardResult.ai_prediction_analysis" class="ai-analysis prophet-analysis"><h3>🔮 Prédiction</h3><p>{{ standardResult.ai_prediction_analysis }}</p></div>
         </section>
 
-        <div v-if="!dayAnalysisResult && !standardResult && !isLoading" class="welcome-message">
+        <div v-if="!dayAnalysisResult && !standardResult && !deepFavoriteResult && !isLoading" class="welcome-message">
             <h3>Prêt à analyser</h3>
             <p>Sélectionnez une fonction à gauche pour commencer.</p>
         </div>
