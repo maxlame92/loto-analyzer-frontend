@@ -22,10 +22,71 @@ const newFavoriteInput = ref('');
 const predictionNumber = ref('');
 const predictionCompanion = ref('');
 const multiPredictionInput = ref('');
+const profileNumber = ref('');
+const triggerTargetNumber = ref('');
+const triggerCompanionNumber = ref('');
 
 // VARIABLES SPECIALISTE JOUR
-const selectedDayName = ref('Lundi');
+const selectedDayName = ref('Mercredi');
 const dayAnalysisResult = ref(null);
+
+const selectedDate = ref('');
+const startDate = ref('');
+const endDate = ref('');
+const selectedNumber = ref('');
+const apiResponse = ref(null);
+const isLoading = ref(false);
+const error = ref(null);
+const lastOperationType = ref('');
+const activeSheetGid = ref(null);
+const showWelcomeMessage = ref(true);
+const viewMode = ref('table');
+
+const isAdmin = computed(() => userRole.value === 'admin');
+const sheetDirectLink = computed(() => {
+  const base = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}`;
+  return activeSheetGid.value ? `${base}/edit#gid=${activeSheetGid.value}` : `${base}/edit`;
+});
+
+const tableHeaders = computed(() => {
+  if (lastOperationType.value.includes('frequency')) return ['#', 'Numéro', 'Apparitions'];
+  if (lastOperationType.value === 'companions') return ['#', 'Compagnon', 'Apparu avec'];
+  if (lastOperationType.value === 'trigger') return ['#', 'N° Déclencheur', 'Fréquence'];
+  if (lastOperationType.value === 'prediction') return ['#', 'Numéro Suivant (Probable)', 'Fréquence']; 
+  if (lastOperationType.value.includes('kanta-rank')) return ['Paire Kanta', 'Apparitions'];
+  return [];
+});
+
+const tableData = computed(() => {
+  if (apiResponse.value?.frequency_ranking) return apiResponse.value.frequency_ranking;
+  if (apiResponse.value?.companion_ranking) return apiResponse.value.companion_ranking;
+  if (apiResponse.value?.trigger_numbers_ranking) return apiResponse.value.trigger_numbers_ranking;
+  if (apiResponse.value?.prediction_ranking) return apiResponse.value.prediction_ranking;
+  if (apiResponse.value?.kanta_pairs) return apiResponse.value.kanta_pairs;
+  if (apiResponse.value?.kanta_pairs_ranking) return apiResponse.value.kanta_pairs_ranking;
+  return [];
+});
+const isTableVisible = computed(() => tableData.value.length > 0);
+
+const chartOptions = {
+  responsive: true, maintainAspectRatio: false,
+  plugins: { legend: { display: false }, title: { display: true, text: 'Analyse Visuelle (Top 20)' } },
+  scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+};
+const chartData = computed(() => {
+  const data = tableData.value;
+  if (!data || data.length === 0) return null;
+  const limitedData = data.slice(0, 20);
+  let labels = [], counts = [];
+  limitedData.forEach(row => {
+    if (row.pair) labels.push(row.pair);
+    else if (row.number) labels.push(row.number.toString());
+    else if (row.companion) labels.push(row.companion.toString());
+    else labels.push('?');
+    counts.push(row.count);
+  });
+  return { labels, datasets: [{ label: 'Occurrences', backgroundColor: '#007bff', borderRadius: 4, data: counts }] };
+});
 
 // --- INITIALISATION ---
 onMounted(() => {
@@ -117,68 +178,6 @@ function analyzeFavorite(item, mode) {
   }
 }
 
-// --- VARIABLES ---
-const selectedDate = ref('');
-const startDate = ref('');
-const endDate = ref('');
-const selectedNumber = ref('');
-const profileNumber = ref('');
-const triggerTargetNumber = ref('');
-const triggerCompanionNumber = ref('');
-const apiResponse = ref(null);
-const isLoading = ref(false);
-const error = ref(null);
-const lastOperationType = ref('');
-const activeSheetGid = ref(null);
-const showWelcomeMessage = ref(true);
-const viewMode = ref('table');
-
-const isAdmin = computed(() => userRole.value === 'admin');
-const sheetDirectLink = computed(() => {
-  const base = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}`;
-  return activeSheetGid.value ? `${base}/edit#gid=${activeSheetGid.value}` : `${base}/edit`;
-});
-
-const tableHeaders = computed(() => {
-  if (lastOperationType.value.includes('frequency')) return ['#', 'Numéro', 'Apparitions'];
-  if (lastOperationType.value === 'companions') return ['#', 'Compagnon', 'Apparu avec'];
-  if (lastOperationType.value === 'trigger') return ['#', 'N° Déclencheur', 'Fréquence'];
-  if (lastOperationType.value === 'prediction') return ['#', 'Numéro Suivant (Probable)', 'Fréquence']; 
-  if (lastOperationType.value.includes('kanta-rank')) return ['Paire Kanta', 'Apparitions'];
-  return [];
-});
-
-const tableData = computed(() => {
-  if (apiResponse.value?.frequency_ranking) return apiResponse.value.frequency_ranking;
-  if (apiResponse.value?.companion_ranking) return apiResponse.value.companion_ranking;
-  if (apiResponse.value?.trigger_numbers_ranking) return apiResponse.value.trigger_numbers_ranking;
-  if (apiResponse.value?.prediction_ranking) return apiResponse.value.prediction_ranking;
-  if (apiResponse.value?.kanta_pairs) return apiResponse.value.kanta_pairs;
-  if (apiResponse.value?.kanta_pairs_ranking) return apiResponse.value.kanta_pairs_ranking;
-  return [];
-});
-const isTableVisible = computed(() => tableData.value.length > 0);
-
-const chartOptions = {
-  responsive: true, maintainAspectRatio: false,
-  plugins: { legend: { display: false }, title: { display: true, text: 'Analyse Visuelle (Top 20)' } },
-  scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
-};
-const chartData = computed(() => {
-  const data = tableData.value;
-  if (!data || data.length === 0) return null;
-  const limitedData = data.slice(0, 20);
-  let labels = [], counts = [];
-  limitedData.forEach(row => {
-    if (row.pair) labels.push(row.pair);
-    else if (row.number) labels.push(row.number.toString());
-    else if (row.companion) labels.push(row.companion.toString());
-    else labels.push('?');
-    counts.push(row.count);
-  });
-  return { labels, datasets: [{ label: 'Occurrences', backgroundColor: '#007bff', borderRadius: 4, data: counts }] };
-});
-
 // --- API CALLS ---
 async function callApi(url, method = 'GET') {
   showWelcomeMessage.value = false; isLoading.value = true; error.value = null; apiResponse.value = null;
@@ -212,7 +211,7 @@ async function runReport(reportType) {
   await callApi(url);
 }
 
-// FONCTIONS STANDARD
+// FONCTIONS RESTAUREES
 async function runRangeAnalysis() {
   if (!startDate.value || !endDate.value) { error.value = "Dates requises."; return; }
   lastOperationType.value = 'frequency';
@@ -256,7 +255,7 @@ async function runKantaReport(reportType) {
   lastOperationType.value = 'kanta-rank'; await callApi(`/analysis/kanta-${reportType}/${selectedDate.value}`);
 }
 
-// --- FONCTION SPECIALISTE JOUR ---
+// FONCTION SPECIALISTE JOUR
 async function runDayAnalysis() {
   if (!startDate.value || !endDate.value) { error.value = "Dates requises."; return; }
   lastOperationType.value = 'specialist';
@@ -294,29 +293,24 @@ async function runDayAnalysis() {
     <div class="main-layout">
       <div class="controls-column">
         
-        <!-- SECTION SPECIALISTE JOUR (NOUVEAU) -->
+        <!-- SECTION SPECIALISTE JOUR -->
         <section class="card spec-card">
           <div class="boss-header">
             <h2>📅 ANALYSTE SPÉCIALISTE</h2>
             <span class="badge-spec">FOCUS JOUR</span>
           </div>
           <p class="small-text" style="color:#555">Trouvez les Habitués de chaque jour.</p>
-          
           <label>Jour à analyser :</label>
           <select v-model="selectedDayName" class="day-select">
             <option>Lundi</option><option>Mardi</option><option>Mercredi</option>
             <option>Jeudi</option><option>Vendredi</option><option>Samedi</option><option>Dimanche</option>
           </select>
-          
           <label>Période d'analyse :</label>
           <div style="display:flex; gap:5px; margin-bottom:10px;">
              <input type="date" v-model="startDate" />
              <input type="date" v-model="endDate" />
           </div>
-
-          <button @click="runDayAnalysis" :disabled="isLoading" class="spec-btn">
-            SCANNER LES {{ selectedDayName.toUpperCase() }}S
-          </button>
+          <button @click="runDayAnalysis" :disabled="isLoading" class="spec-btn">SCANNER LES {{ selectedDayName.toUpperCase() }}S</button>
         </section>
 
         <section v-if="isAdmin" class="card data-update">
@@ -346,6 +340,7 @@ async function runDayAnalysis() {
           <p v-else class="empty-msg">Ajoutez vos numéros fétiches.</p>
         </section>
 
+        <!-- CARTES RESTAURÉES -->
         <section class="card">
           <h2>Analyse par Semaine</h2>
           <input type="date" v-model="selectedDate" />
@@ -361,6 +356,14 @@ async function runDayAnalysis() {
           </div>
         </section>
 
+        <section class="card">
+          <h2>Période & Profilage</h2>
+          <button @click="runRangeAnalysis" :disabled="isLoading || !startDate || !endDate">Fréquence sur Période</button>
+          <hr />
+          <input type="number" v-model="profileNumber" placeholder="N° pour profil complet" />
+          <button @click="runProfileAnalysis" :disabled="isLoading || !startDate || !endDate || !profileNumber">Générer Profil du Numéro</button>
+        </section>
+
         <section class="card prophet-card">
           <h2>🔮 Le Prophète</h2>
           <input type="number" v-model="predictionNumber" placeholder="Numéro vu (Ex: 42)" />
@@ -372,6 +375,24 @@ async function runDayAnalysis() {
           <h2>🔮 Analyse Croisée</h2>
           <input type="text" v-model="multiPredictionInput" placeholder="Ex: 5 12 34 56 78" @keyup.enter="runMultiPrediction"/>
           <button @click="runMultiPrediction" :disabled="isLoading || !startDate || !endDate || !multiPredictionInput" class="multi-btn">Lancer Projection</button>
+        </section>
+
+        <section class="card">
+          <h2>IA Avancée & Kanta</h2>
+          <button @click="runSequenceAnalysis" :disabled="isLoading || !startDate || !endDate">Détecter Suites</button>
+          <hr />
+          <input type="number" v-model="triggerTargetNumber" placeholder="Cible (ex: 18)" />
+          <input type="number" v-model="triggerCompanionNumber" placeholder="Compagnon (Optionnel)" />
+          <button @click="runTriggerAnalysis" :disabled="isLoading || !startDate || !endDate || !triggerTargetNumber">Trouver Déclencheurs ⚡</button>
+          <hr />
+          <div class="button-group-horizontal">
+             <button @click="runKantaAnalysis('kanta-highlight-day')">Surlign. Kanta J</button>
+             <button @click="runKantaAnalysis('kanta-highlight-week')">Surlign. Kanta S</button>
+          </div>
+          <div class="button-group-horizontal" style="margin-top:5px;">
+             <button @click="runKantaReport('daily-rank')">Class. Kanta J</button>
+             <button @click="runKantaReport('weekly-rank')">Class. Kanta S</button>
+          </div>
         </section>
       </div>
 
@@ -389,8 +410,8 @@ async function runDayAnalysis() {
                 <th>Numéro</th>
                 <th>Sorties</th>
                 <th>Heure Préférée</th>
-                <th>Meilleur Compagnon</th>
-                <th>Déclencheur (Avant)</th>
+                <th>2 Meilleurs Compagnons</th>
+                <th>2 Déclencheurs (Avant)</th>
               </tr>
             </thead>
             <tbody>
@@ -414,7 +435,7 @@ async function runDayAnalysis() {
           <h2>Résultats Standards</h2>
           <div v-if="showWelcomeMessage" class="welcome-message">
             <h3>Bienvenue !</h3>
-            <p>Utilisez l'Analyste Spécialiste à gauche pour cibler un jour précis.</p>
+            <p>Utilisez l'Analyste Spécialiste à gauche ou les outils standards.</p>
             <button @click="showWelcomeMessage = false" class="close-welcome">OK</button>
           </div>
           <div v-else>
