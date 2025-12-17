@@ -174,7 +174,6 @@ async function callApi(url, targetVar = 'standard') {
 
 async function runDataUpdate(endpoint) { lastOperationType.value = 'update'; await callApi(`/collection/${endpoint}`, 'standard'); }
 
-// FONCTION BATCH (SURLIGNAGE MASSE)
 async function runBatchVisualAnalysis(mode) {
   if (!startDate.value || !endDate.value) { error.value = "Période requise."; return; }
   lastOperationType.value = 'visual'; 
@@ -226,6 +225,11 @@ async function runMultiPrediction() {
   const cleanInput = multiPredictionInput.value.replace(/[\s-]+/g, ',');
   lastOperationType.value = 'prediction';
   await callApi(`/analysis/multi-prediction?numbers_str=${cleanInput}&start_date=${startDate.value}&end_date=${endDate.value}`, 'standard');
+}
+async function runKantaAnalysis(endpoint) {
+  if (!selectedDate.value) { error.value = "Date requise."; return; }
+  lastOperationType.value = 'visual'; 
+  await callApi(`/analysis/${endpoint}/${selectedDate.value}`, 'standard'); 
 }
 async function runKantaReport(reportType) {
   if (!selectedDate.value) { error.value = "Date requise."; return; }
@@ -318,7 +322,6 @@ async function runDayAnalysis() {
           </div>
         </section>
 
-        <!-- AUTRES SECTIONS (IDENTIQUES) -->
         <section class="card">
           <h2>Rapports Ponctuels (1 Jour/Semaine)</h2>
           <input type="date" v-model="selectedDate" />
