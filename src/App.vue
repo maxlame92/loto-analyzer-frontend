@@ -190,32 +190,32 @@ async function callApi(url, targetVar = 'standard') {
     const token = await user.value.getIdToken();
     const headers = { 'Authorization': `Bearer ${token}` };
     const fullUrl = `${API_BASE_URL}${url}`;
-    const response = await fetch(fullUrl, { method: 'GET', headers });
-    // Pour les POST, on adapte si besoin, mais ici la plupart sont GET ou POST sans body complexe
-    if(url.includes('POST')) {
-       // Code simplifié pour les POST (Surlignage)
-       const res = await fetch(fullUrl, { method: 'POST', headers });
-       const data = await res.json();
-       standardResult.value = data; // Le feedback visuel va dans standard
-    } else {
-       const data = await response.json();
-       if (!response.ok) throw new Error(data.detail || `Erreur ${response.status}`);
-       
-       if (targetVar === 'specialist') dayAnalysisResult.value = data;
-       else standardResult.value = data;
+    
+    // METHODE DYNAMIQUE (Si l'URL contient POST, on envoie POST)
+    const method = url.includes('POST') ? 'POST' : 'GET';
+    const response = await fetch(fullUrl, { method, headers });
+    
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || `Erreur ${response.status}`);
+    
+    if (targetVar === 'specialist') dayAnalysisResult.value = data;
+    else standardResult.value = data; // Le feedback visuel va dans standard
 
-       if (data.worksheet_gid) activeSheetGid.value = data.worksheet_gid;
-    }
+    if (data.worksheet_gid) activeSheetGid.value = data.worksheet_gid;
     viewMode.value = 'table';
   } catch (err) { error.value = err.message; } finally { isLoading.value = false; }
 }
 
-// WRAPPERS API (Adaptés pour le Multi-Vue)
-async function runDataUpdate(endpoint) { lastOperationType.value = 'update'; await callApi(`/collection/${endpoint}`, 'POST'); }
+// WRAPPERS API (CORRIGÉS POUR MAINTENANCE ADMIN)
+async function runDataUpdate(endpoint) { 
+  lastOperationType.value = 'update'; 
+  await callApi(`/collection/${endpoint}`, 'standard'); // GET par défaut
+}
+
 async function runVisualAnalysis(endpoint) {
   if (!selectedDate.value) { error.value = "Selectionnez une date."; return; }
   lastOperationType.value = 'visual'; 
-  await callApi(`/analysis/${endpoint}/${selectedDate.value}`, 'POST');
+  await callApi(`/analysis/${endpoint}/${selectedDate.value}`, 'standard'); // CallApi détectera le POST si besoin
 }
 async function runReport(reportType) {
   if (!selectedDate.value) { error.value = "Selectionnez une date."; return; }
@@ -266,7 +266,7 @@ async function runMultiPrediction() {
 async function runKantaAnalysis(endpoint) {
   if (!selectedDate.value) { error.value = "Date requise."; return; }
   lastOperationType.value = 'visual'; 
-  await callApi(`/analysis/${endpoint}/${selectedDate.value}`, 'POST');
+  await callApi(`/analysis/${endpoint}/${selectedDate.value}`, 'standard');
 }
 async function runKantaReport(reportType) {
   if (!selectedDate.value) { error.value = "Date requise."; return; }
@@ -361,6 +361,7 @@ async function runDayAnalysis() {
           <p v-else class="empty-msg">Ajoutez vos numéros fétiches.</p>
         </section>
 
+        <!-- CARTES RESTAURÉES -->
         <section class="card">
           <h2>Analyse par Semaine</h2>
           <input type="date" v-model="selectedDate" />
