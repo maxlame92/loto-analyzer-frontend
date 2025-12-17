@@ -192,7 +192,6 @@ async function runReport(reportType) {
   await callApi(url, 'standard');
 }
 
-// RESTAURATION DES FONCTIONS STANDARDS
 async function runRangeAnalysis() {
   if (!startDate.value || !endDate.value) { error.value = "Dates requises."; return; }
   lastOperationType.value = 'frequency';
@@ -323,6 +322,7 @@ async function runDayAnalysis() {
           </div>
         </section>
 
+        <!-- AUTRES SECTIONS (IDENTIQUES) -->
         <section class="card">
           <h2>Rapports Ponctuels (1 Jour/Semaine)</h2>
           <input type="date" v-model="selectedDate" />
@@ -335,7 +335,14 @@ async function runDayAnalysis() {
           </div>
         </section>
 
-        <!-- (Autres sections Prophet, Kanta, etc. restent identiques) -->
+        <section class="card">
+          <h2>Période & Profilage</h2>
+          <button @click="runRangeAnalysis" :disabled="isLoading || !startDate || !endDate">Fréquence sur Période</button>
+          <hr />
+          <input type="number" v-model="profileNumber" placeholder="N° pour profil complet" />
+          <button @click="runProfileAnalysis" :disabled="isLoading || !startDate || !endDate || !profileNumber">Générer Profil du Numéro</button>
+        </section>
+
         <section class="card prophet-card">
           <h2>🔮 Le Prophète</h2>
           <input type="number" v-model="predictionNumber" placeholder="Numéro vu (Ex: 42)" />
