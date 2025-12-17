@@ -28,6 +28,7 @@ const triggerCompanionNumber = ref('');
 
 // VARIABLES SPECIALISTE JOUR
 const selectedDayName = ref('Mercredi');
+const selectedHour = ref('Toute la journée'); // Nouveau : Filtre Heure
 const dayAnalysisResult = ref(null);
 
 const selectedDate = ref('');
@@ -255,12 +256,13 @@ async function runKantaReport(reportType) {
   lastOperationType.value = 'kanta-rank'; await callApi(`/analysis/kanta-${reportType}/${selectedDate.value}`);
 }
 
-// FONCTION SPECIALISTE JOUR
+// FONCTION SPECIALISTE JOUR (MISE A JOUR)
 async function runDayAnalysis() {
   if (!startDate.value || !endDate.value) { error.value = "Dates requises."; return; }
   lastOperationType.value = 'specialist';
   dayAnalysisResult.value = null;
-  await callApi(`/analysis/specific-day-recurrence?day_name=${selectedDayName.value}&start_date=${startDate.value}&end_date=${endDate.value}`);
+  // Ajout du paramètre target_hour
+  await callApi(`/analysis/specific-day-recurrence?day_name=${selectedDayName.value}&target_hour=${selectedHour.value}&start_date=${startDate.value}&end_date=${endDate.value}`);
   if (apiResponse.value && apiResponse.value.recurrence_data) {
     dayAnalysisResult.value = apiResponse.value;
   }
@@ -297,20 +299,30 @@ async function runDayAnalysis() {
         <section class="card spec-card">
           <div class="boss-header">
             <h2>📅 ANALYSTE SPÉCIALISTE</h2>
-            <span class="badge-spec">FOCUS JOUR</span>
+            <span class="badge-spec">V2.0</span>
           </div>
           <p class="small-text" style="color:#555">Trouvez les Habitués de chaque jour.</p>
+          
           <label>Jour à analyser :</label>
           <select v-model="selectedDayName" class="day-select">
             <option>Lundi</option><option>Mardi</option><option>Mercredi</option>
             <option>Jeudi</option><option>Vendredi</option><option>Samedi</option><option>Dimanche</option>
           </select>
+
+          <!-- NOUVEAU : SELECTEUR D'HEURE -->
+          <label>Heure du Tirage (Optionnel) :</label>
+          <select v-model="selectedHour" class="day-select">
+            <option>Toute la journée</option>
+            <option>10H</option><option>13H</option><option>16H</option>
+            <option>19H</option><option>21H</option><option>22H</option><option>23H</option>
+          </select>
+          
           <label>Période d'analyse :</label>
           <div style="display:flex; gap:5px; margin-bottom:10px;">
              <input type="date" v-model="startDate" />
              <input type="date" v-model="endDate" />
           </div>
-          <button @click="runDayAnalysis" :disabled="isLoading" class="spec-btn">SCANNER LES {{ selectedDayName.toUpperCase() }}S</button>
+          <button @click="runDayAnalysis" :disabled="isLoading" class="spec-btn">SCANNER {{ selectedDayName.toUpperCase() }}</button>
         </section>
 
         <section v-if="isAdmin" class="card data-update">
@@ -400,25 +412,32 @@ async function runDayAnalysis() {
         <!-- RESULTAT SPECIALISTE JOUR -->
         <div v-if="dayAnalysisResult" class="card result-spec-card">
           <div class="spec-header">
-            <h3>📊 TOP 5 : {{ dayAnalysisResult.day_analyzed.toUpperCase() }}</h3>
-            <span class="total-badge">{{ dayAnalysisResult.total_draws_found }} Tirages analysés</span>
+            <h3>📊 TOP 5 : {{ dayAnalysisResult.day_analyzed.toUpperCase() }} ({{ dayAnalysisResult.hour_analyzed }})</h3>
+            <span class="total-badge">{{ dayAnalysisResult.total_draws_found }} Tirages</span>
+          </div>
+
+          <!-- ENCART BEST DUO -->
+          <div class="best-duo-box">
+             <span class="duo-label">🔥 LE DUO EN OR :</span>
+             <span class="duo-val">{{ dayAnalysisResult.best_duo }}</span>
+             <span class="duo-count">(Vu {{ dayAnalysisResult.best_duo_count }} fois)</span>
           </div>
           
           <table class="spec-table">
             <thead>
               <tr>
-                <th>Numéro</th>
-                <th>Sorties</th>
-                <th>Heure Préférée</th>
-                <th>2 Meilleurs Compagnons</th>
+                <th>N°</th>
+                <th>Etat</th>
+                <th>Kanta</th>
+                <th>2 Compagnons</th>
                 <th>2 Déclencheurs (Avant)</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="row in dayAnalysisResult.recurrence_data" :key="row.number">
                 <td class="num-cell">{{ row.number }}</td>
-                <td>{{ row.count }}</td>
-                <td>{{ row.best_time }}</td>
+                <td style="font-size:0.8rem;">{{ row.status }}</td>
+                <td style="color:#d32f2f; font-weight:bold;">{{ row.kanta }}</td>
                 <td class="comp-cell">{{ row.best_companion }}</td>
                 <td class="trig-cell">{{ row.best_trigger }}</td>
               </tr>
@@ -426,7 +445,7 @@ async function runDayAnalysis() {
           </table>
 
           <div class="ai-analysis">
-            <h4>🧠 Conseil Stratégique du Jour :</h4>
+            <h4>🧠 Conseil Stratégique :</h4>
             <p>{{ dayAnalysisResult.ai_analysis }}</p>
           </div>
         </div>
@@ -543,10 +562,14 @@ async function runDayAnalysis() {
   .result-spec-card { border-top: 4px solid #009688; }
   .spec-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
   .total-badge { background: #eee; padding: 4px 8px; border-radius: 10px; font-size: 0.8rem; color: #555; }
+  .best-duo-box { background: linear-gradient(90deg, #ffc107, #ff9800); color: #000; padding: 10px; border-radius: 8px; margin-bottom: 15px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
+  .duo-label { text-transform: uppercase; font-size: 0.9rem; }
+  .duo-val { font-size: 1.5rem; color: #d32f2f; }
+  
   .spec-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-  .spec-table th { background: #009688; color: white; padding: 10px; font-size: 0.9rem; }
+  .spec-table th { background: #009688; color: white; padding: 10px; font-size: 0.8rem; }
   .spec-table td { border-bottom: 1px solid #eee; padding: 8px; text-align: center; }
-  .num-cell { font-weight: bold; color: #00796b; font-size: 1.1rem; }
-  .comp-cell { color: #0277bd; font-weight: 500; }
-  .trig-cell { color: #e65100; font-weight: 500; }
+  .num-cell { font-weight: bold; color: #00796b; font-size: 1.2rem; }
+  .comp-cell { color: #0277bd; font-weight: 500; font-size:0.9rem; }
+  .trig-cell { color: #e65100; font-weight: 500; font-size:0.9rem; }
 </style>
