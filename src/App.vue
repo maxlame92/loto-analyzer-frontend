@@ -26,8 +26,16 @@ const profileNumber = ref('');
 const triggerTargetNumber = ref('');
 const triggerCompanionNumber = ref('');
 
+// VARIABLES AUTOMATISATION
+const autoMode = ref('radar'); 
 const selectedDayName = ref('Mercredi');
 const selectedHour = ref('Toute la journée'); 
+const sniperFavInput = ref('');
+const favDayName = ref('Tous');
+const favHour = ref('Toutes');
+
+// RESULTATS
+const autoResult = ref(null); 
 const dayAnalysisResult = ref(null); 
 const standardResult = ref(null);
 const deepFavoriteResult = ref(null);
@@ -147,10 +155,22 @@ async function removeFavorite(item) {
   } catch (e) { console.error(e); }
 }
 
+// APPELS API AUTOMATISATION
+async function runRadar() {
+  autoResult.value = null;
+  await callApi(`/analysis/auto-strategist?target_day=${selectedDayName.value}&target_hour=${selectedHour.value}`, 'auto');
+}
+async function runSniperFavorite() {
+  if (!sniperFavInput.value) { alert("Entrez un numéro favori."); return; }
+  autoResult.value = null;
+  await callApi(`/analysis/auto-sniper-favorite?target_num=${sniperFavInput.value}&target_day=${selectedDayName.value}&target_hour=${selectedHour.value}`, 'auto');
+}
+
+// APPELS STANDARDS
 async function analyzeDeepFavorite(item) {
   if (!startDate.value || !endDate.value) { alert("Vérifiez les dates."); return; }
   deepFavoriteResult.value = null;
-  await callApi(`/analysis/deep-favorite?target=${item}&start_date=${startDate.value}&end_date=${endDate.value}`, 'deep');
+  await callApi(`/analysis/deep-favorite?target=${item}&start_date=${startDate.value}&end_date=${endDate.value}&context_day=${favDayName.value}&context_hour=${favHour.value}`, 'deep');
 }
 
 async function callApi(url, targetVar = 'standard') {
@@ -167,6 +187,7 @@ async function callApi(url, targetVar = 'standard') {
     if (targetVar === 'specialist') dayAnalysisResult.value = data;
     else if (targetVar === 'deep') deepFavoriteResult.value = data;
     else if (targetVar === 'profile') profileResult.value = data;
+    else if (targetVar === 'auto') autoResult.value = data;
     else standardResult.value = data;
 
     if (data.worksheet_gid) activeSheetGid.value = data.worksheet_gid;
@@ -262,7 +283,7 @@ async function runDayAnalysis() {
 
   <main v-else class="dashboard">
     <header>
-      <h1>LE GUIDE DES FOURCASTER</h1>
+      <h1>LE GUIDE DES FOURCASTER <span class="version-tag">V56</span></h1>
       <div class="user-info">
         <span>Connecté : <strong>{{ user.email }}</strong></span>
         <button @click="logout" class="logout-button">Déconnexion</button>
@@ -273,6 +294,52 @@ async function runDayAnalysis() {
       <!-- COLONNE GAUCHE AVEC SCROLLBAR -->
       <div class="controls-column">
         
+        <!-- SECTION AUTOMATISATION DOUBLE VOLET -->
+        <section class="card auto-strat-card">
+          <div class="boss-header">
+             <h2>🤖 COMMAND CENTER</h2>
+             <span class="badge-spec blink">AUTO</span>
+          </div>
+          
+          <!-- ONGLETS DE NAVIGATION -->
+          <div class="tabs">
+             <button @click="autoMode = 'radar'" :class="{ active: autoMode === 'radar' }">RADAR JOUR</button>
+             <button @click="autoMode = 'sniper'" :class="{ active: autoMode === 'sniper' }">SNIPER FAVORI</button>
+          </div>
+
+          <div class="tab-content">
+             <!-- VOLET A : RADAR -->
+             <div v-if="autoMode === 'radar'">
+                <p class="small-text">Trouve le Roi du Jour (Triple Scan).</p>
+                <div class="date-picker-row">
+                  <select v-model="selectedDayName" class="day-select">
+                    <option>Lundi</option><option>Mardi</option><option>Mercredi</option><option>Jeudi</option><option>Vendredi</option><option>Samedi</option><option>Dimanche</option>
+                  </select>
+                  <select v-model="selectedHour" class="day-select">
+                    <option>10H</option><option>13H</option><option>16H</option><option>19H</option><option>21H</option><option>22H</option><option>23H</option>
+                  </select>
+                </div>
+                <button @click="runRadar" :disabled="isLoading" class="spec-btn" style="background:#e91e63;">SCANNER LE JOUR</button>
+             </div>
+
+             <!-- VOLET B : SNIPER -->
+             <div v-else>
+                <p class="small-text">Optimise ton Favori pour ce créneau.</p>
+                <input type="number" v-model="sniperFavInput" placeholder="Ton Numéro (ex: 42)" style="margin-bottom:10px;" />
+                <div class="date-picker-row">
+                  <select v-model="selectedDayName" class="day-select">
+                    <option>Lundi</option><option>Mardi</option><option>Mercredi</option><option>Jeudi</option><option>Vendredi</option><option>Samedi</option><option>Dimanche</option>
+                  </select>
+                  <select v-model="selectedHour" class="day-select">
+                    <option>10H</option><option>13H</option><option>16H</option><option>19H</option><option>21H</option><option>22H</option><option>23H</option>
+                  </select>
+                </div>
+                <button @click="runSniperFavorite" :disabled="isLoading" class="spec-btn" style="background:#ff9800;">CIBLER CE FAVORI</button>
+             </div>
+          </div>
+        </section>
+
+        <!-- (Reste des cartes inchangées) -->
         <section class="card spec-card">
           <div class="boss-header"><h2>📅 ANALYSTE SPÉCIALISTE</h2><span class="badge-spec">360°</span></div>
           <p class="small-text">Trouvez les Habitués de chaque jour.</p>
@@ -307,10 +374,22 @@ async function runDayAnalysis() {
             <button @click="addFavorite" :disabled="!newFavoriteInput" class="btn-small">Ajouter</button>
           </div>
           <label class="period-label">Période d'analyse :</label>
-          <div style="display:flex; gap:5px; margin-bottom:10px;">
+          <div class="date-picker-row">
              <input type="date" v-model="startDate" />
              <input type="date" v-model="endDate" />
           </div>
+          
+          <!-- AJOUT : CONTEXTE POUR FAVORIS (SNIPER) -->
+          <label class="period-label">Contexte Visé (Optionnel) :</label>
+          <div class="date-picker-row">
+            <select v-model="favDayName" class="day-select">
+              <option>Tous</option><option>Lundi</option><option>Mardi</option><option>Mercredi</option><option>Jeudi</option><option>Vendredi</option><option>Samedi</option><option>Dimanche</option>
+            </select>
+            <select v-model="favHour" class="day-select">
+              <option>Toutes</option><option>10H</option><option>13H</option><option>16H</option><option>19H</option><option>21H</option><option>22H</option><option>23H</option>
+            </select>
+          </div>
+          
           <div v-if="userFavorites.length > 0" class="favorites-list">
             <div v-for="item in userFavorites" :key="item" class="favorite-chip">
               <span class="fav-label">{{ item }}</span>
@@ -353,7 +432,7 @@ async function runDayAnalysis() {
             <button @click="runReport('companions')" :disabled="isLoading || !selectedDate || !selectedNumber">Analyser Compagnons</button>
           </div>
         </section>
-
+        
         <section class="card">
           <h2>Période & Profilage</h2>
           <div style="display:flex; gap:5px; margin-bottom:10px;">
@@ -410,6 +489,30 @@ async function runDayAnalysis() {
         
         <div class="quick-link-box">
            <a :href="sheetDirectLink" target="_blank" class="gsheet-btn">📂 OUVRIR GOOGLE SHEETS</a>
+        </div>
+
+        <!-- RESULTAT AUTOMATISATION (RADAR / SNIPER) -->
+        <div v-if="autoResult" class="card result-spec-card alert-card">
+           <div class="spec-header">
+              <h3 style="color:#d32f2f;">{{ autoResult.mode === 'RADAR' ? '🚨 ALERTE RADAR' : '🎯 SNIPER FAVORI' }}</h3>
+              <button @click="autoResult = null" class="close-btn">×</button>
+           </div>
+           
+           <div class="alert-box" :style="{background: autoResult.mode === 'RADAR' ? 'linear-gradient(90deg, #d32f2f, #c2185b)' : 'linear-gradient(90deg, #ff9800, #f57c00)'}">
+              <div class="alert-duo">{{ autoResult.two_sure }}</div>
+              <div class="alert-score" v-if="autoResult.mode === 'RADAR'">Score Confiance : {{ autoResult.confidence_score }}</div>
+              <div class="alert-score" v-if="autoResult.mode === 'SNIPER' && autoResult.is_imminent">⚠️ IMMINENT ! (Déclencheur actif)</div>
+           </div>
+
+           <div class="alert-details" v-if="autoResult.mode === 'RADAR'">
+              <ul>
+                 <li :class="{valid: autoResult.details.funnel_match}">✅ Validé par Entonnoir (Long/Court Terme)</li>
+                 <li :class="{valid: autoResult.details.sniper_match}">✅ Roi de l'Heure (Sniper)</li>
+                 <li :class="{valid: autoResult.details.echo_match}">✅ Appelé par Dernier Tirage (Echo)</li>
+              </ul>
+           </div>
+
+           <div class="ai-analysis"><h4>🧠 Conseil :</h4><p>{{ autoResult.ai_message }}</p></div>
         </div>
 
         <!-- RESULTAT SPECIALISTE JOUR -->
@@ -537,7 +640,7 @@ async function runDayAnalysis() {
           <div v-if="standardResult.ai_prediction_analysis" class="ai-analysis prophet-analysis"><h3>🔮 Prédiction</h3><p>{{ standardResult.ai_prediction_analysis }}</p></div>
         </section>
 
-        <div v-if="!dayAnalysisResult && !standardResult && !deepFavoriteResult && !profileResult && !isLoading" class="welcome-message">
+        <div v-if="!dayAnalysisResult && !standardResult && !deepFavoriteResult && !profileResult && !autoStrategistResult && !isLoading" class="welcome-message">
             <h3>Prêt à analyser</h3>
             <p>Sélectionnez une fonction à gauche pour commencer.</p>
         </div>
@@ -551,7 +654,7 @@ async function runDayAnalysis() {
 </template>
 
 <style scoped>
-  /* STYLES CLEAN & PRO (DESIGN CLASSIQUE RESTAURÉ) */
+  /* STYLES CLEAN & PRO (DESIGN CLASSIQUE) */
   .loading-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; font-size: 1.5rem; color: #666; }
   .login-wrapper { display: flex; align-items: center; justify-content: center; min-height: 100vh; background-color: #f0f2f5; }
   .login-box { background: white; padding: 2.5rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
@@ -592,8 +695,6 @@ async function runDayAnalysis() {
   .empty-msg { font-style: italic; color: #999; font-size: 0.9rem; }
   .small-text { font-size: 0.8rem; color: #666; margin-top: -0.5rem; margin-bottom: 1rem; }
   hr { border: none; border-top: 1px solid #eee; margin: 1.5rem 0; }
-  
-  /* CARDS SPECIFIQUES (Ancien Design) */
   .prophet-card { border: 1px solid #d1c4e9; background: linear-gradient(to bottom right, #ffffff, #f3e5f5); }
   .prophet-btn { background-color: #7b1fa2; }
   .prophet-btn:hover { background-color: #4a148c; }
@@ -601,15 +702,28 @@ async function runDayAnalysis() {
   .multi-prophet-card { border: 2px solid #6f42c1; background-color: #f8f0fc; }
   .multi-btn { background: linear-gradient(45deg, #6f42c1, #007bff); border: none; }
   .multi-btn:hover { opacity: 0.9; transform: scale(1.02); }
+  .auto-strat-card { border: 2px solid #e91e63; background-color: #fce4ec; }
 
-  /* NOUVEAUX ELEMENTS (Adaptés au style classique) */
   .period-label { font-size: 0.85rem; color: #666; font-weight: 500; margin-bottom: 2px; }
   .date-picker-row { display: flex; gap: 10px; margin-bottom: 10px; }
   .date-picker-row input { flex: 1; padding: 5px; font-size: 0.9rem; border: 1px solid #ccc; border-radius: 4px; }
   .date-picker-row.mini { margin-top: 10px; margin-bottom: 5px; align-items: center; }
   .date-picker-row.mini label { width: auto; margin: 0; font-size: 0.8rem; }
 
-  /* SPECIALISTE JOUR & DEEP SCAN */
+  /* TABS POUR L'AUTO STRATEGE */
+  .tabs { display: flex; gap: 5px; margin-bottom: 10px; }
+  .tabs button { flex: 1; padding: 8px; font-size: 0.8rem; background: #e91e63; opacity: 0.6; border: none; color: white; border-radius: 4px 4px 0 0; }
+  .tabs button.active { opacity: 1; font-weight: bold; border-bottom: 2px solid white; }
+
+  /* ALERT CARD */
+  .alert-card { background: #fff3e0; border-color: #e91e63; }
+  .alert-box { background: linear-gradient(90deg, #d32f2f, #c2185b); padding: 15px; border-radius: 8px; color: white; text-align: center; margin-bottom: 15px; }
+  .alert-duo { font-size: 2.5rem; font-weight: bold; text-shadow: 0 2px 4px rgba(0,0,0,0.3); }
+  .alert-score { font-size: 0.9rem; opacity: 0.9; }
+  .alert-details ul { list-style: none; padding: 0; }
+  .alert-details li { margin-bottom: 5px; color: #555; }
+  .alert-details li.valid { color: #2e7d32; font-weight: bold; }
+
   .spec-card { border: 1px solid #009688; border-top: 4px solid #009688; background-color: #e0f2f1; }
   .boss-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
   .badge-spec { background: #009688; color: white; font-weight: bold; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; }
@@ -640,6 +754,8 @@ async function runDayAnalysis() {
   .comp-cell { color: #0277bd; font-weight: 500; }
   .trig-cell { color: #e65100; font-weight: 500; }
   .proph-cell { color: #7b1fa2; font-weight: bold; background: #f3e5f5; border-radius: 4px; padding: 2px; }
+  .blink { animation: blinker 1.5s linear infinite; }
+  @keyframes blinker { 50% { opacity: 0; } }
   
   .stats-row { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
   .badge-stat { background: #eee; padding: 5px 10px; border-radius: 20px; font-size: 0.85rem; font-weight: bold; color: #333; border: 1px solid #ccc; }
