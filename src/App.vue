@@ -26,7 +26,6 @@ const profileNumber = ref('');
 const triggerTargetNumber = ref('');
 const triggerCompanionNumber = ref('');
 
-// VARIABLES SPECIALISTE JOUR
 const selectedDayName = ref('Mercredi');
 const selectedHour = ref('Toute la journée'); 
 const dayAnalysisResult = ref(null); 
@@ -34,7 +33,6 @@ const standardResult = ref(null);
 const deepFavoriteResult = ref(null);
 const profileResult = ref(null);
 
-// VARIABLES DATES GLOBALES
 const selectedDate = ref('');
 const startDate = ref('');
 const endDate = ref('');
@@ -210,7 +208,7 @@ async function runRangeAnalysis() {
 async function runProfileAnalysis() {
   if (!startDate.value || !endDate.value || !profileNumber.value) { error.value = "Numéro requis."; return; }
   lastOperationType.value = 'profile';
-  profileResult.value = null; 
+  profileResult.value = null;
   await callApi(`/analysis/number-profile?target_number=${profileNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'profile');
 }
 async function runSequenceAnalysis() {
@@ -264,7 +262,7 @@ async function runDayAnalysis() {
 
   <main v-else class="dashboard">
     <header>
-      <h1>LE GUIDE DES FOURCASTER</h1>
+      <h1>LE GUIDE DES FOURCASTER <span class="version-tag">PLATINUM V53</span></h1>
       <div class="user-info">
         <span>Connecté : <strong>{{ user.email }}</strong></span>
         <button @click="logout" class="logout-button">Déconnexion</button>
@@ -286,7 +284,6 @@ async function runDayAnalysis() {
           <select v-model="selectedHour" class="day-select">
             <option>Toute la journée</option><option>10H</option><option>13H</option><option>16H</option><option>19H</option><option>21H</option><option>22H</option><option>23H</option>
           </select>
-          
           <label class="period-label">Période d'Analyse :</label>
           <div class="date-picker-row">
              <input type="date" v-model="startDate" />
@@ -309,7 +306,6 @@ async function runDayAnalysis() {
             <input type="text" v-model="newFavoriteInput" placeholder="Ex: 7 ou 12-45" @keyup.enter="addFavorite"/>
             <button @click="addFavorite" :disabled="!newFavoriteInput" class="btn-small">Ajouter</button>
           </div>
-          <!-- AJOUT : PERIODE POUR FAVORIS -->
           <label class="period-label">Période d'analyse :</label>
           <div style="display:flex; gap:5px; margin-bottom:10px;">
              <input type="date" v-model="startDate" />
@@ -343,7 +339,6 @@ async function runDayAnalysis() {
         <section class="card">
           <h2>Rapports Ponctuels (1 Semaine)</h2>
           <input type="date" v-model="selectedDate" />
-          
           <div class="button-group-vertical" style="margin-top:10px;">
              <button @click="runSingleDayVisual('frequency')" :disabled="isLoading || !selectedDate" style="border:1px solid #ef5350; background:transparent; color:#d32f2f;">🎨 Surlignage Jour Unique</button>
              <button @click="runSingleDayVisual('kanta')" :disabled="isLoading || !selectedDate" style="border:1px solid #66bb6a; background:transparent; color:#388e3c;">🎨 Surlignage Kanta Jour Unique</button>
@@ -412,7 +407,6 @@ async function runDayAnalysis() {
 
       <div class="results-column">
         
-        <!-- BOUTON PERMANENT GOOGLE SHEETS -->
         <div class="quick-link-box">
            <a :href="sheetDirectLink" target="_blank" class="gsheet-btn">📂 OUVRIR GOOGLE SHEETS</a>
         </div>
@@ -431,11 +425,11 @@ async function runDayAnalysis() {
           </div>
           <div class="table-responsive">
             <table class="spec-table">
-              <thead><tr><th>N°</th><th>Forme</th><th>Kanta</th><th>2 Compagnons (Présent)</th><th>2 Déclencheurs (Passé)</th><th>Prophète (Futur)</th></tr></thead>
+              <thead><tr><th>Status</th><th>N°</th><th>Kanta</th><th>2 Compagnons (Présent)</th><th>2 Déclencheurs (Passé)</th><th>Prophète (Futur)</th></tr></thead>
               <tbody>
                 <tr v-for="row in dayAnalysisResult.recurrence_data" :key="row.number">
+                  <td style="font-size:1.2rem;" :title="row.status_text">{{ row.status_icon }}</td>
                   <td class="num-cell">{{ row.number }}</td>
-                  <td style="font-size:0.8rem;">{{ row.status }}</td>
                   <td style="color:#d32f2f; font-weight:bold;">{{ row.kanta }}</td>
                   <td class="comp-cell">{{ row.best_companion }}</td>
                   <td class="trig-cell">{{ row.best_trigger }}</td>
@@ -447,7 +441,7 @@ async function runDayAnalysis() {
           <div class="ai-analysis"><h4>🧠 Conseil Stratégique :</h4><p>{{ dayAnalysisResult.ai_analysis }}</p></div>
         </div>
 
-        <!-- RESULTAT DEEP FAVORITE (TABLEAU HISTORIQUE) -->
+        <!-- RESULTAT DEEP FAVORITE (TABLEAU HISTORIQUE + RESUME) -->
         <div v-if="deepFavoriteResult" class="card result-spec-card" style="border-top:4px solid #fdd835;">
           <div class="spec-header">
             <h3>⭐ SCAN PROFOND : {{ deepFavoriteResult.favorite }}</h3>
@@ -458,29 +452,27 @@ async function runDayAnalysis() {
              <p>Ce favori n'est jamais sorti sur la période.</p>
           </div>
           <div v-else>
+             <!-- BLOC RESUME TOP STATS -->
+             <div class="summary-grid">
+               <div class="sum-card"><h5>Top Jours</h5><ul><li v-for="x in deepFavoriteResult.summary.top_days" :key="x.val">{{ x.val }} ({{x.count}})</li></ul></div>
+               <div class="sum-card"><h5>Top Heures</h5><ul><li v-for="x in deepFavoriteResult.summary.top_hours" :key="x.val">{{ x.val }} ({{x.count}})</li></ul></div>
+               <div class="sum-card"><h5>Top Déclencheurs</h5><ul><li v-for="x in deepFavoriteResult.summary.top_triggers" :key="x.val">{{ x.val }} ({{x.count}})</li></ul></div>
+               <div class="sum-card"><h5>Top Compagnons</h5><ul><li v-for="x in deepFavoriteResult.summary.top_companions" :key="x.val">{{ x.val }} ({{x.count}})</li></ul></div>
+               <div class="sum-card"><h5>Top Prophètes</h5><ul><li v-for="x in deepFavoriteResult.summary.top_prophets" :key="x.val">{{ x.val }} ({{x.count}})</li></ul></div>
+             </div>
+
              <div class="stats-row">
                 <span class="badge-stat">Sorties : {{ deepFavoriteResult.total_hits }}</span>
-                <span class="badge-stat">Meilleur Jour : {{ deepFavoriteResult.best_day }}</span>
-                <span class="badge-stat">Meilleure Heure : {{ deepFavoriteResult.best_time }}</span>
              </div>
 
              <div class="table-responsive">
                <table class="spec-table">
                  <thead>
-                   <tr>
-                     <th>Date</th>
-                     <th>Jour</th>
-                     <th>Heure</th>
-                     <th>Déclencheur (Avant)</th>
-                     <th>Compagnons (Avec)</th>
-                     <th>Prophète (Après)</th>
-                   </tr>
+                   <tr><th>Date</th><th>Jour</th><th>Heure</th><th>Déclencheur</th><th>Compagnons</th><th>Prophète</th></tr>
                  </thead>
                  <tbody>
                    <tr v-for="(row, idx) in deepFavoriteResult.history_table" :key="idx">
-                     <td>{{ row.date }}</td>
-                     <td>{{ row.day }}</td>
-                     <td>{{ row.time }}</td>
+                     <td>{{ row.date }}</td><td>{{ row.day }}</td><td>{{ row.time }}</td>
                      <td class="trig-cell">{{ row.trigger }}</td>
                      <td class="comp-cell">{{ row.companion }}</td>
                      <td class="proph-cell">{{ row.prophet }}</td>
@@ -488,7 +480,6 @@ async function runDayAnalysis() {
                  </tbody>
                </table>
              </div>
-
              <div class="ai-analysis"><h4>🧠 Stratégie Favori :</h4><p>{{ deepFavoriteResult.ai_analysis }}</p></div>
           </div>
         </div>
@@ -540,6 +531,7 @@ async function runDayAnalysis() {
             </tbody>
           </table>
           <div v-if="standardResult.ai_strategic_analysis" class="ai-analysis"><h3>🧠 Stratégie</h3><p>{{ standardResult.ai_strategic_analysis }}</p></div>
+          <div v-if="standardResult.ai_strategic_profile" class="ai-analysis"><h3>🧠 Profil Numéro</h3><p>{{ standardResult.ai_strategic_profile }}</p></div>
           <div v-if="standardResult.ai_sequence_analysis" class="ai-analysis"><h3>🧠 Suites</h3><p>{{ standardResult.ai_sequence_analysis }}</p></div>
           <div v-if="standardResult.ai_trigger_analysis" class="ai-analysis"><h3>🧠 Déclencheurs</h3><p>{{ standardResult.ai_trigger_analysis }}</p></div>
           <div v-if="standardResult.ai_prediction_analysis" class="ai-analysis prophet-analysis"><h3>🔮 Prédiction</h3><p>{{ standardResult.ai_prediction_analysis }}</p></div>
@@ -559,96 +551,75 @@ async function runDayAnalysis() {
 </template>
 
 <style scoped>
-  /* STYLES CLEAN & PRO */
-  .loading-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; font-size: 1.5rem; color: #666; }
-  .login-wrapper { display: flex; align-items: center; justify-content: center; min-height: 100vh; background-color: #f0f2f5; }
-  .login-box { background: white; padding: 2.5rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
-  .input-group { margin-bottom: 1rem; }
-  .input-group label { display: block; margin-bottom: 0.5rem; font-weight: 500; }
-  input, select { width: 100%; padding: 0.8rem; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-  button { padding: 0.8rem; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; width: 100%; font-weight: bold; }
-  button:disabled { background-color: #ccc; }
-  .dashboard { max-width: 95%; margin: 1rem auto; font-family: sans-serif; }
-  header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 1rem; border-bottom: 1px solid #eee; margin-bottom: 2rem; }
-  .user-info { display: flex; gap: 1rem; align-items: center; }
-  .logout-button { background-color: #6c757d; padding: 0.5rem 1rem; width: auto; }
-  .main-layout { display: grid; grid-template-columns: 350px 1fr; gap: 2rem; }
-  .card { background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 1.5rem; }
-  .card h2 { margin-top: 0; font-size: 1.2rem; border-bottom: 1px solid #eee; padding-bottom: 0.5rem; margin-bottom: 1rem; }
-  .button-group-vertical { display: flex; flex-direction: column; gap: 0.5rem; }
-  .button-group-horizontal { display: flex; gap: 1rem; }
-  .danger { background-color: #dc3545; }
-  .styled-table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
-  .styled-table th, .styled-table td { border: 1px solid #ddd; padding: 8px; text-align: center; }
-  .styled-table th { background-color: #f2f2f2; }
-  .ai-analysis { background-color: #fffbe6; border-left: 5px solid #ffc107; padding: 1rem; margin-top: 1rem; border-radius: 4px; }
-  .success-box { background-color: #e8f5e9; color: #2e7d32; padding: 1rem; border-radius: 4px; text-align: center; }
-  .button-link { display: inline-block; padding: 0.5rem 1rem; background-color: #28a745; color: white; text-decoration: none; border-radius: 4px; margin-top: 0.5rem; }
-  .view-controls { display: flex; justify-content: center; gap: 1rem; margin: 1rem 0; }
-  .toggle-btn { background: #e0e0e0; color: #333; width: auto; padding: 0.5rem 1.5rem; }
-  .toggle-btn.active { background: #007bff; color: white; }
-  .chart-container { height: 400px; width: 100%; }
-  .favorites-input-group { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
-  .btn-small { width: auto; padding: 0.5rem 1rem; }
-  .favorites-list { display: flex; flex-wrap: wrap; gap: 0.8rem; }
-  .favorite-chip { display: flex; align-items: center; background: #e3f2fd; border: 1px solid #90caf9; border-radius: 20px; padding: 0.3rem 0.5rem 0.3rem 1rem; }
-  .fav-label { font-weight: bold; color: #1565c0; margin-right: 0.5rem; }
-  .fav-actions { display: flex; gap: 0.2rem; margin-right: 0.5rem; }
-  .icon-btn { background: white; border: 1px solid #bbdefb; color: #333; border-radius: 50%; width: 28px; height: 28px; padding: 0; font-size: 0.8rem; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
-  .icon-btn:hover { background: #bbdefb; transform: scale(1.1); }
-  .fav-delete { cursor: pointer; color: #ef5350; font-weight: bold; font-size: 1.2rem; padding: 0 5px; }
-  .empty-msg { font-style: italic; color: #999; font-size: 0.9rem; }
-  .small-text { font-size: 0.8rem; color: #666; margin-top: -0.5rem; margin-bottom: 1rem; }
-  .period-label { font-size: 0.85rem; color: #666; font-weight: 500; margin-bottom: 2px; }
-  hr { border: none; border-top: 1px solid #eee; margin: 1.5rem 0; }
-  .prophet-card { border: 1px solid #d1c4e9; background: linear-gradient(to bottom right, #ffffff, #f3e5f5); }
-  .prophet-btn { background-color: #7b1fa2; }
-  .prophet-btn:hover { background-color: #4a148c; }
-  .prophet-analysis { background-color: #f3e5f5; border-left: 5px solid #7b1fa2; }
-  .multi-prophet-card { border: 2px solid #6f42c1; background-color: #f8f0fc; }
-  .multi-btn { background: linear-gradient(45deg, #6f42c1, #007bff); border: none; }
-  .multi-btn:hover { opacity: 0.9; transform: scale(1.02); }
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
 
-  /* STYLE SPECIALISTE JOUR & DEEP SCAN */
-  .spec-card { border: 2px solid #009688; background-color: #e0f2f1; }
-  .boss-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
-  .badge-spec { background: #009688; color: white; font-weight: bold; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; }
-  .day-select { margin-bottom: 10px; font-weight: bold; color: #00796b; }
-  .spec-btn { background: #00796b; color: white; margin-top: 10px; }
-  .spec-btn:hover { background: #004d40; }
-  
-  .result-spec-card { border-top: 4px solid #009688; margin-bottom: 2rem; }
-  .spec-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-  .total-badge { background: #eee; padding: 4px 8px; border-radius: 10px; font-size: 0.8rem; color: #555; }
-  .best-duo-box { background: linear-gradient(90deg, #ffc107, #ff9800); color: #000; padding: 10px; border-radius: 8px; margin-bottom: 15px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
-  .duo-label { text-transform: uppercase; font-size: 0.9rem; }
-  .duo-val { font-size: 1.5rem; color: #d32f2f; }
-  
-  .table-responsive { overflow-x: auto; }
-  .spec-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 0.9rem; }
-  .spec-table th { background: #009688; color: white; padding: 10px; white-space: nowrap; }
-  .spec-table td { border-bottom: 1px solid #eee; padding: 8px; text-align: center; }
-  .num-cell { font-weight: bold; color: #00796b; font-size: 1.2rem; }
-  .comp-cell { color: #0277bd; font-weight: 500; }
-  .trig-cell { color: #e65100; font-weight: 500; }
-  .proph-cell { color: #7b1fa2; font-weight: bold; background: #f3e5f5; border-radius: 4px; }
-  .stats-row { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
-  .badge-stat { background: #eee; padding: 5px 10px; border-radius: 20px; font-size: 0.85rem; font-weight: bold; color: #333; }
-  
-  .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; text-align: center; margin-bottom: 15px; }
-  .stat-item { background: #fff; padding: 10px; border-radius: 8px; border: 1px solid #eee; }
+body { font-family: 'Inter', sans-serif; background-color: #f8f9fa; color: #1e293b; }
 
-  .close-btn { background: transparent; border: none; color: #999; font-size: 1.5rem; cursor: pointer; width: auto; padding: 0 10px; }
-  .close-btn:hover { color: #333; }
-  .fade-in { animation: fadeIn 0.5s ease-in; }
-  @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+.dashboard { max-width: 98%; margin: 0 auto; }
+header { display: flex; justify-content: space-between; align-items: center; padding: 1.5rem; background: white; box-shadow: 0 2px 10px rgba(0,0,0,0.05); margin-bottom: 2rem; border-radius: 0 0 12px 12px; }
+h1 { font-weight: 800; color: #0f172a; margin: 0; font-size: 1.5rem; }
+.version-tag { background: #f59e0b; color: white; padding: 4px 8px; border-radius: 6px; font-size: 0.8rem; vertical-align: middle; margin-left: 10px; }
 
-  /* SCROLLBAR POUR LA COLONNE GAUCHE */
-  .controls-column { max-height: 90vh; overflow-y: auto; padding-right: 10px; }
-  .controls-column::-webkit-scrollbar { width: 8px; }
-  .controls-column::-webkit-scrollbar-thumb { background-color: #ccc; border-radius: 4px; }
-  
-  .quick-link-box { text-align: center; margin-bottom: 20px; }
-  .gsheet-btn { background: #0f9d58; color: white; padding: 10px 20px; border-radius: 30px; text-decoration: none; font-weight: bold; display: inline-block; box-shadow: 0 4px 10px rgba(15, 157, 88, 0.3); }
-  .gsheet-btn:hover { background: #0b8043; transform: scale(1.05); transition: 0.2s; }
+.main-layout { display: grid; grid-template-columns: 350px 1fr; gap: 2rem; padding: 0 1rem; }
+
+.card { background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); margin-bottom: 1.5rem; transition: transform 0.2s; }
+.card:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
+.card h2 { margin-top: 0; font-size: 1.1rem; color: #334155; border-bottom: 2px solid #f1f5f9; padding-bottom: 0.8rem; margin-bottom: 1rem; font-weight: 600; }
+
+/* BOUTONS ET INPUTS */
+input, select { width: 100%; padding: 0.8rem; border: 1px solid #cbd5e1; border-radius: 8px; box-sizing: border-box; font-family: 'Inter', sans-serif; transition: border 0.2s; }
+input:focus, select:focus { border-color: #3b82f6; outline: none; }
+button { padding: 0.9rem; background-color: #3b82f6; color: white; border: none; border-radius: 8px; cursor: pointer; width: 100%; font-weight: 600; transition: background 0.2s; }
+button:hover { background-color: #2563eb; }
+button:disabled { background-color: #94a3b8; cursor: not-allowed; }
+
+/* SPECIALIST CARD */
+.spec-card { border-top: 4px solid #10b981; background: #f0fdf4; }
+.boss-header h2 { color: #065f46; border: none; }
+.badge-spec { background: #10b981; color: white; padding: 4px 8px; border-radius: 20px; font-size: 0.7rem; }
+.spec-btn { background: #059669; }
+.spec-btn:hover { background: #047857; }
+
+/* TABLES */
+.styled-table, .spec-table { width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 1rem; border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0; }
+.styled-table th, .spec-table th { background-color: #f8fafc; color: #64748b; font-weight: 600; padding: 12px; text-align: center; border-bottom: 1px solid #e2e8f0; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; }
+.styled-table td, .spec-table td { padding: 12px; text-align: center; border-bottom: 1px solid #e2e8f0; color: #334155; font-size: 0.9rem; }
+.styled-table tr:last-child td { border-bottom: none; }
+.styled-table tr:hover, .spec-table tr:hover { background-color: #f1f5f9; }
+
+/* DEEP SCAN SUMMARY GRID */
+.summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 20px; }
+.sum-card { background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0; }
+.sum-card h5 { margin: 0 0 8px 0; font-size: 0.8rem; color: #64748b; text-transform: uppercase; font-weight: 700; }
+.sum-card ul { list-style: none; padding: 0; margin: 0; }
+.sum-card li { font-size: 0.9rem; color: #0f172a; font-weight: 600; margin-bottom: 4px; }
+
+/* RESULTATS CARDS */
+.result-spec-card { border-top: 4px solid #3b82f6; }
+.spec-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+.spec-header h3 { margin: 0; color: #1e293b; font-size: 1.2rem; }
+.total-badge { background: #e2e8f0; color: #475569; padding: 4px 10px; border-radius: 20px; font-size: 0.8rem; font-weight: 600; }
+
+.num-cell { font-weight: 800; color: #0f172a; font-size: 1.2rem; }
+.comp-cell { color: #0369a1; font-weight: 600; }
+.trig-cell { color: #c2410c; font-weight: 600; }
+.proph-cell { color: #7e22ce; font-weight: 600; background: #f3e8ff; border-radius: 4px; padding: 2px 6px; }
+
+.best-duo-box { background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); color: white; padding: 15px; border-radius: 12px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+.duo-label { font-size: 0.9rem; color: #94a3b8; font-weight: 600; }
+.duo-val { font-size: 2rem; font-weight: 800; color: #fbbf24; text-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+.duo-count { font-size: 0.9rem; background: rgba(255,255,255,0.1); padding: 4px 8px; border-radius: 4px; }
+
+/* UTILS */
+.controls-column { max-height: 90vh; overflow-y: auto; padding-right: 10px; }
+.controls-column::-webkit-scrollbar { width: 6px; }
+.controls-column::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 3px; }
+.close-btn { width: auto; background: transparent; color: #94a3b8; font-size: 1.5rem; padding: 0; }
+.close-btn:hover { color: #ef4444; background: transparent; }
+.ai-analysis { background: #fffbeb; border-left: 4px solid #f59e0b; padding: 1rem; border-radius: 6px; margin-top: 1rem; color: #92400e; }
+.ai-analysis h4 { margin-top: 0; color: #b45309; }
+
+/* SCROLLBAR & FADE */
+.fade-in { animation: fadeIn 0.4s ease-out; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 </style>
