@@ -270,6 +270,7 @@ async function runDayAnalysis() {
     </header>
 
     <div class="main-layout">
+      <!-- COLONNE GAUCHE AVEC SCROLLBAR -->
       <div class="controls-column">
         
         <section class="card spec-card">
@@ -281,7 +282,18 @@ async function runDayAnalysis() {
           </select>
           <label>Heure :</label>
           <select v-model="selectedHour" class="day-select">
-            <option>Toute la journée</option><option>10H</option><option>13H</option><option>16H</option><option>19H</option><option>21H</option><option>22H</option><option>23H</option>
+            <option>Toute la journée</option>
+            <option>01H</option>
+            <option>03H</option>
+            <option>07H</option>
+            <option>08H</option>
+            <option>10H</option>
+            <option>13H</option>
+            <option>16H</option>
+            <option>19H</option>
+            <option>21H</option>
+            <option>22H</option>
+            <option>23H</option>
           </select>
           <label class="period-label">Période d'Analyse :</label>
           <div class="date-picker-row">
@@ -305,6 +317,7 @@ async function runDayAnalysis() {
             <input type="text" v-model="newFavoriteInput" placeholder="Ex: 7 ou 12-45" @keyup.enter="addFavorite"/>
             <button @click="addFavorite" :disabled="!newFavoriteInput" class="btn-small">Ajouter</button>
           </div>
+          <!-- AJOUT : PERIODE POUR FAVORIS -->
           <label class="period-label">Période d'analyse :</label>
           <div style="display:flex; gap:5px; margin-bottom:10px;">
              <input type="date" v-model="startDate" />
@@ -338,6 +351,7 @@ async function runDayAnalysis() {
         <section class="card">
           <h2>Rapports Ponctuels (1 Semaine)</h2>
           <input type="date" v-model="selectedDate" />
+          
           <div class="button-group-vertical" style="margin-top:10px;">
              <button @click="runSingleDayVisual('frequency')" :disabled="isLoading || !selectedDate" style="border:1px solid #ef5350; background:transparent; color:#d32f2f;">🎨 Surlignage Jour Unique</button>
              <button @click="runSingleDayVisual('kanta')" :disabled="isLoading || !selectedDate" style="border:1px solid #66bb6a; background:transparent; color:#388e3c;">🎨 Surlignage Kanta Jour Unique</button>
@@ -351,7 +365,7 @@ async function runDayAnalysis() {
             <button @click="runReport('companions')" :disabled="isLoading || !selectedDate || !selectedNumber">Analyser Compagnons</button>
           </div>
         </section>
-        
+
         <section class="card">
           <h2>Période & Profilage</h2>
           <div style="display:flex; gap:5px; margin-bottom:10px;">
@@ -406,6 +420,7 @@ async function runDayAnalysis() {
 
       <div class="results-column">
         
+        <!-- BOUTON PERMANENT GOOGLE SHEETS -->
         <div class="quick-link-box">
            <a :href="sheetDirectLink" target="_blank" class="gsheet-btn">📂 OUVRIR GOOGLE SHEETS</a>
         </div>
@@ -424,11 +439,11 @@ async function runDayAnalysis() {
           </div>
           <div class="table-responsive">
             <table class="spec-table">
-              <thead><tr><th>Status</th><th>N°</th><th>Kanta</th><th>2 Compagnons (Présent)</th><th>2 Déclencheurs (Passé)</th><th>Prophète (Futur)</th></tr></thead>
+              <thead><tr><th>N°</th><th>Forme</th><th>Kanta</th><th>2 Compagnons (Présent)</th><th>2 Déclencheurs (Passé)</th><th>Prophète (Futur)</th></tr></thead>
               <tbody>
                 <tr v-for="row in dayAnalysisResult.recurrence_data" :key="row.number">
-                  <td style="font-size:1.2rem;" :title="row.status_text">{{ row.status_icon }}</td>
                   <td class="num-cell">{{ row.number }}</td>
+                  <td style="font-size:0.8rem;">{{ row.status }}</td>
                   <td style="color:#d32f2f; font-weight:bold;">{{ row.kanta }}</td>
                   <td class="comp-cell">{{ row.best_companion }}</td>
                   <td class="trig-cell">{{ row.best_trigger }}</td>
@@ -552,7 +567,7 @@ async function runDayAnalysis() {
 </template>
 
 <style scoped>
-  /* STYLES CLEAN & PRO */
+  /* STYLES CLEAN & PRO (DESIGN CLASSIQUE) */
   .loading-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; font-size: 1.5rem; color: #666; }
   .login-wrapper { display: flex; align-items: center; justify-content: center; min-height: 100vh; background-color: #f0f2f5; }
   .login-box { background: white; padding: 2.5rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
@@ -624,9 +639,6 @@ async function runDayAnalysis() {
   .comp-cell { color: #0277bd; font-weight: 500; }
   .trig-cell { color: #e65100; font-weight: 500; }
   .proph-cell { color: #7b1fa2; font-weight: bold; background: #f3e5f5; border-radius: 4px; padding: 2px; }
-  .blink { animation: blinker 1.5s linear infinite; }
-  @keyframes blinker { 50% { opacity: 0; } }
-  
   .stats-row { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
   .badge-stat { background: #eee; padding: 5px 10px; border-radius: 20px; font-size: 0.85rem; font-weight: bold; color: #333; }
   
@@ -638,6 +650,7 @@ async function runDayAnalysis() {
   .fade-in { animation: fadeIn 0.5s ease-in; }
   @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
+  /* SCROLLBAR POUR LA COLONNE GAUCHE */
   .controls-column { max-height: 90vh; overflow-y: auto; padding-right: 10px; }
   .controls-column::-webkit-scrollbar { width: 8px; }
   .controls-column::-webkit-scrollbar-thumb { background-color: #ccc; border-radius: 4px; }
@@ -645,4 +658,10 @@ async function runDayAnalysis() {
   .quick-link-box { text-align: center; margin-bottom: 20px; }
   .gsheet-btn { background: #0f9d58; color: white; padding: 10px 20px; border-radius: 30px; text-decoration: none; font-weight: bold; display: inline-block; box-shadow: 0 4px 10px rgba(15, 157, 88, 0.3); }
   .gsheet-btn:hover { background: #0b8043; transform: scale(1.05); transition: 0.2s; }
+  
+  .period-label { font-size: 0.85rem; color: #666; font-weight: 500; margin-bottom: 2px; }
+  .date-picker-row { display: flex; gap: 10px; margin-bottom: 10px; }
+  .date-picker-row input { flex: 1; padding: 5px; font-size: 0.9rem; border: 1px solid #ccc; border-radius: 4px; }
+  .date-picker-row.mini { margin-top: 10px; margin-bottom: 5px; align-items: center; }
+  .date-picker-row.mini label { width: auto; margin: 0; font-size: 0.8rem; }
 </style>
