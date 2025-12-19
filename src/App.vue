@@ -26,12 +26,19 @@ const profileNumber = ref('');
 const triggerTargetNumber = ref('');
 const triggerCompanionNumber = ref('');
 
+// VARIABLES SPECIALISTE
 const selectedDayName = ref('Mercredi');
 const selectedHour = ref('Toute la journée'); 
+// VARIABLES MATRICE TEMPORELLE
+const matrixMode = ref('continuous'); // 'continuous' ou 'cyclic'
+const cyclicDay = ref(1); // Pour le jour du mois (1-31)
+
+// RESULTATS
 const dayAnalysisResult = ref(null); 
 const standardResult = ref(null);
 const deepFavoriteResult = ref(null);
 const profileResult = ref(null);
+const matrixResult = ref(null);
 
 const selectedDate = ref('');
 const startDate = ref('');
@@ -89,6 +96,7 @@ const chartData = computed(() => {
 
 onMounted(() => {
   const today = new Date();
+  cyclicDay.value = today.getDate(); // Jour du mois par défaut
   const year = today.getFullYear();
   const month = (today.getMonth() + 1).toString().padStart(2, '0');
   const day = today.getDate().toString().padStart(2, '0');
@@ -153,6 +161,14 @@ async function analyzeDeepFavorite(item) {
   await callApi(`/analysis/deep-favorite?target=${item}&start_date=${startDate.value}&end_date=${endDate.value}`, 'deep');
 }
 
+// NOUVEAU : APPEL MATRICE
+async function runTimeMatrix() {
+  matrixResult.value = null;
+  let url = `/analysis/time-matrix?start_date=${startDate.value}&end_date=${endDate.value}&mode=${matrixMode.value}`;
+  if (matrixMode.value === 'cyclic') url += `&target_cyclic_day=${cyclicDay.value}`;
+  await callApi(url, 'matrix');
+}
+
 async function callApi(url, targetVar = 'standard') {
   showWelcomeMessage.value = false; isLoading.value = true; error.value = null;
   if (targetVar === 'standard') standardResult.value = null;
@@ -167,6 +183,7 @@ async function callApi(url, targetVar = 'standard') {
     if (targetVar === 'specialist') dayAnalysisResult.value = data;
     else if (targetVar === 'deep') deepFavoriteResult.value = data;
     else if (targetVar === 'profile') profileResult.value = data;
+    else if (targetVar === 'matrix') matrixResult.value = data;
     else standardResult.value = data;
 
     if (data.worksheet_gid) activeSheetGid.value = data.worksheet_gid;
@@ -175,75 +192,17 @@ async function callApi(url, targetVar = 'standard') {
 }
 
 async function runDataUpdate(endpoint) { lastOperationType.value = 'update'; await callApi(`/collection/${endpoint}`, 'standard'); }
-
-async function runBatchVisualAnalysis(mode) {
-  if (!startDate.value || !endDate.value) { error.value = "Période requise."; return; }
-  lastOperationType.value = 'visual'; 
-  await callApi(`/analysis/highlight-range?start_date=${startDate.value}&end_date=${endDate.value}&mode=${mode}`, 'standard'); 
-}
-
-async function runSingleDayVisual(mode) {
-  if (!selectedDate.value) { error.value = "Sélectionnez une date."; return; }
-  lastOperationType.value = 'visual'; 
-  await callApi(`/analysis/highlight-range?start_date=${selectedDate.value}&end_date=${selectedDate.value}&mode=${mode}`, 'standard'); 
-}
-
-async function runReport(reportType) {
-  if (!selectedDate.value) { error.value = "Selectionnez une date."; return; }
-  let url = '';
-  if (reportType === 'weekly-frequency') { lastOperationType.value = 'weekly-frequency'; url = `/analysis/weekly-frequency/${selectedDate.value}`; }
-  else if (reportType === 'daily-frequency') { lastOperationType.value = 'daily-frequency'; url = `/analysis/daily-frequency/${selectedDate.value}`; }
-  else if (reportType === 'companions') {
-    if (!selectedNumber.value) { error.value = "Entrez un numéro."; return; }
-    lastOperationType.value = 'companions'; url = `/analysis/companions/${selectedNumber.value}?week_date_str=${selectedDate.value}`;
-  }
-  await callApi(url, 'standard');
-}
-
-async function runRangeAnalysis() {
-  if (!startDate.value || !endDate.value) { error.value = "Dates requises."; return; }
-  lastOperationType.value = 'frequency';
-  await callApi(`/analysis/frequency-by-range?start_date=${startDate.value}&end_date=${endDate.value}`, 'standard');
-}
-async function runProfileAnalysis() {
-  if (!startDate.value || !endDate.value || !profileNumber.value) { error.value = "Numéro requis."; return; }
-  lastOperationType.value = 'profile';
-  profileResult.value = null;
-  await callApi(`/analysis/number-profile?target_number=${profileNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'profile');
-}
-async function runSequenceAnalysis() {
-  if (!startDate.value || !endDate.value) { error.value = "Dates requises."; return; }
-  lastOperationType.value = 'sequence'; await callApi(`/analysis/sequence-detection?start_date=${startDate.value}&end_date=${endDate.value}`, 'standard');
-}
-async function runTriggerAnalysis() {
-  if (!startDate.value || !endDate.value || !triggerTargetNumber.value) { error.value = "Numéro requis."; return; }
-  lastOperationType.value = 'trigger';
-  let url = `/analysis/trigger-numbers?target_number=${triggerTargetNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`;
-  if (triggerCompanionNumber.value) url += `&companion_number=${triggerCompanionNumber.value}`;
-  await callApi(url, 'standard');
-}
-async function runPredictionAnalysis() {
-  if (!startDate.value || !endDate.value || !predictionNumber.value) { error.value = "Numéro requis."; return; }
-  lastOperationType.value = 'prediction';
-  let url = `/analysis/predict-next?observed_number=${predictionNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`;
-  if (predictionCompanion.value) url += `&observed_companion=${predictionCompanion.value}`;
-  await callApi(url, 'standard');
-}
-async function runMultiPrediction() {
-  if (!startDate.value || !endDate.value || !multiPredictionInput.value) { error.value = "Numéros requis."; return; }
-  const cleanInput = multiPredictionInput.value.replace(/[\s-]+/g, ',');
-  lastOperationType.value = 'prediction';
-  await callApi(`/analysis/multi-prediction?numbers_str=${cleanInput}&start_date=${startDate.value}&end_date=${endDate.value}`, 'standard');
-}
-async function runKantaReport(reportType) {
-  if (!selectedDate.value) { error.value = "Date requise."; return; }
-  lastOperationType.value = 'kanta-rank'; 
-  await callApi(`/analysis/kanta-${reportType}/${selectedDate.value}`, 'standard');
-}
-async function runDayAnalysis() {
-  if (!startDate.value || !endDate.value) { error.value = "Dates requises."; return; }
-  await callApi(`/analysis/specific-day-recurrence?day_name=${selectedDayName.value}&target_hour=${selectedHour.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'specialist');
-}
+async function runBatchVisualAnalysis(mode) { if (!startDate.value) return; lastOperationType.value = 'visual'; await callApi(`/analysis/highlight-range?start_date=${startDate.value}&end_date=${endDate.value}&mode=${mode}`, 'standard'); }
+async function runSingleDayVisual(mode) { if (!selectedDate.value) return; lastOperationType.value = 'visual'; await callApi(`/analysis/highlight-range?start_date=${selectedDate.value}&end_date=${selectedDate.value}&mode=${mode}`, 'standard'); }
+async function runReport(reportType) { if (!selectedDate.value) return; let url = `/analysis/daily-frequency/${selectedDate.value}`; if (reportType === 'weekly-frequency') url = `/analysis/weekly-frequency/${selectedDate.value}`; else if (reportType === 'companions') url = `/analysis/companions/${selectedNumber.value}?week_date_str=${selectedDate.value}`; await callApi(url, 'standard'); }
+async function runRangeAnalysis() { if (!startDate.value) return; lastOperationType.value = 'frequency'; await callApi(`/analysis/frequency-by-range?start_date=${startDate.value}&end_date=${endDate.value}`, 'standard'); }
+async function runProfileAnalysis() { if (!profileNumber.value) return; lastOperationType.value = 'profile'; profileResult.value = null; await callApi(`/analysis/number-profile?target_number=${profileNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'profile'); }
+async function runSequenceAnalysis() { if (!startDate.value) return; lastOperationType.value = 'sequence'; await callApi(`/analysis/sequence-detection?start_date=${startDate.value}&end_date=${endDate.value}`, 'standard'); }
+async function runTriggerAnalysis() { if (!triggerTargetNumber.value) return; lastOperationType.value = 'trigger'; let url = `/analysis/trigger-numbers?target_number=${triggerTargetNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`; if (triggerCompanionNumber.value) url += `&companion_number=${triggerCompanionNumber.value}`; await callApi(url, 'standard'); }
+async function runPredictionAnalysis() { if (!predictionNumber.value) return; lastOperationType.value = 'prediction'; let url = `/analysis/predict-next?observed_number=${predictionNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`; if (predictionCompanion.value) url += `&observed_companion=${predictionCompanion.value}`; await callApi(url, 'standard'); }
+async function runMultiPrediction() { if (!multiPredictionInput.value) return; lastOperationType.value = 'prediction'; await callApi(`/analysis/multi-prediction?numbers_str=${multiPredictionInput.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'standard'); }
+async function runKantaReport(reportType) { if (!selectedDate.value) return; lastOperationType.value = 'kanta-rank'; await callApi(`/analysis/kanta-${reportType}/${selectedDate.value}`, 'standard'); }
+async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/analysis/specific-day-recurrence?day_name=${selectedDayName.value}&target_hour=${selectedHour.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'specialist'); }
 </script>
 
 <template>
@@ -262,7 +221,7 @@ async function runDayAnalysis() {
 
   <main v-else class="dashboard">
     <header>
-      <h1>LE GUIDE DES FOURCASTER</h1>
+      <h1>LE GUIDE DES FOURCASTER <span class="version-tag">V57</span></h1>
       <div class="user-info">
         <span>Connecté : <strong>{{ user.email }}</strong></span>
         <button @click="logout" class="logout-button">Déconnexion</button>
@@ -273,6 +232,29 @@ async function runDayAnalysis() {
       <!-- COLONNE GAUCHE AVEC SCROLLBAR -->
       <div class="controls-column">
         
+        <!-- NOUVEAU BLOC : MATRICE TEMPORELLE -->
+        <section class="card matrix-card">
+          <div class="boss-header">
+             <h2>🕰️ MATRICE TEMPORELLE</h2>
+             <span class="badge-spec" style="background:#ff9800;">NEW</span>
+          </div>
+          <p class="small-text">Analyse basée sur la Date, Renversé et Kanta (+/- 2).</p>
+          <div class="tabs">
+             <button @click="matrixMode = 'continuous'" :class="{ active: matrixMode === 'continuous' }">CONTINU (Séquence)</button>
+             <button @click="matrixMode = 'cyclic'" :class="{ active: matrixMode === 'cyclic' }">CYCLIQUE (Le 14 du mois)</button>
+          </div>
+          <div v-if="matrixMode === 'cyclic'" style="margin-bottom:10px;">
+             <label>Jour du Mois (1-31) :</label>
+             <input type="number" v-model="cyclicDay" min="1" max="31" />
+          </div>
+          <div class="date-picker-row">
+             <input type="date" v-model="startDate" />
+             <input type="date" v-model="endDate" />
+          </div>
+          <button @click="runTimeMatrix" :disabled="isLoading" class="spec-btn" style="background:#ff9800;">LANCER MATRICE</button>
+        </section>
+
+        <!-- AUTRES CARTES -->
         <section class="card spec-card">
           <div class="boss-header"><h2>📅 ANALYSTE SPÉCIALISTE</h2><span class="badge-spec">360°</span></div>
           <p class="small-text">Trouvez les Habitués de chaque jour.</p>
@@ -282,18 +264,7 @@ async function runDayAnalysis() {
           </select>
           <label>Heure :</label>
           <select v-model="selectedHour" class="day-select">
-            <option>Toute la journée</option>
-            <option>01H</option>
-            <option>03H</option>
-            <option>07H</option>
-            <option>08H</option>
-            <option>10H</option>
-            <option>13H</option>
-            <option>16H</option>
-            <option>19H</option>
-            <option>21H</option>
-            <option>22H</option>
-            <option>23H</option>
+            <option>Toute la journée</option><option>01H</option><option>03H</option><option>07H</option><option>08H</option><option>10H</option><option>13H</option><option>16H</option><option>19H</option><option>21H</option><option>22H</option><option>23H</option>
           </select>
           <label class="period-label">Période d'Analyse :</label>
           <div class="date-picker-row">
@@ -317,7 +288,6 @@ async function runDayAnalysis() {
             <input type="text" v-model="newFavoriteInput" placeholder="Ex: 7 ou 12-45" @keyup.enter="addFavorite"/>
             <button @click="addFavorite" :disabled="!newFavoriteInput" class="btn-small">Ajouter</button>
           </div>
-          <!-- AJOUT : PERIODE POUR FAVORIS -->
           <label class="period-label">Période d'analyse :</label>
           <div style="display:flex; gap:5px; margin-bottom:10px;">
              <input type="date" v-model="startDate" />
@@ -365,7 +335,7 @@ async function runDayAnalysis() {
             <button @click="runReport('companions')" :disabled="isLoading || !selectedDate || !selectedNumber">Analyser Compagnons</button>
           </div>
         </section>
-
+        
         <section class="card">
           <h2>Période & Profilage</h2>
           <div style="display:flex; gap:5px; margin-bottom:10px;">
@@ -420,9 +390,33 @@ async function runDayAnalysis() {
 
       <div class="results-column">
         
-        <!-- BOUTON PERMANENT GOOGLE SHEETS -->
         <div class="quick-link-box">
            <a :href="sheetDirectLink" target="_blank" class="gsheet-btn">📂 OUVRIR GOOGLE SHEETS</a>
+        </div>
+
+        <!-- NOUVEAU RESULTAT : MATRICE TEMPORELLE -->
+        <div v-if="matrixResult" class="card result-spec-card" style="border-top:4px solid #ff9800;">
+           <div class="spec-header">
+              <h3>🕰️ MATRICE TEMPORELLE ({{ matrixResult.mode }})</h3>
+              <button @click="matrixResult = null" class="close-btn">×</button>
+           </div>
+           <div class="ai-analysis"><h4>🧠 Analyse Matrice :</h4><p>{{ matrixResult.ai_analysis }}</p></div>
+           <div class="table-responsive">
+             <table class="spec-table">
+               <thead><tr><th>Date</th><th>Base</th><th>Lot Théorique</th><th>Sorties Réelles</th></tr></thead>
+               <tbody>
+                 <tr v-for="(row, idx) in matrixResult.matrix_data" :key="idx">
+                   <td>{{ row.date }}<br><small>{{ row.day_name }}</small></td>
+                   <td class="num-cell">{{ row.base_number }}</td>
+                   <td style="font-size:0.8rem; color:#666;">{{ row.matrix_lot.join(', ') }}</td>
+                   <td>
+                      <span v-if="row.hit_count > 0" class="badge-hit">{{ row.hits.join(', ') }} ({{ row.hit_count }})</span>
+                      <span v-else style="color:#ccc;">-</span>
+                   </td>
+                 </tr>
+               </tbody>
+             </table>
+           </div>
         </div>
 
         <!-- RESULTAT SPECIALISTE JOUR -->
@@ -439,11 +433,11 @@ async function runDayAnalysis() {
           </div>
           <div class="table-responsive">
             <table class="spec-table">
-              <thead><tr><th>N°</th><th>Forme</th><th>Kanta</th><th>2 Compagnons (Présent)</th><th>2 Déclencheurs (Passé)</th><th>Prophète (Futur)</th></tr></thead>
+              <thead><tr><th>Status</th><th>N°</th><th>Kanta</th><th>2 Compagnons (Présent)</th><th>2 Déclencheurs (Passé)</th><th>Prophète (Futur)</th></tr></thead>
               <tbody>
                 <tr v-for="row in dayAnalysisResult.recurrence_data" :key="row.number">
+                  <td style="font-size:1.2rem;" :title="row.status_text">{{ row.status_icon }}</td>
                   <td class="num-cell">{{ row.number }}</td>
-                  <td style="font-size:0.8rem;">{{ row.status }}</td>
                   <td style="color:#d32f2f; font-weight:bold;">{{ row.kanta }}</td>
                   <td class="comp-cell">{{ row.best_companion }}</td>
                   <td class="trig-cell">{{ row.best_trigger }}</td>
@@ -528,6 +522,7 @@ async function runDayAnalysis() {
           </div>
           <div v-if="standardResult.message || standardResult.analysis_period" class="success-box large">
             <p>✅ {{ standardResult.message || `Analyse : ${standardResult.analysis_period}` }}</p>
+            <a v-if="standardResult.worksheet_gid" :href="sheetDirectLink" target="_blank" class="button-link">Voir l'Onglet ↗</a>
           </div>
           <div v-if="isTableVisible && !lastOperationType.includes('visual')" class="view-controls">
             <button @click="viewMode = 'table'" :class="{ active: viewMode === 'table' }" class="toggle-btn">📋 Tableau</button>
@@ -553,7 +548,7 @@ async function runDayAnalysis() {
           <div v-if="standardResult.ai_prediction_analysis" class="ai-analysis prophet-analysis"><h3>🔮 Prédiction</h3><p>{{ standardResult.ai_prediction_analysis }}</p></div>
         </section>
 
-        <div v-if="!dayAnalysisResult && !standardResult && !deepFavoriteResult && !profileResult && !isLoading" class="welcome-message">
+        <div v-if="!dayAnalysisResult && !standardResult && !deepFavoriteResult && !profileResult && !matrixResult && !isLoading" class="welcome-message">
             <h3>Prêt à analyser</h3>
             <p>Sélectionnez une fonction à gauche pour commencer.</p>
         </div>
@@ -616,8 +611,11 @@ async function runDayAnalysis() {
   .multi-btn { background: linear-gradient(45deg, #6f42c1, #007bff); border: none; }
   .multi-btn:hover { opacity: 0.9; transform: scale(1.02); }
 
-  /* STYLE SPECIALISTE JOUR & DEEP SCAN */
-  .spec-card { border: 2px solid #009688; background-color: #e0f2f1; }
+  /* STYLE MATRICE & AUTRES */
+  .matrix-card { border: 2px solid #673ab7; background-color: #ede7f6; }
+  .badge-hit { background: #4caf50; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold; }
+  
+  .spec-card { border: 1px solid #009688; border-top: 4px solid #009688; background-color: #e0f2f1; }
   .boss-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
   .badge-spec { background: #009688; color: white; font-weight: bold; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; }
   .day-select { margin-bottom: 10px; font-weight: bold; color: #00796b; }
@@ -640,17 +638,14 @@ async function runDayAnalysis() {
   .trig-cell { color: #e65100; font-weight: 500; }
   .proph-cell { color: #7b1fa2; font-weight: bold; background: #f3e5f5; border-radius: 4px; padding: 2px; }
   .stats-row { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
-  .badge-stat { background: #eee; padding: 5px 10px; border-radius: 20px; font-size: 0.85rem; font-weight: bold; color: #333; }
-  
+  .badge-stat { background: #eee; padding: 5px 10px; border-radius: 20px; font-size: 0.85rem; font-weight: bold; color: #333; border: 1px solid #ccc; }
   .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; text-align: center; margin-bottom: 15px; }
   .stat-item { background: #fff; padding: 10px; border-radius: 8px; border: 1px solid #eee; }
-
   .close-btn { background: transparent; border: none; color: #999; font-size: 1.5rem; cursor: pointer; width: auto; padding: 0 10px; }
   .close-btn:hover { color: #333; }
   .fade-in { animation: fadeIn 0.5s ease-in; }
   @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
-  /* SCROLLBAR POUR LA COLONNE GAUCHE */
   .controls-column { max-height: 90vh; overflow-y: auto; padding-right: 10px; }
   .controls-column::-webkit-scrollbar { width: 8px; }
   .controls-column::-webkit-scrollbar-thumb { background-color: #ccc; border-radius: 4px; }
@@ -658,10 +653,10 @@ async function runDayAnalysis() {
   .quick-link-box { text-align: center; margin-bottom: 20px; }
   .gsheet-btn { background: #0f9d58; color: white; padding: 10px 20px; border-radius: 30px; text-decoration: none; font-weight: bold; display: inline-block; box-shadow: 0 4px 10px rgba(15, 157, 88, 0.3); }
   .gsheet-btn:hover { background: #0b8043; transform: scale(1.05); transition: 0.2s; }
-  
   .period-label { font-size: 0.85rem; color: #666; font-weight: 500; margin-bottom: 2px; }
   .date-picker-row { display: flex; gap: 10px; margin-bottom: 10px; }
   .date-picker-row input { flex: 1; padding: 5px; font-size: 0.9rem; border: 1px solid #ccc; border-radius: 4px; }
-  .date-picker-row.mini { margin-top: 10px; margin-bottom: 5px; align-items: center; }
-  .date-picker-row.mini label { width: auto; margin: 0; font-size: 0.8rem; }
+  .tabs { display: flex; gap: 5px; margin-bottom: 10px; }
+  .tabs button { flex: 1; padding: 8px; font-size: 0.8rem; background: #673ab7; opacity: 0.6; border: none; color: white; border-radius: 4px 4px 0 0; }
+  .tabs button.active { opacity: 1; font-weight: bold; border-bottom: 2px solid white; }
 </style>
