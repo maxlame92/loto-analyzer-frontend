@@ -189,75 +189,17 @@ async function callApi(url, targetVar = 'standard') {
 }
 
 async function runDataUpdate(endpoint) { lastOperationType.value = 'update'; await callApi(`/collection/${endpoint}`, 'standard'); }
-
-async function runBatchVisualAnalysis(mode) {
-  if (!startDate.value || !endDate.value) { error.value = "Période requise."; return; }
-  lastOperationType.value = 'visual'; 
-  await callApi(`/analysis/highlight-range?start_date=${startDate.value}&end_date=${endDate.value}&mode=${mode}`, 'standard'); 
-}
-
-async function runSingleDayVisual(mode) {
-  if (!selectedDate.value) { error.value = "Sélectionnez une date."; return; }
-  lastOperationType.value = 'visual'; 
-  await callApi(`/analysis/highlight-range?start_date=${selectedDate.value}&end_date=${selectedDate.value}&mode=${mode}`, 'standard'); 
-}
-
-async function runReport(reportType) {
-  if (!selectedDate.value) { error.value = "Selectionnez une date."; return; }
-  let url = '';
-  if (reportType === 'weekly-frequency') { lastOperationType.value = 'weekly-frequency'; url = `/analysis/weekly-frequency/${selectedDate.value}`; }
-  else if (reportType === 'daily-frequency') { lastOperationType.value = 'daily-frequency'; url = `/analysis/daily-frequency/${selectedDate.value}`; }
-  else if (reportType === 'companions') {
-    if (!selectedNumber.value) { error.value = "Entrez un numéro."; return; }
-    lastOperationType.value = 'companions'; url = `/analysis/companions/${selectedNumber.value}?week_date_str=${selectedDate.value}`;
-  }
-  await callApi(url, 'standard');
-}
-
-async function runRangeAnalysis() {
-  if (!startDate.value || !endDate.value) { error.value = "Dates requises."; return; }
-  lastOperationType.value = 'frequency';
-  await callApi(`/analysis/frequency-by-range?start_date=${startDate.value}&end_date=${endDate.value}`, 'standard');
-}
-async function runProfileAnalysis() {
-  if (!startDate.value || !endDate.value || !profileNumber.value) { error.value = "Numéro requis."; return; }
-  lastOperationType.value = 'profile';
-  profileResult.value = null;
-  await callApi(`/analysis/number-profile?target_number=${profileNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'profile');
-}
-async function runSequenceAnalysis() {
-  if (!startDate.value || !endDate.value) { error.value = "Dates requises."; return; }
-  lastOperationType.value = 'sequence'; await callApi(`/analysis/sequence-detection?start_date=${startDate.value}&end_date=${endDate.value}`, 'standard');
-}
-async function runTriggerAnalysis() {
-  if (!startDate.value || !endDate.value || !triggerTargetNumber.value) { error.value = "Numéro requis."; return; }
-  lastOperationType.value = 'trigger';
-  let url = `/analysis/trigger-numbers?target_number=${triggerTargetNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`;
-  if (triggerCompanionNumber.value) url += `&companion_number=${triggerCompanionNumber.value}`;
-  await callApi(url, 'standard');
-}
-async function runPredictionAnalysis() {
-  if (!startDate.value || !endDate.value || !predictionNumber.value) { error.value = "Numéro requis."; return; }
-  lastOperationType.value = 'prediction';
-  let url = `/analysis/predict-next?observed_number=${predictionNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`;
-  if (predictionCompanion.value) url += `&observed_companion=${predictionCompanion.value}`;
-  await callApi(url, 'standard');
-}
-async function runMultiPrediction() {
-  if (!startDate.value || !endDate.value || !multiPredictionInput.value) { error.value = "Numéros requis."; return; }
-  const cleanInput = multiPredictionInput.value.replace(/[\s-]+/g, ',');
-  lastOperationType.value = 'prediction';
-  await callApi(`/analysis/multi-prediction?numbers_str=${cleanInput}&start_date=${startDate.value}&end_date=${endDate.value}`, 'standard');
-}
-async function runKantaReport(reportType) {
-  if (!selectedDate.value) { error.value = "Date requise."; return; }
-  lastOperationType.value = 'kanta-rank'; 
-  await callApi(`/analysis/kanta-${reportType}/${selectedDate.value}`, 'standard');
-}
-async function runDayAnalysis() {
-  if (!startDate.value || !endDate.value) { error.value = "Dates requises."; return; }
-  await callApi(`/analysis/specific-day-recurrence?day_name=${selectedDayName.value}&target_hour=${selectedHour.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'specialist');
-}
+async function runBatchVisualAnalysis(mode) { if (!startDate.value) return; lastOperationType.value = 'visual'; await callApi(`/analysis/highlight-range?start_date=${startDate.value}&end_date=${endDate.value}&mode=${mode}`, 'standard'); }
+async function runSingleDayVisual(mode) { if (!selectedDate.value) return; lastOperationType.value = 'visual'; await callApi(`/analysis/highlight-range?start_date=${selectedDate.value}&end_date=${selectedDate.value}&mode=${mode}`, 'standard'); }
+async function runReport(reportType) { if (!selectedDate.value) return; let url = `/analysis/daily-frequency/${selectedDate.value}`; if (reportType === 'weekly-frequency') url = `/analysis/weekly-frequency/${selectedDate.value}`; else if (reportType === 'companions') url = `/analysis/companions/${selectedNumber.value}?week_date_str=${selectedDate.value}`; await callApi(url, 'standard'); }
+async function runRangeAnalysis() { if (!startDate.value) return; lastOperationType.value = 'frequency'; await callApi(`/analysis/frequency-by-range?start_date=${startDate.value}&end_date=${endDate.value}`, 'standard'); }
+async function runProfileAnalysis() { if (!profileNumber.value) return; lastOperationType.value = 'profile'; profileResult.value = null; await callApi(`/analysis/number-profile?target_number=${profileNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'profile'); }
+async function runSequenceAnalysis() { if (!startDate.value) return; lastOperationType.value = 'sequence'; await callApi(`/analysis/sequence-detection?start_date=${startDate.value}&end_date=${endDate.value}`, 'standard'); }
+async function runTriggerAnalysis() { if (!triggerTargetNumber.value) return; lastOperationType.value = 'trigger'; let url = `/analysis/trigger-numbers?target_number=${triggerTargetNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`; if (triggerCompanionNumber.value) url += `&companion_number=${triggerCompanionNumber.value}`; await callApi(url, 'standard'); }
+async function runPredictionAnalysis() { if (!predictionNumber.value) return; lastOperationType.value = 'prediction'; let url = `/analysis/predict-next?observed_number=${predictionNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`; if (predictionCompanion.value) url += `&observed_companion=${predictionCompanion.value}`; await callApi(url, 'standard'); }
+async function runMultiPrediction() { if (!multiPredictionInput.value) return; lastOperationType.value = 'prediction'; await callApi(`/analysis/multi-prediction?numbers_str=${multiPredictionInput.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'standard'); }
+async function runKantaReport(reportType) { if (!selectedDate.value) return; lastOperationType.value = 'kanta-rank'; await callApi(`/analysis/kanta-${reportType}/${selectedDate.value}`, 'standard'); }
+async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/analysis/specific-day-recurrence?day_name=${selectedDayName.value}&target_hour=${selectedHour.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'specialist'); }
 </script>
 
 <template>
@@ -276,7 +218,7 @@ async function runDayAnalysis() {
 
   <main v-else class="dashboard">
     <header>
-      <h1>LE GUIDE DES FOURCASTER <span class="version-tag">V66</span></h1>
+      <h1>LE GUIDE DES FOURCASTER <span class="version-tag">V67</span></h1>
       <div class="user-info">
         <span>Connecté : <strong>{{ user.email }}</strong></span>
         <button @click="logout" class="logout-button">Déconnexion</button>
@@ -287,7 +229,7 @@ async function runDayAnalysis() {
       <!-- COLONNE GAUCHE AVEC SCROLLBAR -->
       <div class="controls-column">
         
-        <!-- MATRICE TEMPORELLE (AVEC PREDICTION) -->
+        <!-- MATRICE TEMPORELLE -->
         <section class="card matrix-card">
           <div class="boss-header">
              <h2>🕰️ MATRICE TEMPORELLE</h2>
@@ -376,6 +318,7 @@ async function runDayAnalysis() {
         <section class="card">
           <h2>Rapports Ponctuels (1 Semaine)</h2>
           <input type="date" v-model="selectedDate" />
+          
           <div class="button-group-vertical" style="margin-top:10px;">
              <button @click="runSingleDayVisual('frequency')" :disabled="isLoading || !selectedDate" style="border:1px solid #ef5350; background:transparent; color:#d32f2f;">🎨 Surlignage Jour Unique</button>
              <button @click="runSingleDayVisual('kanta')" :disabled="isLoading || !selectedDate" style="border:1px solid #66bb6a; background:transparent; color:#388e3c;">🎨 Surlignage Kanta Jour Unique</button>
@@ -551,13 +494,38 @@ async function runDayAnalysis() {
                <div class="sum-card"><h5>Top Compagnons</h5><ul><li v-for="x in deepFavoriteResult.summary.top_companions" :key="x.val">{{ x.val }} ({{x.count}})</li></ul></div>
                <div class="sum-card"><h5>Top Prophètes</h5><ul><li v-for="x in deepFavoriteResult.summary.top_prophets" :key="x.val">{{ x.val }} ({{x.count}})</li></ul></div>
              </div>
-             <div class="stats-row"><span class="badge-stat">Sorties : {{ deepFavoriteResult.total_hits }}</span></div>
+
+             <div class="stats-row">
+                <span class="badge-stat">Sorties Totales : {{ deepFavoriteResult.total_hits }}</span>
+                <span class="badge-stat">Meilleur Jour : {{ deepFavoriteResult.best_day }}</span>
+                <span class="badge-stat">Meilleure Heure : {{ deepFavoriteResult.best_time }}</span>
+             </div>
+
              <div class="table-responsive">
                <table class="spec-table">
-                 <thead><tr><th>Date</th><th>Jour</th><th>Heure</th><th>Déclencheur</th><th>Compagnons</th><th>Prophète</th></tr></thead>
-                 <tbody><tr v-for="(row, idx) in deepFavoriteResult.history_table" :key="idx"><td>{{ row.date }}</td><td>{{ row.day }}</td><td>{{ row.time }}</td><td class="trig-cell">{{ row.trigger }}</td><td class="comp-cell">{{ row.companion }}</td><td class="proph-cell">{{ row.prophet }}</td></tr></tbody>
+                 <thead>
+                   <tr>
+                     <th>Date</th>
+                     <th>Jour</th>
+                     <th>Heure</th>
+                     <th>Déclencheur (Avant)</th>
+                     <th>Compagnons (Avec)</th>
+                     <th>Prophète (Après)</th>
+                   </tr>
+                 </thead>
+                 <tbody>
+                   <tr v-for="(row, idx) in deepFavoriteResult.history_table" :key="idx">
+                     <td>{{ row.date }}</td>
+                     <td>{{ row.day }}</td>
+                     <td>{{ row.time }}</td>
+                     <td class="trig-cell">{{ row.trigger }}</td>
+                     <td class="comp-cell">{{ row.companion }}</td>
+                     <td class="proph-cell">{{ row.prophet }}</td>
+                   </tr>
+                 </tbody>
                </table>
              </div>
+
              <div class="ai-analysis"><h4>🧠 Stratégie Favori :</h4><p>{{ deepFavoriteResult.ai_analysis }}</p></div>
           </div>
         </div>
@@ -682,10 +650,13 @@ async function runDayAnalysis() {
   .date-picker-row input { flex: 1; padding: 5px; font-size: 0.9rem; border: 1px solid #ccc; border-radius: 4px; }
   .date-picker-row.mini { margin-top: 10px; margin-bottom: 5px; align-items: center; }
   .date-picker-row.mini label { width: auto; margin: 0; font-size: 0.8rem; }
+
+  /* TABS POUR MATRICE */
   .tabs { display: flex; gap: 5px; margin-bottom: 10px; }
   .tabs button { flex: 1; padding: 8px; font-size: 0.8rem; background: #673ab7; opacity: 0.6; border: none; color: white; border-radius: 4px 4px 0 0; }
   .tabs button.active { opacity: 1; font-weight: bold; border-bottom: 2px solid white; }
 
+  /* STYLE SPECIALISTE JOUR & DEEP SCAN */
   .spec-card { border: 1px solid #009688; border-top: 4px solid #009688; background-color: #e0f2f1; }
   .boss-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
   .badge-spec { background: #009688; color: white; font-weight: bold; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; }
@@ -716,8 +687,6 @@ async function runDayAnalysis() {
   .comp-cell { color: #0277bd; font-weight: 500; }
   .trig-cell { color: #e65100; font-weight: 500; }
   .proph-cell { color: #7b1fa2; font-weight: bold; background: #f3e5f5; border-radius: 4px; padding: 2px; }
-  .blink { animation: blinker 1.5s linear infinite; }
-  @keyframes blinker { 50% { opacity: 0; } }
   
   .stats-row { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
   .badge-stat { background: #eee; padding: 5px 10px; border-radius: 20px; font-size: 0.85rem; font-weight: bold; color: #333; border: 1px solid #ccc; }
