@@ -37,8 +37,6 @@ const matrixResult = ref(null);
 const matrixMode = ref('continuous'); 
 const matrixTab = ref('analysis');
 const cyclicDay = ref(1);
-const favDayName = ref('Tous');
-const favHour = ref('Toutes');
 
 const selectedDate = ref('');
 const startDate = ref('');
@@ -158,7 +156,7 @@ async function removeFavorite(item) {
 async function analyzeDeepFavorite(item) {
   if (!startDate.value || !endDate.value) { alert("Vérifiez les dates."); return; }
   deepFavoriteResult.value = null;
-  await callApi(`/analysis/deep-favorite?target=${item}&start_date=${startDate.value}&end_date=${endDate.value}&context_day=${favDayName.value}&context_hour=${favHour.value}`, 'deep');
+  await callApi(`/analysis/deep-favorite?target=${item}&start_date=${startDate.value}&end_date=${endDate.value}`, 'deep');
 }
 
 async function runTimeMatrix() {
@@ -278,7 +276,7 @@ async function runDayAnalysis() {
 
   <main v-else class="dashboard">
     <header>
-      <h1>LE GUIDE DES FOURCASTER <span class="version-tag">V65</span></h1>
+      <h1>LE GUIDE DES FOURCASTER <span class="version-tag">V66</span></h1>
       <div class="user-info">
         <span>Connecté : <strong>{{ user.email }}</strong></span>
         <button @click="logout" class="logout-button">Déconnexion</button>
@@ -345,20 +343,11 @@ async function runDayAnalysis() {
             <input type="text" v-model="newFavoriteInput" placeholder="Ex: 7 ou 12-45" @keyup.enter="addFavorite"/>
             <button @click="addFavorite" :disabled="!newFavoriteInput" class="btn-small">Ajouter</button>
           </div>
-          <!-- AJOUT : PERIODE POUR FAVORIS -->
           <label class="period-label">Période d'analyse :</label>
           <div style="display:flex; gap:5px; margin-bottom:10px;">
              <input type="date" v-model="startDate" />
              <input type="date" v-model="endDate" />
           </div>
-          
-          <!-- CONTEXTE POUR FAVORIS -->
-          <label class="period-label">Contexte Visé (Optionnel) :</label>
-          <div class="date-picker-row">
-            <select v-model="favDayName" class="day-select"><option>Tous</option><option>Lundi</option><option>Mardi</option><option>Mercredi</option><option>Jeudi</option><option>Vendredi</option><option>Samedi</option><option>Dimanche</option></select>
-            <select v-model="favHour" class="day-select"><option>Toutes</option><option>10H</option><option>13H</option><option>16H</option><option>19H</option><option>21H</option><option>22H</option><option>23H</option></select>
-          </div>
-
           <div v-if="userFavorites.length > 0" class="favorites-list">
             <div v-for="item in userFavorites" :key="item" class="favorite-chip">
               <span class="fav-label">{{ item }}</span>
@@ -459,7 +448,7 @@ async function runDayAnalysis() {
            <a :href="sheetDirectLink" target="_blank" class="gsheet-btn">📂 OUVRIR GOOGLE SHEETS</a>
         </div>
 
-        <!-- RESULTAT MATRICE AVEC ONGLET PREDICTION -->
+        <!-- NOUVEAU RESULTAT : MATRICE AVEC ONGLET PREDICTION -->
         <div v-if="matrixResult" class="card result-spec-card" style="border-top:4px solid #ff9800;">
            <div class="spec-header">
               <h3>🕰️ MATRICE TEMPORELLE</h3>
@@ -470,6 +459,7 @@ async function runDayAnalysis() {
               <button @click="matrixResult = null" class="close-btn">×</button>
            </div>
            
+           <!-- ONGLET ANALYSE (HISTORIQUE) -->
            <div v-if="matrixTab === 'analysis'">
               <div class="table-responsive">
                 <table class="spec-table">
@@ -493,6 +483,7 @@ async function runDayAnalysis() {
               </div>
            </div>
 
+           <!-- ONGLET PREDICTION (FUTUR) -->
            <div v-else class="prediction-tab">
                <div class="best-duo-box" style="background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);">
                   <span class="duo-label">🔮 TWO SHORT POUR LE : {{ matrixResult.prediction.target_date_label }}</span>
@@ -553,43 +544,20 @@ async function runDayAnalysis() {
              <p>Ce favori n'est jamais sorti sur la période.</p>
           </div>
           <div v-else>
-             <!-- BLOC SNIPER RESULT (SI CONTEXTE) -->
-             <div v-if="deepFavoriteResult.sniper_data" class="best-duo-box" style="background:linear-gradient(90deg, #fdd835, #fbc02d); color:black;">
-                <span class="duo-label">🎯 TWO SHORT CIBLÉ ({{ deepFavoriteResult.context_request }}) :</span>
-                <span class="duo-val">{{ deepFavoriteResult.sniper_data.two_short }}</span>
-                <span class="duo-count" v-if="deepFavoriteResult.sniper_data.is_imminent">🚨 IMMINENT</span>
+             <div class="summary-grid">
+               <div class="sum-card"><h5>Top Jours</h5><ul><li v-for="x in deepFavoriteResult.summary.top_days" :key="x.val">{{ x.val }} ({{x.count}})</li></ul></div>
+               <div class="sum-card"><h5>Top Heures</h5><ul><li v-for="x in deepFavoriteResult.summary.top_hours" :key="x.val">{{ x.val }} ({{x.count}})</li></ul></div>
+               <div class="sum-card"><h5>Top Déclencheurs</h5><ul><li v-for="x in deepFavoriteResult.summary.top_triggers" :key="x.val">{{ x.val }} ({{x.count}})</li></ul></div>
+               <div class="sum-card"><h5>Top Compagnons</h5><ul><li v-for="x in deepFavoriteResult.summary.top_companions" :key="x.val">{{ x.val }} ({{x.count}})</li></ul></div>
+               <div class="sum-card"><h5>Top Prophètes</h5><ul><li v-for="x in deepFavoriteResult.summary.top_prophets" :key="x.val">{{ x.val }} ({{x.count}})</li></ul></div>
              </div>
-
-             <div class="stats-row">
-                <span class="badge-stat">Sorties Totales : {{ deepFavoriteResult.total_hits }}</span>
-                <span v-if="deepFavoriteResult.sniper_data" class="badge-stat">Sorties Ciblées : {{ deepFavoriteResult.sniper_data.context_hits }}</span>
-             </div>
-
+             <div class="stats-row"><span class="badge-stat">Sorties : {{ deepFavoriteResult.total_hits }}</span></div>
              <div class="table-responsive">
                <table class="spec-table">
-                 <thead>
-                   <tr>
-                     <th>Date</th>
-                     <th>Jour</th>
-                     <th>Heure</th>
-                     <th>Déclencheur (Avant)</th>
-                     <th>Compagnons (Avec)</th>
-                     <th>Prophète (Après)</th>
-                   </tr>
-                 </thead>
-                 <tbody>
-                   <tr v-for="(row, idx) in deepFavoriteResult.history_table" :key="idx">
-                     <td>{{ row.date }}</td>
-                     <td>{{ row.day }}</td>
-                     <td>{{ row.time }}</td>
-                     <td class="trig-cell">{{ row.trigger }}</td>
-                     <td class="comp-cell">{{ row.companion }}</td>
-                     <td class="proph-cell">{{ row.prophet }}</td>
-                   </tr>
-                 </tbody>
+                 <thead><tr><th>Date</th><th>Jour</th><th>Heure</th><th>Déclencheur</th><th>Compagnons</th><th>Prophète</th></tr></thead>
+                 <tbody><tr v-for="(row, idx) in deepFavoriteResult.history_table" :key="idx"><td>{{ row.date }}</td><td>{{ row.day }}</td><td>{{ row.time }}</td><td class="trig-cell">{{ row.trigger }}</td><td class="comp-cell">{{ row.companion }}</td><td class="proph-cell">{{ row.prophet }}</td></tr></tbody>
                </table>
              </div>
-
              <div class="ai-analysis"><h4>🧠 Stratégie Favori :</h4><p>{{ deepFavoriteResult.ai_analysis }}</p></div>
           </div>
         </div>
@@ -729,6 +697,13 @@ async function runDayAnalysis() {
   .spec-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
   .total-badge { background: #eee; padding: 4px 8px; border-radius: 10px; font-size: 0.8rem; color: #555; }
   
+  /* GRID RESUME (NOUVEAU - STYLE SIMPLE) */
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-bottom: 15px; }
+  .sum-card { background: #f8f9fa; padding: 8px; border: 1px solid #dee2e6; border-radius: 4px; }
+  .sum-card h5 { margin: 0 0 5px 0; font-size: 0.75rem; color: #666; text-transform: uppercase; font-weight: bold; border-bottom: 1px solid #eee; padding-bottom: 3px; }
+  .sum-card ul { list-style: none; padding: 0; margin: 0; }
+  .sum-card li { font-size: 0.85rem; color: #333; font-weight: bold; }
+
   .best-duo-box { background: linear-gradient(90deg, #ffc107, #ff9800); color: #000; padding: 10px; border-radius: 8px; margin-bottom: 15px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
   .duo-label { text-transform: uppercase; font-size: 0.9rem; }
   .duo-val { font-size: 1.5rem; color: #d32f2f; }
