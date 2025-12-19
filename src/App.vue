@@ -33,10 +33,13 @@ const standardResult = ref(null);
 const deepFavoriteResult = ref(null);
 const profileResult = ref(null);
 const matrixResult = ref(null);
+const autoResult = ref(null);
 
 const matrixMode = ref('continuous'); 
 const matrixTab = ref('analysis');
 const cyclicDay = ref(1);
+const autoMode = ref('radar');
+const sniperFavInput = ref('');
 const favDayName = ref('Tous');
 const favHour = ref('Toutes');
 
@@ -168,6 +171,16 @@ async function runTimeMatrix() {
   await callApi(url, 'matrix');
 }
 
+async function runAutoStrategist() {
+  autoResult.value = null;
+  await callApi(`/analysis/auto-strategist?target_day=${selectedDayName.value}&target_hour=${selectedHour.value}`, 'auto');
+}
+async function runSniperFavorite() {
+  if (!sniperFavInput.value) { alert("Entrez un numéro favori."); return; }
+  autoResult.value = null;
+  await callApi(`/analysis/auto-sniper-favorite?target_num=${sniperFavInput.value}&target_day=${selectedDayName.value}&target_hour=${selectedHour.value}`, 'auto');
+}
+
 async function callApi(url, targetVar = 'standard') {
   showWelcomeMessage.value = false; isLoading.value = true; error.value = null;
   if (targetVar === 'standard') standardResult.value = null;
@@ -183,6 +196,7 @@ async function callApi(url, targetVar = 'standard') {
     else if (targetVar === 'deep') deepFavoriteResult.value = data;
     else if (targetVar === 'profile') profileResult.value = data;
     else if (targetVar === 'matrix') matrixResult.value = data;
+    else if (targetVar === 'auto') autoResult.value = data;
     else standardResult.value = data;
 
     if (data.worksheet_gid) activeSheetGid.value = data.worksheet_gid;
@@ -191,17 +205,75 @@ async function callApi(url, targetVar = 'standard') {
 }
 
 async function runDataUpdate(endpoint) { lastOperationType.value = 'update'; await callApi(`/collection/${endpoint}`, 'standard'); }
-async function runBatchVisualAnalysis(mode) { if (!startDate.value) return; lastOperationType.value = 'visual'; await callApi(`/analysis/highlight-range?start_date=${startDate.value}&end_date=${endDate.value}&mode=${mode}`, 'standard'); }
-async function runSingleDayVisual(mode) { if (!selectedDate.value) return; lastOperationType.value = 'visual'; await callApi(`/analysis/highlight-range?start_date=${selectedDate.value}&end_date=${selectedDate.value}&mode=${mode}`, 'standard'); }
-async function runReport(reportType) { if (!selectedDate.value) return; let url = `/analysis/daily-frequency/${selectedDate.value}`; if (reportType === 'weekly-frequency') url = `/analysis/weekly-frequency/${selectedDate.value}`; else if (reportType === 'companions') url = `/analysis/companions/${selectedNumber.value}?week_date_str=${selectedDate.value}`; await callApi(url, 'standard'); }
-async function runRangeAnalysis() { if (!startDate.value) return; lastOperationType.value = 'frequency'; await callApi(`/analysis/frequency-by-range?start_date=${startDate.value}&end_date=${endDate.value}`, 'standard'); }
-async function runProfileAnalysis() { if (!profileNumber.value) return; lastOperationType.value = 'profile'; profileResult.value = null; await callApi(`/analysis/number-profile?target_number=${profileNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'profile'); }
-async function runSequenceAnalysis() { if (!startDate.value) return; lastOperationType.value = 'sequence'; await callApi(`/analysis/sequence-detection?start_date=${startDate.value}&end_date=${endDate.value}`, 'standard'); }
-async function runTriggerAnalysis() { if (!triggerTargetNumber.value) return; lastOperationType.value = 'trigger'; let url = `/analysis/trigger-numbers?target_number=${triggerTargetNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`; if (triggerCompanionNumber.value) url += `&companion_number=${triggerCompanionNumber.value}`; await callApi(url, 'standard'); }
-async function runPredictionAnalysis() { if (!predictionNumber.value) return; lastOperationType.value = 'prediction'; let url = `/analysis/predict-next?observed_number=${predictionNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`; if (predictionCompanion.value) url += `&observed_companion=${predictionCompanion.value}`; await callApi(url, 'standard'); }
-async function runMultiPrediction() { if (!multiPredictionInput.value) return; lastOperationType.value = 'prediction'; await callApi(`/analysis/multi-prediction?numbers_str=${multiPredictionInput.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'standard'); }
-async function runKantaReport(reportType) { if (!selectedDate.value) return; lastOperationType.value = 'kanta-rank'; await callApi(`/analysis/kanta-${reportType}/${selectedDate.value}`, 'standard'); }
-async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/analysis/specific-day-recurrence?day_name=${selectedDayName.value}&target_hour=${selectedHour.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'specialist'); }
+
+async function runBatchVisualAnalysis(mode) {
+  if (!startDate.value || !endDate.value) { error.value = "Période requise."; return; }
+  lastOperationType.value = 'visual'; 
+  await callApi(`/analysis/highlight-range?start_date=${startDate.value}&end_date=${endDate.value}&mode=${mode}`, 'standard'); 
+}
+
+async function runSingleDayVisual(mode) {
+  if (!selectedDate.value) { error.value = "Sélectionnez une date."; return; }
+  lastOperationType.value = 'visual'; 
+  await callApi(`/analysis/highlight-range?start_date=${selectedDate.value}&end_date=${selectedDate.value}&mode=${mode}`, 'standard'); 
+}
+
+async function runReport(reportType) {
+  if (!selectedDate.value) { error.value = "Selectionnez une date."; return; }
+  let url = '';
+  if (reportType === 'weekly-frequency') { lastOperationType.value = 'weekly-frequency'; url = `/analysis/weekly-frequency/${selectedDate.value}`; }
+  else if (reportType === 'daily-frequency') { lastOperationType.value = 'daily-frequency'; url = `/analysis/daily-frequency/${selectedDate.value}`; }
+  else if (reportType === 'companions') {
+    if (!selectedNumber.value) { error.value = "Entrez un numéro."; return; }
+    lastOperationType.value = 'companions'; url = `/analysis/companions/${selectedNumber.value}?week_date_str=${selectedDate.value}`;
+  }
+  await callApi(url, 'standard');
+}
+
+async function runRangeAnalysis() {
+  if (!startDate.value || !endDate.value) { error.value = "Dates requises."; return; }
+  lastOperationType.value = 'frequency';
+  await callApi(`/analysis/frequency-by-range?start_date=${startDate.value}&end_date=${endDate.value}`, 'standard');
+}
+async function runProfileAnalysis() {
+  if (!startDate.value || !endDate.value || !profileNumber.value) { error.value = "Numéro requis."; return; }
+  lastOperationType.value = 'profile';
+  profileResult.value = null;
+  await callApi(`/analysis/number-profile?target_number=${profileNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'profile');
+}
+async function runSequenceAnalysis() {
+  if (!startDate.value || !endDate.value) { error.value = "Dates requises."; return; }
+  lastOperationType.value = 'sequence'; await callApi(`/analysis/sequence-detection?start_date=${startDate.value}&end_date=${endDate.value}`, 'standard');
+}
+async function runTriggerAnalysis() {
+  if (!startDate.value || !endDate.value || !triggerTargetNumber.value) { error.value = "Numéro requis."; return; }
+  lastOperationType.value = 'trigger';
+  let url = `/analysis/trigger-numbers?target_number=${triggerTargetNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`;
+  if (triggerCompanionNumber.value) url += `&companion_number=${triggerCompanionNumber.value}`;
+  await callApi(url, 'standard');
+}
+async function runPredictionAnalysis() {
+  if (!startDate.value || !endDate.value || !predictionNumber.value) { error.value = "Numéro requis."; return; }
+  lastOperationType.value = 'prediction';
+  let url = `/analysis/predict-next?observed_number=${predictionNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`;
+  if (predictionCompanion.value) url += `&observed_companion=${predictionCompanion.value}`;
+  await callApi(url, 'standard');
+}
+async function runMultiPrediction() {
+  if (!startDate.value || !endDate.value || !multiPredictionInput.value) { error.value = "Numéros requis."; return; }
+  const cleanInput = multiPredictionInput.value.replace(/[\s-]+/g, ',');
+  lastOperationType.value = 'prediction';
+  await callApi(`/analysis/multi-prediction?numbers_str=${cleanInput}&start_date=${startDate.value}&end_date=${endDate.value}`, 'standard');
+}
+async function runKantaReport(reportType) {
+  if (!selectedDate.value) { error.value = "Date requise."; return; }
+  lastOperationType.value = 'kanta-rank'; 
+  await callApi(`/analysis/kanta-${reportType}/${selectedDate.value}`, 'standard');
+}
+async function runDayAnalysis() {
+  if (!startDate.value || !endDate.value) { error.value = "Dates requises."; return; }
+  await callApi(`/analysis/specific-day-recurrence?day_name=${selectedDayName.value}&target_hour=${selectedHour.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'specialist');
+}
 </script>
 
 <template>
@@ -220,7 +292,7 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
 
   <main v-else class="dashboard">
     <header>
-      <h1>LE GUIDE DES FOURCASTER <span class="version-tag">V63</span></h1>
+      <h1>LE GUIDE DES FOURCASTER <span class="version-tag">V64</span></h1>
       <div class="user-info">
         <span>Connecté : <strong>{{ user.email }}</strong></span>
         <button @click="logout" class="logout-button">Déconnexion</button>
@@ -231,6 +303,33 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
       <!-- COLONNE GAUCHE AVEC SCROLLBAR -->
       <div class="controls-column">
         
+        <section class="card auto-strat-card">
+          <div class="boss-header"><h2>🤖 COMMAND CENTER</h2><span class="badge-spec blink">AUTO</span></div>
+          <div class="tabs">
+             <button @click="autoMode = 'radar'" :class="{ active: autoMode === 'radar' }">RADAR JOUR</button>
+             <button @click="autoMode = 'sniper'" :class="{ active: autoMode === 'sniper' }">SNIPER FAVORI</button>
+          </div>
+          <div class="tab-content">
+             <div v-if="autoMode === 'radar'">
+                <p class="small-text">Trouve le Roi du Jour (Triple Scan).</p>
+                <div class="date-picker-row">
+                  <select v-model="selectedDayName" class="day-select"><option>Lundi</option><option>Mardi</option><option>Mercredi</option><option>Jeudi</option><option>Vendredi</option><option>Samedi</option><option>Dimanche</option></select>
+                  <select v-model="selectedHour" class="day-select"><option>10H</option><option>13H</option><option>16H</option><option>19H</option><option>21H</option><option>22H</option><option>23H</option></select>
+                </div>
+                <button @click="runRadar" :disabled="isLoading" class="spec-btn" style="background:#e91e63;">SCANNER LE JOUR</button>
+             </div>
+             <div v-else>
+                <p class="small-text">Optimise ton Favori pour ce créneau.</p>
+                <input type="number" v-model="sniperFavInput" placeholder="Ton Numéro (ex: 42)" style="margin-bottom:10px;" />
+                <div class="date-picker-row">
+                  <select v-model="selectedDayName" class="day-select"><option>Lundi</option><option>Mardi</option><option>Mercredi</option><option>Jeudi</option><option>Vendredi</option><option>Samedi</option><option>Dimanche</option></select>
+                  <select v-model="selectedHour" class="day-select"><option>10H</option><option>13H</option><option>16H</option><option>19H</option><option>21H</option><option>22H</option><option>23H</option></select>
+                </div>
+                <button @click="runSniperFavorite" :disabled="isLoading" class="spec-btn" style="background:#ff9800;">CIBLER CE FAVORI</button>
+             </div>
+          </div>
+        </section>
+
         <!-- MATRICE TEMPORELLE (AVEC PREDICTION) -->
         <section class="card matrix-card">
           <div class="boss-header">
@@ -287,6 +386,7 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
             <input type="text" v-model="newFavoriteInput" placeholder="Ex: 7 ou 12-45" @keyup.enter="addFavorite"/>
             <button @click="addFavorite" :disabled="!newFavoriteInput" class="btn-small">Ajouter</button>
           </div>
+          <!-- AJOUT : PERIODE POUR FAVORIS -->
           <label class="period-label">Période d'analyse :</label>
           <div style="display:flex; gap:5px; margin-bottom:10px;">
              <input type="date" v-model="startDate" />
@@ -328,6 +428,7 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
         <section class="card">
           <h2>Rapports Ponctuels (1 Semaine)</h2>
           <input type="date" v-model="selectedDate" />
+          
           <div class="button-group-vertical" style="margin-top:10px;">
              <button @click="runSingleDayVisual('frequency')" :disabled="isLoading || !selectedDate" style="border:1px solid #ef5350; background:transparent; color:#d32f2f;">🎨 Surlignage Jour Unique</button>
              <button @click="runSingleDayVisual('kanta')" :disabled="isLoading || !selectedDate" style="border:1px solid #66bb6a; background:transparent; color:#388e3c;">🎨 Surlignage Kanta Jour Unique</button>
@@ -400,7 +501,7 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
            <a :href="sheetDirectLink" target="_blank" class="gsheet-btn">📂 OUVRIR GOOGLE SHEETS</a>
         </div>
 
-        <!-- NOUVEAU RESULTAT : MATRICE AVEC ONGLET PREDICTION -->
+        <!-- RESULTAT MATRICE -->
         <div v-if="matrixResult" class="card result-spec-card" style="border-top:4px solid #ff9800;">
            <div class="spec-header">
               <h3>🕰️ MATRICE TEMPORELLE</h3>
@@ -411,7 +512,6 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
               <button @click="matrixResult = null" class="close-btn">×</button>
            </div>
            
-           <!-- ONGLET ANALYSE (HISTORIQUE) -->
            <div v-if="matrixTab === 'analysis'">
               <div class="table-responsive">
                 <table class="spec-table">
@@ -435,7 +535,6 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
               </div>
            </div>
 
-           <!-- ONGLET PREDICTION (FUTUR) -->
            <div v-else class="prediction-tab">
                <div class="best-duo-box" style="background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);">
                   <span class="duo-label">🔮 TWO SHORT POUR LE : {{ matrixResult.prediction.target_date_label }}</span>
@@ -453,6 +552,27 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
                   <p>La prédiction ci-dessus applique ces formules gagnantes à la date cible (Base {{ matrixResult.prediction.target_base }}).</p>
                </div>
            </div>
+        </div>
+
+        <!-- RESULTAT AUTO-STRATEGIST (ALERTE) -->
+        <div v-if="autoResult" class="card result-spec-card alert-card">
+           <div class="spec-header">
+              <h3 style="color:#d32f2f;">{{ autoResult.mode === 'RADAR' ? '🚨 ALERTE RADAR' : '🎯 SNIPER FAVORI' }}</h3>
+              <button @click="autoResult = null" class="close-btn">×</button>
+           </div>
+           <div class="alert-box" :style="{background: autoResult.mode === 'RADAR' ? 'linear-gradient(90deg, #d32f2f, #c2185b)' : 'linear-gradient(90deg, #ff9800, #f57c00)'}">
+              <div class="alert-duo">{{ autoResult.two_sure }}</div>
+              <div class="alert-score" v-if="autoResult.mode === 'RADAR'">Score Confiance : {{ autoResult.confidence_score }}</div>
+              <div class="alert-score" v-if="autoResult.mode === 'SNIPER' && autoResult.is_imminent">⚠️ IMMINENT ! (Déclencheur actif)</div>
+           </div>
+           <div class="alert-details" v-if="autoResult.mode === 'RADAR'">
+              <ul>
+                 <li :class="{valid: autoResult.details.funnel_match}">✅ Validé par Entonnoir (Long/Court Terme)</li>
+                 <li :class="{valid: autoResult.details.sniper_match}">✅ Roi de l'Heure (Sniper)</li>
+                 <li :class="{valid: autoResult.details.echo_match}">✅ Appelé par Dernier Tirage (Echo)</li>
+              </ul>
+           </div>
+           <div class="ai-analysis"><h4>🧠 Conseil :</h4><p>{{ autoResult.ai_message }}</p></div>
         </div>
 
         <!-- RESULTAT SPECIALISTE JOUR -->
@@ -589,7 +709,7 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
           <div v-if="standardResult.ai_prediction_analysis" class="ai-analysis prophet-analysis"><h3>🔮 Prédiction</h3><p>{{ standardResult.ai_prediction_analysis }}</p></div>
         </section>
 
-        <div v-if="!dayAnalysisResult && !standardResult && !deepFavoriteResult && !profileResult && !matrixResult && !isLoading" class="welcome-message">
+        <div v-if="!dayAnalysisResult && !standardResult && !deepFavoriteResult && !profileResult && !matrixResult && !autoResult && !isLoading" class="welcome-message">
             <h3>Prêt à analyser</h3>
             <p>Sélectionnez une fonction à gauche pour commencer.</p>
         </div>
@@ -651,6 +771,7 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
   .multi-prophet-card { border: 2px solid #6f42c1; background-color: #f8f0fc; }
   .multi-btn { background: linear-gradient(45deg, #6f42c1, #007bff); border: none; }
   .multi-btn:hover { opacity: 0.9; transform: scale(1.02); }
+  .auto-strat-card { border: 2px solid #e91e63; background-color: #fce4ec; }
 
   .period-label { font-size: 0.85rem; color: #666; font-weight: 500; margin-bottom: 2px; }
   .date-picker-row { display: flex; gap: 10px; margin-bottom: 10px; }
@@ -658,12 +779,20 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
   .date-picker-row.mini { margin-top: 10px; margin-bottom: 5px; align-items: center; }
   .date-picker-row.mini label { width: auto; margin: 0; font-size: 0.8rem; }
 
-  /* TABS POUR MATRICE */
+  /* TABS POUR L'AUTO STRATEGE */
   .tabs { display: flex; gap: 5px; margin-bottom: 10px; }
   .tabs button { flex: 1; padding: 8px; font-size: 0.8rem; background: #673ab7; opacity: 0.6; border: none; color: white; border-radius: 4px 4px 0 0; }
   .tabs button.active { opacity: 1; font-weight: bold; border-bottom: 2px solid white; }
 
-  /* STYLE SPECIALISTE JOUR & DEEP SCAN */
+  /* ALERT CARD */
+  .alert-card { background: #fff3e0; border-color: #e91e63; }
+  .alert-box { background: linear-gradient(90deg, #d32f2f, #c2185b); padding: 15px; border-radius: 8px; color: white; text-align: center; margin-bottom: 15px; }
+  .alert-duo { font-size: 2.5rem; font-weight: bold; text-shadow: 0 2px 4px rgba(0,0,0,0.3); }
+  .alert-score { font-size: 0.9rem; opacity: 0.9; }
+  .alert-details ul { list-style: none; padding: 0; }
+  .alert-details li { margin-bottom: 5px; color: #555; }
+  .alert-details li.valid { color: #2e7d32; font-weight: bold; }
+
   .spec-card { border: 1px solid #009688; border-top: 4px solid #009688; background-color: #e0f2f1; }
   .boss-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
   .badge-spec { background: #009688; color: white; font-weight: bold; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; }
@@ -694,6 +823,8 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
   .comp-cell { color: #0277bd; font-weight: 500; }
   .trig-cell { color: #e65100; font-weight: 500; }
   .proph-cell { color: #7b1fa2; font-weight: bold; background: #f3e5f5; border-radius: 4px; padding: 2px; }
+  .blink { animation: blinker 1.5s linear infinite; }
+  @keyframes blinker { 50% { opacity: 0; } }
   
   .stats-row { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
   .badge-stat { background: #eee; padding: 5px 10px; border-radius: 20px; font-size: 0.85rem; font-weight: bold; color: #333; border: 1px solid #ccc; }
@@ -718,5 +849,7 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
   /* STYLE MATRICE TEMPORELLE */
   .matrix-card { border: 2px solid #673ab7; background-color: #ede7f6; }
   .badge-hit { background: #4caf50; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold; }
+  
+  /* PREDICTION TAB */
   .prediction-tab { padding: 10px; background: #fff; border-radius: 8px; }
 </style>
