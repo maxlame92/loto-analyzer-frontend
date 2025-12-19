@@ -459,7 +459,7 @@ async function runDayAnalysis() {
            <a :href="sheetDirectLink" target="_blank" class="gsheet-btn">📂 OUVRIR GOOGLE SHEETS</a>
         </div>
 
-        <!-- NOUVEAU RESULTAT : MATRICE AVEC ONGLET PREDICTION -->
+        <!-- RESULTAT MATRICE AVEC ONGLET PREDICTION -->
         <div v-if="matrixResult" class="card result-spec-card" style="border-top:4px solid #ff9800;">
            <div class="spec-header">
               <h3>🕰️ MATRICE TEMPORELLE</h3>
@@ -470,7 +470,6 @@ async function runDayAnalysis() {
               <button @click="matrixResult = null" class="close-btn">×</button>
            </div>
            
-           <!-- ONGLET ANALYSE (HISTORIQUE) -->
            <div v-if="matrixTab === 'analysis'">
               <div class="table-responsive">
                 <table class="spec-table">
@@ -494,7 +493,6 @@ async function runDayAnalysis() {
               </div>
            </div>
 
-           <!-- ONGLET PREDICTION (FUTUR) -->
            <div v-else class="prediction-tab">
                <div class="best-duo-box" style="background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);">
                   <span class="duo-label">🔮 TWO SHORT POUR LE : {{ matrixResult.prediction.target_date_label }}</span>
@@ -559,6 +557,7 @@ async function runDayAnalysis() {
              <div v-if="deepFavoriteResult.sniper_data" class="best-duo-box" style="background:linear-gradient(90deg, #fdd835, #fbc02d); color:black;">
                 <span class="duo-label">🎯 TWO SHORT CIBLÉ ({{ deepFavoriteResult.context_request }}) :</span>
                 <span class="duo-val">{{ deepFavoriteResult.sniper_data.two_short }}</span>
+                <span class="duo-count" v-if="deepFavoriteResult.sniper_data.is_imminent">🚨 IMMINENT</span>
              </div>
 
              <div class="stats-row">
@@ -742,6 +741,8 @@ async function runDayAnalysis() {
   .comp-cell { color: #0277bd; font-weight: 500; }
   .trig-cell { color: #e65100; font-weight: 500; }
   .proph-cell { color: #7b1fa2; font-weight: bold; background: #f3e5f5; border-radius: 4px; padding: 2px; }
+  .blink { animation: blinker 1.5s linear infinite; }
+  @keyframes blinker { 50% { opacity: 0; } }
   
   .stats-row { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
   .badge-stat { background: #eee; padding: 5px 10px; border-radius: 20px; font-size: 0.85rem; font-weight: bold; color: #333; border: 1px solid #ccc; }
