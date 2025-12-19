@@ -32,6 +32,10 @@ const dayAnalysisResult = ref(null);
 const standardResult = ref(null);
 const deepFavoriteResult = ref(null);
 const profileResult = ref(null);
+const matrixResult = ref(null);
+
+const matrixMode = ref('continuous'); 
+const cyclicDay = ref(1);
 
 const selectedDate = ref('');
 const startDate = ref('');
@@ -89,6 +93,7 @@ const chartData = computed(() => {
 
 onMounted(() => {
   const today = new Date();
+  cyclicDay.value = today.getDate();
   const year = today.getFullYear();
   const month = (today.getMonth() + 1).toString().padStart(2, '0');
   const day = today.getDate().toString().padStart(2, '0');
@@ -153,6 +158,13 @@ async function analyzeDeepFavorite(item) {
   await callApi(`/analysis/deep-favorite?target=${item}&start_date=${startDate.value}&end_date=${endDate.value}`, 'deep');
 }
 
+async function runTimeMatrix() {
+  matrixResult.value = null;
+  let url = `/analysis/time-matrix?start_date=${startDate.value}&end_date=${endDate.value}&mode=${matrixMode.value}`;
+  if (matrixMode.value === 'cyclic') url += `&target_cyclic_day=${cyclicDay.value}`;
+  await callApi(url, 'matrix');
+}
+
 async function callApi(url, targetVar = 'standard') {
   showWelcomeMessage.value = false; isLoading.value = true; error.value = null;
   if (targetVar === 'standard') standardResult.value = null;
@@ -167,6 +179,7 @@ async function callApi(url, targetVar = 'standard') {
     if (targetVar === 'specialist') dayAnalysisResult.value = data;
     else if (targetVar === 'deep') deepFavoriteResult.value = data;
     else if (targetVar === 'profile') profileResult.value = data;
+    else if (targetVar === 'matrix') matrixResult.value = data;
     else standardResult.value = data;
 
     if (data.worksheet_gid) activeSheetGid.value = data.worksheet_gid;
@@ -262,7 +275,7 @@ async function runDayAnalysis() {
 
   <main v-else class="dashboard">
     <header>
-      <h1>LE GUIDE DES FOURCASTER <span class="version-tag">V52</span></h1>
+      <h1>LE GUIDE DES FOURCASTER <span class="version-tag">V59</span></h1>
       <div class="user-info">
         <span>Connecté : <strong>{{ user.email }}</strong></span>
         <button @click="logout" class="logout-button">Déconnexion</button>
@@ -273,6 +286,29 @@ async function runDayAnalysis() {
       <!-- COLONNE GAUCHE AVEC SCROLLBAR -->
       <div class="controls-column">
         
+        <!-- MATRICE TEMPORELLE -->
+        <section class="card matrix-card">
+          <div class="boss-header">
+             <h2>🕰️ MATRICE TEMPORELLE</h2>
+             <span class="badge-spec" style="background:#ff9800;">NEW</span>
+          </div>
+          <p class="small-text">Analyse basée sur la Date, Renversé et Kanta (+/- 2).</p>
+          <div class="tabs">
+             <button @click="matrixMode = 'continuous'" :class="{ active: matrixMode === 'continuous' }">CONTINU (Séquence)</button>
+             <button @click="matrixMode = 'cyclic'" :class="{ active: matrixMode === 'cyclic' }">CYCLIQUE (Le 14 du mois)</button>
+          </div>
+          <div v-if="matrixMode === 'cyclic'" style="margin-bottom:10px;">
+             <label>Jour du Mois (1-31) :</label>
+             <input type="number" v-model="cyclicDay" min="1" max="31" />
+          </div>
+          <div class="date-picker-row">
+             <input type="date" v-model="startDate" />
+             <input type="date" v-model="endDate" />
+          </div>
+          <button @click="runTimeMatrix" :disabled="isLoading" class="spec-btn" style="background:#ff9800;">LANCER MATRICE</button>
+        </section>
+
+        <!-- SPECIALISTE JOUR -->
         <section class="card spec-card">
           <div class="boss-header"><h2>📅 ANALYSTE SPÉCIALISTE</h2><span class="badge-spec">360°</span></div>
           <p class="small-text">Trouvez les Habitués de chaque jour.</p>
@@ -411,6 +447,31 @@ async function runDayAnalysis() {
            <a :href="sheetDirectLink" target="_blank" class="gsheet-btn">📂 OUVRIR GOOGLE SHEETS</a>
         </div>
 
+        <!-- NOUVEAU RESULTAT : MATRICE TEMPORELLE -->
+        <div v-if="matrixResult" class="card result-spec-card" style="border-top:4px solid #ff9800;">
+           <div class="spec-header">
+              <h3>🕰️ MATRICE TEMPORELLE ({{ matrixResult.mode }})</h3>
+              <button @click="matrixResult = null" class="close-btn">×</button>
+           </div>
+           <div class="ai-analysis"><h4>🧠 Analyse Matrice :</h4><p>{{ matrixResult.ai_analysis }}</p></div>
+           <div class="table-responsive">
+             <table class="spec-table">
+               <thead><tr><th>Date</th><th>Base</th><th>Lot Théorique</th><th>Sorties Réelles</th></tr></thead>
+               <tbody>
+                 <tr v-for="(row, idx) in matrixResult.matrix_data" :key="idx">
+                   <td>{{ row.date }}<br><small>{{ row.day_name }}</small></td>
+                   <td class="num-cell">{{ row.base_number }}</td>
+                   <td style="font-size:0.8rem; color:#666;">{{ row.matrix_lot.join(', ') }}</td>
+                   <td>
+                      <span v-if="row.hit_count > 0" class="badge-hit">{{ row.hits.join(', ') }} ({{ row.hit_count }})</span>
+                      <span v-else style="color:#ccc;">-</span>
+                   </td>
+                 </tr>
+               </tbody>
+             </table>
+           </div>
+        </div>
+
         <!-- RESULTAT SPECIALISTE JOUR -->
         <div v-if="dayAnalysisResult" class="card result-spec-card">
           <div class="spec-header">
@@ -539,7 +600,7 @@ async function runDayAnalysis() {
           <div v-if="standardResult.ai_prediction_analysis" class="ai-analysis prophet-analysis"><h3>🔮 Prédiction</h3><p>{{ standardResult.ai_prediction_analysis }}</p></div>
         </section>
 
-        <div v-if="!dayAnalysisResult && !standardResult && !deepFavoriteResult && !profileResult && !isLoading" class="welcome-message">
+        <div v-if="!dayAnalysisResult && !standardResult && !deepFavoriteResult && !profileResult && !matrixResult && !isLoading" class="welcome-message">
             <h3>Prêt à analyser</h3>
             <p>Sélectionnez une fonction à gauche pour commencer.</p>
         </div>
@@ -602,13 +663,10 @@ async function runDayAnalysis() {
   .multi-btn { background: linear-gradient(45deg, #6f42c1, #007bff); border: none; }
   .multi-btn:hover { opacity: 0.9; transform: scale(1.02); }
 
-  .period-label { font-size: 0.85rem; color: #666; font-weight: 500; margin-bottom: 2px; }
-  .date-picker-row { display: flex; gap: 10px; margin-bottom: 10px; }
-  .date-picker-row input { flex: 1; padding: 5px; font-size: 0.9rem; border: 1px solid #ccc; border-radius: 4px; }
-  .date-picker-row.mini { margin-top: 10px; margin-bottom: 5px; align-items: center; }
-  .date-picker-row.mini label { width: auto; margin: 0; font-size: 0.8rem; }
-
-  /* SPECIALISTE JOUR & DEEP SCAN */
+  /* STYLE MATRICE & AUTRES */
+  .matrix-card { border: 2px solid #673ab7; background-color: #ede7f6; }
+  .badge-hit { background: #4caf50; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold; }
+  
   .spec-card { border: 1px solid #009688; border-top: 4px solid #009688; background-color: #e0f2f1; }
   .boss-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
   .badge-spec { background: #009688; color: white; font-weight: bold; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; }
@@ -619,7 +677,6 @@ async function runDayAnalysis() {
   .result-spec-card { border-top: 4px solid #009688; margin-bottom: 2rem; }
   .spec-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
   .total-badge { background: #eee; padding: 4px 8px; border-radius: 10px; font-size: 0.8rem; color: #555; }
-  
   .best-duo-box { background: linear-gradient(90deg, #ffc107, #ff9800); color: #000; padding: 10px; border-radius: 8px; margin-bottom: 15px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
   .duo-label { text-transform: uppercase; font-size: 0.9rem; }
   .duo-val { font-size: 1.5rem; color: #d32f2f; }
@@ -632,7 +689,6 @@ async function runDayAnalysis() {
   .comp-cell { color: #0277bd; font-weight: 500; }
   .trig-cell { color: #e65100; font-weight: 500; }
   .proph-cell { color: #7b1fa2; font-weight: bold; background: #f3e5f5; border-radius: 4px; padding: 2px; }
-  
   .stats-row { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
   .badge-stat { background: #eee; padding: 5px 10px; border-radius: 20px; font-size: 0.85rem; font-weight: bold; color: #333; border: 1px solid #ccc; }
   
@@ -652,4 +708,12 @@ async function runDayAnalysis() {
   .quick-link-box { text-align: center; margin-bottom: 20px; }
   .gsheet-btn { background: #0f9d58; color: white; padding: 10px 20px; border-radius: 30px; text-decoration: none; font-weight: bold; display: inline-block; box-shadow: 0 4px 10px rgba(15, 157, 88, 0.3); }
   .gsheet-btn:hover { background: #0b8043; transform: scale(1.05); transition: 0.2s; }
+  .period-label { font-size: 0.85rem; color: #666; font-weight: 500; margin-bottom: 2px; }
+  .date-picker-row { display: flex; gap: 10px; margin-bottom: 10px; }
+  .date-picker-row input { flex: 1; padding: 5px; font-size: 0.9rem; border: 1px solid #ccc; border-radius: 4px; }
+  .date-picker-row.mini { margin-top: 10px; margin-bottom: 5px; align-items: center; }
+  .date-picker-row.mini label { width: auto; margin: 0; font-size: 0.8rem; }
+  .tabs { display: flex; gap: 5px; margin-bottom: 10px; }
+  .tabs button { flex: 1; padding: 8px; font-size: 0.8rem; background: #673ab7; opacity: 0.6; border: none; color: white; border-radius: 4px 4px 0 0; }
+  .tabs button.active { opacity: 1; font-weight: bold; border-bottom: 2px solid white; }
 </style>
