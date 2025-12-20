@@ -37,6 +37,8 @@ const matrixResult = ref(null);
 const matrixMode = ref('continuous'); 
 const matrixTab = ref('analysis');
 const cyclicDay = ref(1);
+const favDayName = ref('Tous');
+const favHour = ref('Toutes');
 
 const selectedDate = ref('');
 const startDate = ref('');
@@ -57,10 +59,10 @@ const sheetDirectLink = computed(() => {
 
 const tableHeaders = computed(() => {
   if (!lastOperationType.value) return [];
-  if (lastOperationType.value.includes('frequency')) return ['#', 'Numéro', 'Apparitions'];
+  if (lastOperationType.value.includes('frequency')) return ['#', 'Numéro', 'Sorties'];
   if (lastOperationType.value === 'companions') return ['#', 'Compagnon', 'Apparu avec'];
   if (lastOperationType.value === 'trigger') return ['#', 'N° Déclencheur', 'Fréquence'];
-  if (lastOperationType.value === 'prediction') return ['#', 'Numéro Suivant (Probable)', 'Fréquence']; 
+  if (lastOperationType.value === 'prediction') return ['#', 'Numéro Suivant', 'Fréquence']; 
   if (lastOperationType.value.includes('kanta-rank')) return ['Paire Kanta', 'Apparitions'];
   return [];
 });
@@ -156,7 +158,7 @@ async function removeFavorite(item) {
 async function analyzeDeepFavorite(item) {
   if (!startDate.value || !endDate.value) { alert("Vérifiez les dates."); return; }
   deepFavoriteResult.value = null;
-  await callApi(`/analysis/deep-favorite?target=${item}&start_date=${startDate.value}&end_date=${endDate.value}`, 'deep');
+  await callApi(`/analysis/deep-favorite?target=${item}&start_date=${startDate.value}&end_date=${endDate.value}&context_day=${favDayName.value}&context_hour=${favHour.value}`, 'deep');
 }
 
 async function runTimeMatrix() {
@@ -218,7 +220,7 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
 
   <main v-else class="dashboard">
     <header>
-      <h1>LE GUIDE DES FOURCASTER <span class="version-tag">V67</span></h1>
+      <h1>LE GUIDE DES FOURCASTER <span class="version-tag">V68</span></h1>
       <div class="user-info">
         <span>Connecté : <strong>{{ user.email }}</strong></span>
         <button @click="logout" class="logout-button">Déconnexion</button>
@@ -290,6 +292,13 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
              <input type="date" v-model="startDate" />
              <input type="date" v-model="endDate" />
           </div>
+          
+          <label class="period-label">Contexte Visé (Optionnel) :</label>
+          <div class="date-picker-row">
+            <select v-model="favDayName" class="day-select"><option>Tous</option><option>Lundi</option><option>Mardi</option><option>Mercredi</option><option>Jeudi</option><option>Vendredi</option><option>Samedi</option><option>Dimanche</option></select>
+            <select v-model="favHour" class="day-select"><option>Toutes</option><option>10H</option><option>13H</option><option>16H</option><option>19H</option><option>21H</option><option>22H</option><option>23H</option></select>
+          </div>
+
           <div v-if="userFavorites.length > 0" class="favorites-list">
             <div v-for="item in userFavorites" :key="item" class="favorite-chip">
               <span class="fav-label">{{ item }}</span>
@@ -318,7 +327,6 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
         <section class="card">
           <h2>Rapports Ponctuels (1 Semaine)</h2>
           <input type="date" v-model="selectedDate" />
-          
           <div class="button-group-vertical" style="margin-top:10px;">
              <button @click="runSingleDayVisual('frequency')" :disabled="isLoading || !selectedDate" style="border:1px solid #ef5350; background:transparent; color:#d32f2f;">🎨 Surlignage Jour Unique</button>
              <button @click="runSingleDayVisual('kanta')" :disabled="isLoading || !selectedDate" style="border:1px solid #66bb6a; background:transparent; color:#388e3c;">🎨 Surlignage Kanta Jour Unique</button>
@@ -391,7 +399,7 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
            <a :href="sheetDirectLink" target="_blank" class="gsheet-btn">📂 OUVRIR GOOGLE SHEETS</a>
         </div>
 
-        <!-- NOUVEAU RESULTAT : MATRICE AVEC ONGLET PREDICTION -->
+        <!-- RESULTAT MATRICE -->
         <div v-if="matrixResult" class="card result-spec-card" style="border-top:4px solid #ff9800;">
            <div class="spec-header">
               <h3>🕰️ MATRICE TEMPORELLE</h3>
@@ -402,7 +410,6 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
               <button @click="matrixResult = null" class="close-btn">×</button>
            </div>
            
-           <!-- ONGLET ANALYSE (HISTORIQUE) -->
            <div v-if="matrixTab === 'analysis'">
               <div class="table-responsive">
                 <table class="spec-table">
@@ -426,7 +433,6 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
               </div>
            </div>
 
-           <!-- ONGLET PREDICTION (FUTUR) -->
            <div v-else class="prediction-tab">
                <div class="best-duo-box" style="background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);">
                   <span class="duo-label">🔮 TWO SHORT POUR LE : {{ matrixResult.prediction.target_date_label }}</span>
@@ -537,13 +543,16 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
             <button @click="profileResult = null" class="close-btn">×</button>
           </div>
           
-          <div class="stats-grid">
-             <div class="stat-item"><strong>Sorties Totales</strong><br>{{ profileResult.profile_data.hits }}</div>
-             <div class="stat-item"><strong>Jour Favori</strong><br>{{ profileResult.profile_data.best_day }}</div>
-             <div class="stat-item"><strong>Heure Favorite</strong><br>{{ profileResult.profile_data.best_time }}</div>
+          <div class="summary-grid">
+             <div class="sum-card"><h5>Sorties</h5><p style="font-weight:bold; font-size:1.2rem;">{{ profileResult.profile_data.hits }}</p></div>
+             <div class="sum-card"><h5>Top Jours</h5><ul><li v-for="d in profileResult.profile_data.top_days" :key="d.val">{{ d.val }} ({{ d.count }})</li></ul></div>
+             <div class="sum-card"><h5>Top Heures</h5><ul><li v-for="h in profileResult.profile_data.top_hours" :key="h.val">{{ h.val }} ({{ h.count }})</li></ul></div>
+             <div class="sum-card"><h5>Top Compagnons</h5><ul><li v-for="c in profileResult.profile_data.top_companions" :key="c.val">{{ c.val }} ({{ c.count }})</li></ul></div>
           </div>
-          <div style="margin:15px 0; padding:10px; background:#f3e5f5; border-radius:8px;">
-             <strong>Top 5 Compagnons :</strong> {{ profileResult.profile_data.top_companions }}
+          
+          <div class="summary-grid">
+              <div class="sum-card"><h5>Top Déclencheurs (Avant)</h5><ul><li v-for="t in profileResult.profile_data.top_triggers" :key="t.val">{{ t.val }} ({{ t.count }})</li></ul></div>
+              <div class="sum-card"><h5>Top Prophètes (Après)</h5><ul><li v-for="p in profileResult.profile_data.top_prophets" :key="p.val">{{ p.val }} ({{ p.count }})</li></ul></div>
           </div>
 
           <div class="ai-analysis"><h4>🧠 Analyse Expert :</h4><p>{{ profileResult.ai_strategic_profile }}</p></div>
@@ -687,6 +696,8 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
   .comp-cell { color: #0277bd; font-weight: 500; }
   .trig-cell { color: #e65100; font-weight: 500; }
   .proph-cell { color: #7b1fa2; font-weight: bold; background: #f3e5f5; border-radius: 4px; padding: 2px; }
+  .blink { animation: blinker 1.5s linear infinite; }
+  @keyframes blinker { 50% { opacity: 0; } }
   
   .stats-row { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
   .badge-stat { background: #eee; padding: 5px 10px; border-radius: 20px; font-size: 0.85rem; font-weight: bold; color: #333; border: 1px solid #ccc; }
