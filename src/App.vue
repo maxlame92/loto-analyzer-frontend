@@ -59,7 +59,7 @@ const sheetDirectLink = computed(() => {
 
 const tableHeaders = computed(() => {
   if (!lastOperationType.value) return [];
-  if (lastOperationType.value.includes('frequency')) return ['#', 'Numéro', 'Sorties', 'Détails']; // Ajout Détails
+  if (lastOperationType.value.includes('frequency')) return ['#', 'Numéro', 'Sorties', 'Détails'];
   if (lastOperationType.value === 'companions') return ['#', 'Compagnon', 'Apparu avec'];
   if (lastOperationType.value === 'trigger') return ['#', 'N° Déclencheur', 'Fréquence'];
   if (lastOperationType.value === 'prediction') return ['#', 'Numéro Suivant (Probable)', 'Fréquence']; 
@@ -220,7 +220,7 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
 
   <main v-else class="dashboard">
     <header>
-      <h1>LE GUIDE DES FOURCASTER <span class="version-tag">V70</span></h1>
+      <h1>LE GUIDE DES FOURCASTER <span class="version-tag">V71</span></h1>
       <div class="user-info">
         <span>Connecté : <strong>{{ user.email }}</strong></span>
         <button @click="logout" class="logout-button">Déconnexion</button>
@@ -231,7 +231,7 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
       <!-- COLONNE GAUCHE AVEC SCROLLBAR -->
       <div class="controls-column">
         
-        <!-- MATRICE TEMPORELLE (AVEC PREDICTION) -->
+        <!-- MATRICE TEMPORELLE -->
         <section class="card matrix-card">
           <div class="boss-header">
              <h2>🕰️ MATRICE TEMPORELLE</h2>
@@ -313,6 +313,7 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
 
         <section class="card">
           <h2>Analyse Visuelle (Batch)</h2>
+          <p class="small-text">Applique les couleurs sur toute la période choisie.</p>
           <div style="display:flex; gap:5px; margin-bottom:10px;">
              <input type="date" v-model="startDate" />
              <input type="date" v-model="endDate" />
@@ -487,6 +488,14 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
              <p>Ce favori n'est jamais sorti sur la période.</p>
           </div>
           <div v-else>
+             <div class="summary-grid">
+               <div class="sum-card"><h5>Top Jours</h5><ul><li v-for="x in deepFavoriteResult.summary.top_days" :key="x.val">{{ x.val }} ({{x.count}})</li></ul></div>
+               <div class="sum-card"><h5>Top Heures</h5><ul><li v-for="x in deepFavoriteResult.summary.top_hours" :key="x.val">{{ x.val }} ({{x.count}})</li></ul></div>
+               <div class="sum-card"><h5>Top Déclencheurs</h5><ul><li v-for="x in deepFavoriteResult.summary.top_triggers" :key="x.val">{{ x.val }} ({{x.count}})</li></ul></div>
+               <div class="sum-card"><h5>Top Compagnons</h5><ul><li v-for="x in deepFavoriteResult.summary.top_companions" :key="x.val">{{ x.val }} ({{x.count}})</li></ul></div>
+               <div class="sum-card"><h5>Top Prophètes</h5><ul><li v-for="x in deepFavoriteResult.summary.top_prophets" :key="x.val">{{ x.val }} ({{x.count}})</li></ul></div>
+             </div>
+
              <div class="stats-row">
                 <span class="badge-stat">Sorties Totales : {{ deepFavoriteResult.total_hits }}</span>
                 <span class="badge-stat">Meilleur Jour : {{ deepFavoriteResult.best_day }}</span>
@@ -522,7 +531,7 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
           </div>
         </div>
 
-        <!-- NOUVEAU RESULTAT : PROFIL NUMERO (TABLEAU FIXÉ) -->
+        <!-- NOUVEAU RESULTAT : PROFIL NUMERO (TABLEAU) -->
         <div v-if="profileResult" class="card result-spec-card" style="border-top:4px solid #ab47bc;">
           <div class="spec-header">
             <h3>👤 PROFIL COMPLET : {{ profileResult.profile_data.number }}</h3>
@@ -535,47 +544,21 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
              <div class="stat-item"><strong>Heure Favorite</strong><br>{{ profileResult.profile_data.best_time }}</div>
           </div>
           
-          <!-- LISTES REMPLIES -->
           <div class="summary-grid">
-             <div class="sum-card">
-               <h5>Top Jours</h5>
-               <ul>
-                 <li v-for="x in profileResult.profile_data.top_days" :key="x.val">{{ x.val }} ({{ x.count }})</li>
-               </ul>
-             </div>
-             <div class="sum-card">
-               <h5>Top Heures</h5>
-               <ul>
-                 <li v-for="x in profileResult.profile_data.top_hours" :key="x.val">{{ x.val }} ({{ x.count }})</li>
-               </ul>
-             </div>
-             <div class="sum-card">
-               <h5>Top Compagnons</h5>
-               <ul>
-                 <li v-for="x in profileResult.profile_data.top_companions" :key="x.val">{{ x.val }} ({{ x.count }})</li>
-               </ul>
-             </div>
+             <div class="sum-card"><h5>Top Jours</h5><ul><li v-for="d in profileResult.profile_data.top_days" :key="d.val">{{ d.val }} ({{ d.count }})</li></ul></div>
+             <div class="sum-card"><h5>Top Heures</h5><ul><li v-for="h in profileResult.profile_data.top_hours" :key="h.val">{{ h.val }} ({{ h.count }})</li></ul></div>
+             <div class="sum-card"><h5>Top Compagnons</h5><ul><li v-for="c in profileResult.profile_data.top_companions" :key="c.val">{{ c.val }} ({{ c.count }})</li></ul></div>
           </div>
-
+          
           <div class="summary-grid">
-             <div class="sum-card">
-               <h5>Top Déclencheurs (Avant)</h5>
-               <ul>
-                 <li v-for="x in profileResult.profile_data.top_triggers" :key="x.val">{{ x.val }} ({{ x.count }})</li>
-               </ul>
-             </div>
-             <div class="sum-card">
-               <h5>Top Prophètes (Après)</h5>
-               <ul>
-                 <li v-for="x in profileResult.profile_data.top_prophets" :key="x.val">{{ x.val }} ({{ x.count }})</li>
-               </ul>
-             </div>
+              <div class="sum-card"><h5>Top Déclencheurs (Avant)</h5><ul><li v-for="t in profileResult.profile_data.top_triggers" :key="t.val">{{ t.val }} ({{ t.count }})</li></ul></div>
+              <div class="sum-card"><h5>Top Prophètes (Après)</h5><ul><li v-for="p in profileResult.profile_data.top_prophets" :key="p.val">{{ p.val }} ({{ p.count }})</li></ul></div>
           </div>
 
           <div class="ai-analysis"><h4>🧠 Analyse Expert :</h4><p>{{ profileResult.ai_strategic_profile }}</p></div>
         </div>
 
-        <!-- RESULTATS STANDARDS (TOP 10 FIXÉ) -->
+        <!-- RESULTATS STANDARDS -->
         <section v-if="standardResult" class="card results-card fade-in">
           <div class="spec-header">
              <h2>Résultat Standard</h2>
@@ -599,7 +582,6 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
                 <td v-else>#{{ index + 1 }}</td>
                 <td v-if="!lastOperationType.includes('kanta-rank')">{{ row.number }}</td>
                 <td>{{ row.count }}</td>
-                <!-- Colonne Détails ajoutée -->
                 <td v-if="row.details" style="font-size:0.8rem; color:#666;">{{ row.details }}</td>
               </tr>
             </tbody>
@@ -625,7 +607,8 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
 </template>
 
 <style scoped>
-  /* STYLES CLEAN & PRO (DESIGN CLASSIQUE) */
+  /* STYLES CLEAN & PRO */
+  /* Reprenez les styles précédents, ils sont bons */
   .loading-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; font-size: 1.5rem; color: #666; }
   .login-wrapper { display: flex; align-items: center; justify-content: center; min-height: 100vh; background-color: #f0f2f5; }
   .login-box { background: white; padding: 2.5rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
@@ -666,25 +649,7 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
   .empty-msg { font-style: italic; color: #999; font-size: 0.9rem; }
   .small-text { font-size: 0.8rem; color: #666; margin-top: -0.5rem; margin-bottom: 1rem; }
   hr { border: none; border-top: 1px solid #eee; margin: 1.5rem 0; }
-  .prophet-card { border: 1px solid #d1c4e9; background: linear-gradient(to bottom right, #ffffff, #f3e5f5); }
-  .prophet-btn { background-color: #7b1fa2; }
-  .prophet-btn:hover { background-color: #4a148c; }
-  .prophet-analysis { background-color: #f3e5f5; border-left: 5px solid #7b1fa2; }
-  .multi-prophet-card { border: 2px solid #6f42c1; background-color: #f8f0fc; }
-  .multi-btn { background: linear-gradient(45deg, #6f42c1, #007bff); border: none; }
-  .multi-btn:hover { opacity: 0.9; transform: scale(1.02); }
-
-  .period-label { font-size: 0.85rem; color: #666; font-weight: 500; margin-bottom: 2px; }
-  .date-picker-row { display: flex; gap: 10px; margin-bottom: 10px; }
-  .date-picker-row input { flex: 1; padding: 5px; font-size: 0.9rem; border: 1px solid #ccc; border-radius: 4px; }
-  .date-picker-row.mini { margin-top: 10px; margin-bottom: 5px; align-items: center; }
-  .date-picker-row.mini label { width: auto; margin: 0; font-size: 0.8rem; }
   
-  .tabs { display: flex; gap: 5px; margin-bottom: 10px; }
-  .tabs button { flex: 1; padding: 8px; font-size: 0.8rem; background: #673ab7; opacity: 0.6; border: none; color: white; border-radius: 4px 4px 0 0; }
-  .tabs button.active { opacity: 1; font-weight: bold; border-bottom: 2px solid white; }
-
-  /* STYLE SPECIALISTE JOUR & DEEP SCAN */
   .spec-card { border: 1px solid #009688; border-top: 4px solid #009688; background-color: #e0f2f1; }
   .boss-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
   .badge-spec { background: #009688; color: white; font-weight: bold; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; }
@@ -696,7 +661,6 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
   .spec-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
   .total-badge { background: #eee; padding: 4px 8px; border-radius: 10px; font-size: 0.8rem; color: #555; }
   
-  /* GRID RESUME (NOUVEAU - STYLE SIMPLE) */
   .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-bottom: 15px; }
   .sum-card { background: #f8f9fa; padding: 8px; border: 1px solid #dee2e6; border-radius: 4px; }
   .sum-card h5 { margin: 0 0 5px 0; font-size: 0.75rem; color: #666; text-transform: uppercase; font-weight: bold; border-bottom: 1px solid #eee; padding-bottom: 3px; }
@@ -715,8 +679,6 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
   .comp-cell { color: #0277bd; font-weight: 500; }
   .trig-cell { color: #e65100; font-weight: 500; }
   .proph-cell { color: #7b1fa2; font-weight: bold; background: #f3e5f5; border-radius: 4px; padding: 2px; }
-  .blink { animation: blinker 1.5s linear infinite; }
-  @keyframes blinker { 50% { opacity: 0; } }
   
   .stats-row { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
   .badge-stat { background: #eee; padding: 5px 10px; border-radius: 20px; font-size: 0.85rem; font-weight: bold; color: #333; border: 1px solid #ccc; }
@@ -729,7 +691,6 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
   .fade-in { animation: fadeIn 0.5s ease-in; }
   @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
-  /* SCROLLBAR POUR LA COLONNE GAUCHE */
   .controls-column { max-height: 90vh; overflow-y: auto; padding-right: 10px; }
   .controls-column::-webkit-scrollbar { width: 8px; }
   .controls-column::-webkit-scrollbar-thumb { background-color: #ccc; border-radius: 4px; }
@@ -738,10 +699,7 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
   .gsheet-btn { background: #0f9d58; color: white; padding: 10px 20px; border-radius: 30px; text-decoration: none; font-weight: bold; display: inline-block; box-shadow: 0 4px 10px rgba(15, 157, 88, 0.3); }
   .gsheet-btn:hover { background: #0b8043; transform: scale(1.05); transition: 0.2s; }
   
-  /* STYLE MATRICE TEMPORELLE */
   .matrix-card { border: 2px solid #673ab7; background-color: #ede7f6; }
   .badge-hit { background: #4caf50; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold; }
-  
-  /* PREDICTION TAB */
   .prediction-tab { padding: 10px; background: #fff; border-radius: 8px; }
 </style>
