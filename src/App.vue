@@ -59,8 +59,7 @@ const sheetDirectLink = computed(() => {
 
 const tableHeaders = computed(() => {
   if (!lastOperationType.value) return [];
-  // AJOUT DE LA COLONNE DETAILS POUR LE CLASSEMENT
-  if (lastOperationType.value.includes('frequency')) return ['#', 'Numéro', 'Sorties', 'Détails (Heures)']; 
+  if (lastOperationType.value.includes('frequency')) return ['#', 'Numéro', 'Sorties', 'Détails'];
   if (lastOperationType.value === 'companions') return ['#', 'Compagnon', 'Apparu avec'];
   if (lastOperationType.value === 'trigger') return ['#', 'N° Déclencheur', 'Fréquence'];
   if (lastOperationType.value === 'prediction') return ['#', 'Numéro Suivant (Probable)', 'Fréquence']; 
@@ -194,23 +193,7 @@ async function callApi(url, targetVar = 'standard') {
 async function runDataUpdate(endpoint) { lastOperationType.value = 'update'; await callApi(`/collection/${endpoint}`, 'standard'); }
 async function runBatchVisualAnalysis(mode) { if (!startDate.value) return; lastOperationType.value = 'visual'; await callApi(`/analysis/highlight-range?start_date=${startDate.value}&end_date=${endDate.value}&mode=${mode}`, 'standard'); }
 async function runSingleDayVisual(mode) { if (!selectedDate.value) return; lastOperationType.value = 'visual'; await callApi(`/analysis/highlight-range?start_date=${selectedDate.value}&end_date=${selectedDate.value}&mode=${mode}`, 'standard'); }
-
-async function runReport(reportType) {
-  if (!selectedDate.value) { error.value = "Sélectionnez une date."; return; }
-  let url = '';
-  if (reportType === 'weekly-frequency') {
-      lastOperationType.value = 'weekly-frequency'; 
-      url = `/analysis/weekly-frequency/${selectedDate.value}`; 
-  } else if (reportType === 'daily-frequency') {
-      lastOperationType.value = 'daily-frequency'; 
-      url = `/analysis/daily-frequency/${selectedDate.value}`; 
-  } else if (reportType === 'companions') {
-    if (!selectedNumber.value) { error.value = "Entrez un numéro."; return; }
-    lastOperationType.value = 'companions'; url = `/analysis/companions/${selectedNumber.value}?week_date_str=${selectedDate.value}`;
-  }
-  await callApi(url, 'standard');
-}
-
+async function runReport(reportType) { if (!selectedDate.value) return; let url = `/analysis/daily-frequency/${selectedDate.value}`; if (reportType === 'weekly-frequency') url = `/analysis/weekly-frequency/${selectedDate.value}`; else if (reportType === 'companions') url = `/analysis/companions/${selectedNumber.value}?week_date_str=${selectedDate.value}`; await callApi(url, 'standard'); }
 async function runRangeAnalysis() { if (!startDate.value) return; lastOperationType.value = 'frequency'; await callApi(`/analysis/frequency-by-range?start_date=${startDate.value}&end_date=${endDate.value}`, 'standard'); }
 async function runProfileAnalysis() { if (!profileNumber.value) return; lastOperationType.value = 'profile'; profileResult.value = null; await callApi(`/analysis/number-profile?target_number=${profileNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'profile'); }
 async function runSequenceAnalysis() { if (!startDate.value) return; lastOperationType.value = 'sequence'; await callApi(`/analysis/sequence-detection?start_date=${startDate.value}&end_date=${endDate.value}`, 'standard'); }
@@ -416,13 +399,18 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
            <a :href="sheetDirectLink" target="_blank" class="gsheet-btn">📂 OUVRIR GOOGLE SHEETS</a>
         </div>
 
-        <!-- RESULTAT MATRICE -->
+        <!-- NOUVEAU RESULTAT : MATRICE AVEC ONGLET PREDICTION -->
         <div v-if="matrixResult" class="card result-spec-card" style="border-top:4px solid #ff9800;">
            <div class="spec-header">
-              <h3>🕰️ MATRICE TEMPORELLE ({{ matrixResult.mode }})</h3>
+              <h3>🕰️ MATRICE TEMPORELLE</h3>
+              <div class="tabs" style="margin:0;">
+                <button @click="matrixTab = 'analysis'" :class="{active: matrixTab === 'analysis'}">ANALYSE</button>
+                <button @click="matrixTab = 'prediction'" :class="{active: matrixTab === 'prediction'}">PRÉDICTION</button>
+              </div>
               <button @click="matrixResult = null" class="close-btn">×</button>
            </div>
            
+           <!-- ONGLET ANALYSE (HISTORIQUE) -->
            <div v-if="matrixTab === 'analysis'">
               <div class="table-responsive">
                 <table class="spec-table">
@@ -446,11 +434,13 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
               </div>
            </div>
 
+           <!-- ONGLET PREDICTION (FUTUR) -->
            <div v-else class="prediction-tab">
                <div class="best-duo-box" style="background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);">
                   <span class="duo-label">🔮 TWO SHORT POUR LE : {{ matrixResult.prediction.target_date_label }}</span>
                   <span class="duo-val">{{ matrixResult.prediction.two_short }}</span>
                </div>
+               
                <div class="ai-analysis" style="background:#e8eaf6; border-left:4px solid #3f51b5; color:#1a237e;">
                   <h4>💡 Logique d'Apprentissage :</h4>
                   <p>L'IA a identifié que les formules les plus performantes sur cette période sont :</p>
@@ -548,7 +538,7 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
           </div>
         </div>
 
-        <!-- NOUVEAU RESULTAT : PROFIL NUMERO (TABLEAU FIXÉ) -->
+        <!-- NOUVEAU RESULTAT : PROFIL NUMERO (TABLEAU) -->
         <div v-if="profileResult" class="card result-spec-card" style="border-top:4px solid #ab47bc;">
           <div class="spec-header">
             <h3>👤 PROFIL COMPLET : {{ profileResult.profile_data.number }}</h3>
@@ -565,42 +555,42 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
              <div class="sum-card">
                <h5>Top Jours</h5>
                <ul>
-                 <li v-for="x in profileResult.profile_data.top_days" :key="x.val">{{ x.val }} ({{ x.count }})</li>
+                 <li v-for="d in profileResult.profile_data.top_days" :key="d.val">{{ d.val }} ({{ d.count }})</li>
                </ul>
              </div>
              <div class="sum-card">
                <h5>Top Heures</h5>
                <ul>
-                 <li v-for="x in profileResult.profile_data.top_hours" :key="x.val">{{ x.val }} ({{ x.count }})</li>
+                 <li v-for="h in profileResult.profile_data.top_hours" :key="h.val">{{ h.val }} ({{ h.count }})</li>
                </ul>
              </div>
              <div class="sum-card">
                <h5>Top Compagnons</h5>
                <ul>
-                 <li v-for="x in profileResult.profile_data.top_companions" :key="x.val">{{ x.val }} ({{ x.count }})</li>
+                 <li v-for="c in profileResult.profile_data.top_companions" :key="c.val">{{ c.val }} ({{ c.count }})</li>
                </ul>
              </div>
           </div>
-
+          
           <div class="summary-grid">
-             <div class="sum-card">
-               <h5>Top Déclencheurs (Avant)</h5>
-               <ul>
-                 <li v-for="x in profileResult.profile_data.top_triggers" :key="x.val">{{ x.val }} ({{ x.count }})</li>
-               </ul>
-             </div>
-             <div class="sum-card">
-               <h5>Top Prophètes (Après)</h5>
-               <ul>
-                 <li v-for="x in profileResult.profile_data.top_prophets" :key="x.val">{{ x.val }} ({{ x.count }})</li>
-               </ul>
-             </div>
+              <div class="sum-card">
+                <h5>Top Déclencheurs (Avant)</h5>
+                <ul>
+                  <li v-for="t in profileResult.profile_data.top_triggers" :key="t.val">{{ t.val }} ({{ t.count }})</li>
+                </ul>
+              </div>
+              <div class="sum-card">
+                <h5>Top Prophètes (Après)</h5>
+                <ul>
+                  <li v-for="p in profileResult.profile_data.top_prophets" :key="p.val">{{ p.val }} ({{ p.count }})</li>
+                </ul>
+              </div>
           </div>
 
           <div class="ai-analysis"><h4>🧠 Analyse Expert :</h4><p>{{ profileResult.ai_strategic_profile }}</p></div>
         </div>
 
-        <!-- RESULTATS STANDARDS (TOP 10 FIXÉ) -->
+        <!-- RESULTATS STANDARDS -->
         <section v-if="standardResult" class="card results-card fade-in">
           <div class="spec-header">
              <h2>Résultat Standard</h2>
@@ -740,6 +730,8 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
   .comp-cell { color: #0277bd; font-weight: 500; }
   .trig-cell { color: #e65100; font-weight: 500; }
   .proph-cell { color: #7b1fa2; font-weight: bold; background: #f3e5f5; border-radius: 4px; padding: 2px; }
+  .blink { animation: blinker 1.5s linear infinite; }
+  @keyframes blinker { 50% { opacity: 0; } }
   
   .stats-row { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
   .badge-stat { background: #eee; padding: 5px 10px; border-radius: 20px; font-size: 0.85rem; font-weight: bold; color: #333; border: 1px solid #ccc; }
