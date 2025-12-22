@@ -1,4 +1,3 @@
-<!-- App.vue (Version 83.0 - MASTER FIDELITÉ VISUELLE) -->
 <script setup>
 import { ref, onMounted, computed } from 'vue';
 import { auth, db } from './firebase';
@@ -12,7 +11,6 @@ ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale)
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 const GOOGLE_SHEET_ID = "1HepqMzKcshKbRsLWwpEOOy5oO9ntK2CgdV7F_ijmjIo";
 
-// --- ÉTATS ---
 const user = ref(null);
 const userRole = ref('');
 const email = ref('');
@@ -23,14 +21,10 @@ const userFavorites = ref([]);
 
 const newFavoriteInput = ref('');
 const predictionNumber = ref('');
-const predictionCompanion = ref('');
-const multiPredictionInput = ref('');
 const profileNumber = ref('');
-const triggerTargetNumber = ref('');
-const triggerCompanionNumber = ref('');
-
 const selectedDayName = ref('Mercredi');
 const selectedHour = ref('Toute la journée'); 
+
 const dayAnalysisResult = ref(null); 
 const standardResult = ref(null);
 const deepFavoriteResult = ref(null);
@@ -51,7 +45,7 @@ const lastOperationType = ref('');
 const isAdmin = computed(() => userRole.value === 'admin');
 const sheetDirectLink = computed(() => `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/edit`);
 
-// --- CONFIGURATION HEADERS ---
+// --- LOGIQUE HEADERS (IDENTIQUE) ---
 const tableHeaders = computed(() => {
   if (!lastOperationType.value) return [];
   if (lastOperationType.value.includes('frequency') || lastOperationType.value === 'frequency-range') {
@@ -72,14 +66,15 @@ const tableData = computed(() => {
 });
 
 const chartData = computed(() => {
-  if (!tableData.value.length) return null;
+  const data = tableData.value;
+  if (!data || data.length === 0) return null;
   return {
-    labels: tableData.value.slice(0, 10).map(r => (r.number || r.pair || '?').toString()),
-    datasets: [{ label: 'Occurrences', backgroundColor: '#007bff', data: tableData.value.slice(0, 10).map(r => r.count) }]
+    labels: data.slice(0, 10).map(r => (r.number || r.pair || '?').toString()),
+    datasets: [{ label: 'Occurrences', backgroundColor: '#007bff', data: data.slice(0, 10).map(r => r.count) }]
   };
 });
 
-// --- ACTIONS API ---
+// --- ACTIONS API (IDENTIQUES) ---
 async function callApi(url, targetVar = 'standard') {
   isLoading.value = true; error.value = null;
   try {
@@ -143,48 +138,36 @@ async function removeFavorite(it) {
 
   <main v-else class="dashboard">
     <header>
-      <h1>LE GUIDE DES FOURCASTER <span class="version-tag">V83</span></h1>
-      <div class="user-info"><strong>{{ user.email }}</strong> <button @click="logout" class="logout-btn">Déconnexion</button></div>
+      <h1>LE GUIDE DES FOURCASTER <span class="version-tag">V81</span></h1>
+      <div class="user-info"><strong>{{ user.email }}</strong> <button @click="logout" class="logout-btn">X</button></div>
     </header>
 
     <div class="main-layout">
-      <!-- SIDEBAR D'ORIGINE RESTAURÉE -->
+      <!-- SIDEBAR (VOTRE DESIGN ORIGINAL) -->
       <div class="controls-column">
         
-        <!-- 🕰️ MATRICE TEMPORELLE -->
         <section class="card matrix-card">
           <div class="boss-header"><h2>🕰️ MATRICE TEMPORELLE</h2><span class="badge-spec" style="background:#ff9800;">PREDICTOR</span></div>
-          <div class="tabs">
-             <button @click="matrixMode = 'continuous'" :class="{ active: matrixMode === 'continuous' }">CONTINU</button>
-             <button @click="matrixMode = 'cyclic'" :class="{ active: matrixMode === 'cyclic' }">CYCLIQUE</button>
-          </div>
+          <div class="tabs"><button @click="matrixMode='continuous'" :class="{active: matrixMode==='continuous'}">CONTINU</button><button @click="matrixMode='cyclic'" :class="{active: matrixMode==='cyclic'}">CYCLIQUE</button></div>
           <div class="date-picker-row"><input type="date" v-model="startDate" /><input type="date" v-model="endDate" /></div>
           <button @click="callApi(`/analysis/time-matrix?start_date=${startDate}&end_date=${endDate}&mode=${matrixMode}`, 'matrix')" class="spec-btn" style="background:#ff9800;">ANALYSER & PRÉDIRE</button>
         </section>
 
-        <!-- 📅 ANALYSTE SPÉCIALISTE -->
         <section class="card spec-card">
           <div class="boss-header"><h2>📅 ANALYSTE SPÉCIALISTE</h2><span class="badge-spec">360°</span></div>
-          <p class="small-text">Trouvez les Habitués de chaque jour.</p>
-          <label>Jour :</label>
           <select v-model="selectedDayName"><option>Lundi</option><option>Mardi</option><option>Mercredi</option><option>Jeudi</option><option>Vendredi</option><option>Samedi</option><option>Dimanche</option></select>
           <div class="date-picker-row"><input type="date" v-model="startDate" /><input type="date" v-model="endDate" /></div>
           <button @click="callApi(`/analysis/specific-day-recurrence?day_name=${selectedDayName}&start_date=${startDate}&end_date=${endDate}`, 'specialist')" class="spec-btn">SCANNER LE JOUR</button>
         </section>
 
-        <!-- ADMIN -->
         <section v-if="isAdmin" class="card">
           <h2>Maintenance (Admin)</h2>
-          <div class="button-group-horizontal">
-            <button @click="callApi('/collection/update-recent-weeks')">MàJ Rapide</button>
-            <button @click="callApi('/collection/start-full-rebuild')" class="danger">Reconstruction</button>
-          </div>
+          <button @click="callApi('/collection/update-recent-weeks')">Mise à Jour Rapide</button>
         </section>
 
-        <!-- ⭐ MES FAVORIS -->
         <section class="card">
           <h2>⭐ Mes Numéros Favoris</h2>
-          <div class="favorites-input-group"><input type="text" v-model="newFavoriteInput" placeholder="Ex: 7 ou 12-45" /><button @click="addFavorite">Ajouter</button></div>
+          <div class="favorites-input-group"><input type="text" v-model="newFavoriteInput" /><button @click="addFavorite">Ajouter</button></div>
           <div class="favorites-list">
             <div v-for="it in userFavorites" class="favorite-chip">
               <span @click="callApi(`/analysis/deep-favorite?target=${it}&start_date=${startDate}&end_date=${endDate}`, 'deep')">{{ it }}</span>
@@ -193,52 +176,26 @@ async function removeFavorite(it) {
           </div>
         </section>
 
-        <!-- 🎨 ANALYSE VISUELLE (BATCH) -->
-        <section class="card">
-          <h2>🎨 Analyse Visuelle (Batch)</h2>
-          <div class="date-picker-row"><input type="date" v-model="startDate" /><input type="date" v-model="endDate" /></div>
-          <button @click="callApi(`/analysis/highlight-range?mode=frequency`)" style="background:#ef5350; margin-bottom:5px;">Surlignage Rouge/Bleu</button>
-          <button @click="callApi(`/analysis/highlight-range?mode=kanta`)" style="background:#66bb6a;">Surlignage Kanta</button>
-        </section>
-
-        <!-- 📊 RAPPORTS PONCTUELS -->
         <section class="card">
           <h2>📊 Rapports Ponctuels</h2>
           <input type="date" v-model="selectedDate" />
-          <button @click="lastOperationType='daily-frequency'; callApi(`/analysis/daily-frequency/${selectedDate}`)">Classement Jour (10)</button>
-          <button @click="lastOperationType='weekly-frequency'; callApi(`/analysis/weekly-frequency/${selectedDate}`)">Classement Semaine (10)</button>
+          <button @click="lastOperationType='daily-frequency'; callApi(`/analysis/daily-frequency/${selectedDate}`)">Top Jour (10)</button>
+          <button @click="lastOperationType='weekly-frequency'; callApi(`/analysis/weekly-frequency/${selectedDate}`)">Top Semaine (10)</button>
         </section>
 
-        <!-- 👤 PÉRIODE & PROFILAGE (MODIFIEE SELON CAPTURE) -->
+        <!-- SECTION PÉRIODE & PROFILAGE (CIBLE DES MODIFS) -->
         <section class="card">
           <h2>👤 Période & Profilage</h2>
           <div class="date-picker-row"><input type="date" v-model="startDate" /><input type="date" v-model="endDate" /></div>
-          <button @click="lastOperationType='frequency-range'; callApi(`/analysis/frequency-by-range?start_date=${startDate}&end_date=${endDate}`)">Fréquence sur Période</button>
+          <button @click="lastOperationType='frequency-range'; callApi(`/analysis/frequency-by-range?start_date=${startDate}&end_date=${endDate}`)">Fréquence Période</button>
           <input type="number" v-model="profileNumber" placeholder="N° profil" style="margin-top:10px;" />
-          <button @click="profileResult=null; callApi(`/analysis/number-profile?target_number=${profileNumber}&start_date=${startDate}&end_date=${endDate}`, 'profile')">Générer Profil du Numéro</button>
+          <button @click="profileResult=null; callApi(`/analysis/number-profile?target_number=${profileNumber}&start_date=${startDate}&end_date=${endDate}`, 'profile')">Générer Profil</button>
         </section>
 
-        <!-- 🔮 LE PROPHÈTE -->
         <section class="card prophet-card">
           <h2>🔮 Le Prophète</h2>
           <input type="number" v-model="predictionNumber" placeholder="Numéro vu" />
-          <button @click="lastOperationType='prediction'; callApi(`/analysis/predict-next?observed_number=${predictionNumber}&start_date=${startDate}&end_date=${endDate}`)" class="spec-btn" style="background:#7b1fa2;">Voir Futur Probable</button>
-        </section>
-
-        <!-- 🔮 ANALYSE CROISÉE -->
-        <section class="card" style="border: 2px solid #6f42c1;">
-          <h2>🔮 Analyse Croisée</h2>
-          <input type="text" v-model="multiPredictionInput" placeholder="Ex: 5 12 34" />
-          <button @click="lastOperationType='prediction'; callApi(`/analysis/multi-prediction?numbers_str=${multiPredictionInput}&start_date=${startDate}&end_date=${endDate}`)" class="spec-btn" style="background:#6f42c1;">Lancer Projection</button>
-        </section>
-
-        <!-- IA AVANCÉE & KANTA -->
-        <section class="card">
-          <h2>IA Avancée & Kanta</h2>
-          <button @click="callApi(`/analysis/sequence-detection`)">Détecter Suites</button>
-          <input type="number" v-model="triggerTargetNumber" placeholder="Cible" style="margin-top:10px;" />
-          <button @click="lastOperationType='trigger'; callApi(`/analysis/trigger-numbers?target_number=${triggerTargetNumber}&start_date=${startDate}&end_date=${endDate}`)">Trouver Déclencheurs ⚡</button>
-          <button @click="lastOperationType='kanta'; callApi(`/analysis/kanta-daily-rank/${selectedDate}`)">Rank Kanta J</button>
+          <button @click="lastOperationType='prediction'; callApi(`/analysis/predict-next?observed_number=${predictionNumber}&start_date=${startDate}&end_date=${endDate}`)" class="spec-btn" style="background:#7b1fa2;">Futur Probable</button>
         </section>
       </div>
 
@@ -246,11 +203,9 @@ async function removeFavorite(it) {
       <div class="results-column">
         <div class="quick-link-box"><a :href="sheetDirectLink" target="_blank" class="gsheet-btn">📂 OUVRIR GOOGLE SHEETS</a></div>
 
-        <!-- RAPPORT DÉTAILLÉ (SCAN / PROFIL) - EXACTEMENT SELON CAPTURE 3 -->
+        <!-- AFFICHAGE RAPPORT DÉTAILLÉ (SCAN FAVORIS & PROFIL NUMÉRO MODIFIÉ) -->
         <div v-if="deepFavoriteResult || profileResult" class="card result-spec-card" :style="{borderTopColor: profileResult ? '#ab47bc' : '#fdd835'}">
           <div class="spec-header"><h3>⭐ RAPPORT DÉTAILLÉ : {{ deepFavoriteResult?.favorite || profileResult?.profile_data.number }}</h3><button @click="deepFavoriteResult=null;profileResult=null">×</button></div>
-          
-          <!-- LES 5 MINI CARTES -->
           <div class="summary-grid">
             <div class="sum-card"><h5>Top Jours</h5><div class="mini-list">{{ (deepFavoriteResult?.summary.top_days || profileResult?.profile_data.summary.top_days).map(d=>d.val).join(', ') }}</div></div>
             <div class="sum-card"><h5>Top Heures</h5><div class="mini-list">{{ (deepFavoriteResult?.summary.top_hours || profileResult?.profile_data.summary.top_hours).map(h=>h.val).join(', ') }}</div></div>
@@ -258,8 +213,6 @@ async function removeFavorite(it) {
             <div class="sum-card"><h5>Compagnons</h5><div class="mini-list" style="color:#0277bd;">{{ (deepFavoriteResult?.summary.top_companions || profileResult?.profile_data.summary.top_companions).map(c=>c.val).join(' - ') }}</div></div>
             <div class="sum-card"><h5>Prophètes</h5><div class="mini-list" style="color:#7b1fa2;">{{ (deepFavoriteResult?.summary.top_prophets || profileResult?.profile_data.summary.top_prophets).map(p=>p.val).join(' - ') }}</div></div>
           </div>
-
-          <!-- TABLEAU HISTORIQUE -->
           <div class="table-responsive">
             <table class="spec-table">
               <thead><tr><th>Date</th><th>Heure/Jour</th><th>Déclencheur</th><th>Compagnons</th><th>Prophète</th></tr></thead>
@@ -268,18 +221,19 @@ async function removeFavorite(it) {
           </div>
         </div>
 
-        <!-- CLASSEMENTS STANDARDS AVEC SYNTHÈSE -->
+        <!-- CLASSEMENTS STANDARDS AVEC SYNTHÈSE INTÉGRÉE -->
         <section v-if="standardResult" class="card results-card fade-in">
-          <div class="spec-header"><h2>RÉSULTATS D'ANALYSE</h2><button @click="standardResult=null">×</button></div>
+          <div class="spec-header"><h2>RÉSULTATS</h2><button @click="standardResult=null">×</button></div>
           <div class="view-controls"><button @click="viewMode='table'" :class="{active: viewMode==='table'}">📋 Tableau</button><button @click="viewMode='chart'" :class="{active: viewMode==='chart'}">📊 Graphe</button></div>
-          <table v-if="viewMode==='table'" class="styled-table">
+          <div v-if="viewMode==='chart'"><Bar :data="chartData" /></div>
+          <table v-else class="styled-table">
             <thead><tr><th v-for="h in tableHeaders">{{ h }}</th></tr></thead>
             <tbody>
               <tr v-for="row in tableData">
                 <td class="num-cell">{{ row.number || row.pair }}</td><td><strong>{{ row.count }}</strong></td>
                 <td>
                   <div v-if="row.synthesis" class="summary-grid mini">
-                    <div class="sum-card"><h5>Top Jours</h5><div class="mini-list">{{ row.synthesis.top_days.join(', ') }}</div></div>
+                    <div v-if="row.synthesis.top_days" class="sum-card"><h5>Top Jours</h5><div class="mini-list">{{ row.synthesis.top_days.join(', ') }}</div></div>
                     <div class="sum-card"><h5>Top Heures</h5><div class="mini-list">{{ row.synthesis.top_hours.join(', ') }}</div></div>
                     <div class="sum-card"><h5>Déclencheurs</h5><div class="mini-list" style="color:#e65100;">{{ row.synthesis.top_triggers.join(' - ') }}</div></div>
                     <div class="sum-card"><h5>Compagnons</h5><div class="mini-list" style="color:#0277bd;">{{ row.synthesis.top_companions.join(' - ') }}</div></div>
@@ -289,12 +243,11 @@ async function removeFavorite(it) {
               </tr>
             </tbody>
           </table>
-          <div v-else class="chart-container"><Bar :data="chartData" /></div>
         </section>
 
         <div v-if="isLoading" class="loader">Analyse...</div>
         <div v-if="error" class="error-box">{{ error }}</div>
-        <div v-if="!standardResult && !matrixResult && !deepFavoriteResult && !profileResult && !isLoading" class="welcome-message"><h3>PRÊT</h3><p>Sélectionnez une fonction sur la gauche.</p></div>
+        <div v-if="!standardResult && !matrixResult && !deepFavoriteResult && !profileResult && !isLoading" class="welcome-message"><h3>PRÊT</h3><p>Sélectionnez une analyse.</p></div>
       </div>
     </div>
   </main>
@@ -305,21 +258,20 @@ async function removeFavorite(it) {
   header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #eee; margin-bottom: 20px; }
   .main-layout { display: grid; grid-template-columns: 320px 1fr; gap: 20px; }
   .controls-column { max-height: 90vh; overflow-y: auto; padding-right: 10px; }
-  .card { background: white; padding: 15px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-bottom: 15px; border: 1px solid #f0f0f0; }
+  .card { background: white; padding: 15px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-bottom: 15px; }
   .tabs { display: flex; gap: 5px; margin: 10px 0; }
-  .tabs button { flex: 1; padding: 8px; border: none; cursor: pointer; background: #eee; border-radius: 4px; font-size: 0.8rem; font-weight: bold; }
+  .tabs button { flex: 1; padding: 8px; border: none; cursor: pointer; background: #eee; border-radius: 4px; }
   .tabs button.active { background: #673ab7; color: white; }
   .spec-btn { width: 100%; padding: 10px; border-radius: 8px; color: white; cursor: pointer; font-weight: bold; margin-top: 10px; border: none; background: #00796b; }
   .date-picker-row { display: flex; gap: 5px; margin: 10px 0; }
   .date-picker-row input { flex: 1; padding: 5px; }
-  .favorite-chip { background: #e3f2fd; padding: 5px 12px; border-radius: 20px; margin: 3px; display: inline-flex; gap: 8px; border: 1px solid #bbdefb; font-weight: bold; cursor: pointer; }
   .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; margin: 15px 0; }
   .summary-grid.mini { grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 4px; }
   .sum-card { background: #f8f9fa; border: 1px solid #eee; padding: 6px; border-radius: 6px; }
   .sum-card h5 { margin: 0 0 4px; font-size: 0.6rem; text-transform: uppercase; color: #777; border-bottom: 1px solid #eee; }
   .mini-list { font-size: 0.75rem; font-weight: bold; }
   .num-cell { font-size: 1.4rem; font-weight: 900; color: #00796b; background: #f0f4f8; }
-  .gsheet-btn { background: #0f9d58; color: white; padding: 10px 20px; border-radius: 30px; text-decoration: none; font-weight: bold; display: inline-block; }
+  .gsheet-btn { background: #0f9d58; color: white; padding: 12px 24px; border-radius: 30px; text-decoration: none; font-weight: bold; display: inline-block; }
   .spec-table { width: 100%; border-collapse: collapse; }
   .spec-table th, .spec-table td { padding: 10px; border-bottom: 1px solid #eee; text-align: center; }
   .styled-table { width: 100%; border-collapse: collapse; }
