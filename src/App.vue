@@ -57,13 +57,12 @@ const sheetDirectLink = computed(() => {
   return activeSheetGid.value ? `${base}/edit#gid=${activeSheetGid.value}` : `${base}/edit`;
 });
 
-// --- MODIFICATION DES HEADERS DU TABLEAU ---
 const tableHeaders = computed(() => {
   if (!lastOperationType.value) return [];
-  if (lastOperationType.value.includes('frequency')) return ['#', 'N°', 'Sorties', 'SYNTHÈSE STRATÉGIQUE (Top 3)'];
+  if (lastOperationType.value.includes('frequency')) return ['#', 'Numéro', 'Sorties', 'Détails'];
   if (lastOperationType.value === 'companions') return ['#', 'Compagnon', 'Apparu avec'];
   if (lastOperationType.value === 'trigger') return ['#', 'N° Déclencheur', 'Fréquence'];
-  if (lastOperationType.value === 'prediction') return ['#', 'Numéro Suivant', 'Fréquence']; 
+  if (lastOperationType.value === 'prediction') return ['#', 'Numéro Suivant (Probable)', 'Fréquence']; 
   if (lastOperationType.value.includes('kanta-rank')) return ['Paire Kanta', 'Apparitions'];
   return [];
 });
@@ -194,8 +193,8 @@ async function callApi(url, targetVar = 'standard') {
 async function runDataUpdate(endpoint) { lastOperationType.value = 'update'; await callApi(`/collection/${endpoint}`, 'standard'); }
 async function runBatchVisualAnalysis(mode) { if (!startDate.value) return; lastOperationType.value = 'visual'; await callApi(`/analysis/highlight-range?start_date=${startDate.value}&end_date=${endDate.value}&mode=${mode}`, 'standard'); }
 async function runSingleDayVisual(mode) { if (!selectedDate.value) return; lastOperationType.value = 'visual'; await callApi(`/analysis/highlight-range?start_date=${selectedDate.value}&end_date=${selectedDate.value}&mode=${mode}`, 'standard'); }
-async function runReport(reportType) { if (!selectedDate.value) return; lastOperationType.value = reportType; let url = `/analysis/daily-frequency/${selectedDate.value}`; if (reportType === 'weekly-frequency') url = `/analysis/weekly-frequency/${selectedDate.value}`; else if (reportType === 'companions') url = `/analysis/companions/${selectedNumber.value}?week_date_str=${selectedDate.value}`; await callApi(url, 'standard'); }
-async function runRangeAnalysis() { if (!startDate.value) return; lastOperationType.value = 'frequency-range'; await callApi(`/analysis/frequency-by-range?start_date=${startDate.value}&end_date=${endDate.value}`, 'standard'); }
+async function runReport(reportType) { if (!selectedDate.value) return; let url = `/analysis/daily-frequency/${selectedDate.value}`; if (reportType === 'weekly-frequency') url = `/analysis/weekly-frequency/${selectedDate.value}`; else if (reportType === 'companions') url = `/analysis/companions/${selectedNumber.value}?week_date_str=${selectedDate.value}`; await callApi(url, 'standard'); }
+async function runRangeAnalysis() { if (!startDate.value) return; lastOperationType.value = 'frequency'; await callApi(`/analysis/frequency-by-range?start_date=${startDate.value}&end_date=${endDate.value}`, 'standard'); }
 async function runProfileAnalysis() { if (!profileNumber.value) return; lastOperationType.value = 'profile'; profileResult.value = null; await callApi(`/analysis/number-profile?target_number=${profileNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'profile'); }
 async function runSequenceAnalysis() { if (!startDate.value) return; lastOperationType.value = 'sequence'; await callApi(`/analysis/sequence-detection?start_date=${startDate.value}&end_date=${endDate.value}`, 'standard'); }
 async function runTriggerAnalysis() { if (!triggerTargetNumber.value) return; lastOperationType.value = 'trigger'; let url = `/analysis/trigger-numbers?target_number=${triggerTargetNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`; if (triggerCompanionNumber.value) url += `&companion_number=${triggerCompanionNumber.value}`; await callApi(url, 'standard'); }
@@ -221,7 +220,7 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
 
   <main v-else class="dashboard">
     <header>
-      <h1>LE GUIDE DES FOURCASTER <span class="version-tag">V75</span></h1>
+      <h1>LE GUIDE DES FOURCASTER <span class="version-tag">V72</span></h1>
       <div class="user-info">
         <span>Connecté : <strong>{{ user.email }}</strong></span>
         <button @click="logout" class="logout-button">Déconnexion</button>
@@ -400,7 +399,7 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
            <a :href="sheetDirectLink" target="_blank" class="gsheet-btn">📂 OUVRIR GOOGLE SHEETS</a>
         </div>
 
-        <!-- RESULTAT MATRICE -->
+        <!-- NOUVEAU RESULTAT : MATRICE AVEC ONGLET PREDICTION -->
         <div v-if="matrixResult" class="card result-spec-card" style="border-top:4px solid #ff9800;">
            <div class="spec-header">
               <h3>🕰️ MATRICE TEMPORELLE</h3>
@@ -411,6 +410,7 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
               <button @click="matrixResult = null" class="close-btn">×</button>
            </div>
            
+           <!-- ONGLET ANALYSE (HISTORIQUE) -->
            <div v-if="matrixTab === 'analysis'">
               <div class="table-responsive">
                 <table class="spec-table">
@@ -434,6 +434,7 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
               </div>
            </div>
 
+           <!-- ONGLET PREDICTION (FUTUR) -->
            <div v-else class="prediction-tab">
                <div class="best-duo-box" style="background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);">
                   <span class="duo-label">🔮 TWO SHORT POUR LE : {{ matrixResult.prediction.target_date_label }}</span>
@@ -448,6 +449,7 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
                         <strong>{{ f.name }}</strong> ({{ f.count }} Hits) - <em>Heures : {{ f.best_times }}</em>
                      </li>
                   </ul>
+                  <p>La prédiction ci-dessus applique ces formules gagnantes à la date cible (Base {{ matrixResult.prediction.target_base }}).</p>
                </div>
            </div>
         </div>
@@ -469,7 +471,7 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
               <thead><tr><th>Status</th><th>N°</th><th>Kanta</th><th>2 Compagnons (Présent)</th><th>2 Déclencheurs (Passé)</th><th>Prophète (Futur)</th></tr></thead>
               <tbody>
                 <tr v-for="row in dayAnalysisResult.recurrence_data" :key="row.number">
-                  <td style="font-size:1.2rem;">{{ row.status_icon }}</td>
+                  <td style="font-size:1.2rem;" :title="row.status_text">{{ row.status_icon }}</td>
                   <td class="num-cell">{{ row.number }}</td>
                   <td style="color:#d32f2f; font-weight:bold;">{{ row.kanta }}</td>
                   <td class="comp-cell">{{ row.best_companion }}</td>
@@ -482,7 +484,7 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
           <div class="ai-analysis"><h4>🧠 Conseil Stratégique :</h4><p>{{ dayAnalysisResult.ai_analysis }}</p></div>
         </div>
 
-        <!-- RESULTAT DEEP FAVORITE (HISTORIQUE) -->
+        <!-- RESULTAT DEEP FAVORITE (TABLEAU HISTORIQUE) -->
         <div v-if="deepFavoriteResult" class="card result-spec-card" style="border-top:4px solid #fdd835;">
           <div class="spec-header">
             <h3>⭐ SCAN PROFOND : {{ deepFavoriteResult.favorite }}</h3>
@@ -503,18 +505,27 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
 
              <div class="stats-row">
                 <span class="badge-stat">Sorties Totales : {{ deepFavoriteResult.total_hits }}</span>
+                <span class="badge-stat">Meilleur Jour : {{ deepFavoriteResult.best_day }}</span>
+                <span class="badge-stat">Meilleure Heure : {{ deepFavoriteResult.best_time }}</span>
              </div>
 
              <div class="table-responsive">
                <table class="spec-table">
                  <thead>
                    <tr>
-                     <th>Date</th><th>Jour</th><th>Heure</th><th>Déclencheur</th><th>Compagnons</th><th>Prophète</th>
+                     <th>Date</th>
+                     <th>Jour</th>
+                     <th>Heure</th>
+                     <th>Déclencheur (Avant)</th>
+                     <th>Compagnons (Avec)</th>
+                     <th>Prophète (Après)</th>
                    </tr>
                  </thead>
                  <tbody>
                    <tr v-for="(row, idx) in deepFavoriteResult.history_table" :key="idx">
-                     <td>{{ row.date }}</td><td>{{ row.day }}</td><td>{{ row.time }}</td>
+                     <td>{{ row.date }}</td>
+                     <td>{{ row.day }}</td>
+                     <td>{{ row.time }}</td>
                      <td class="trig-cell">{{ row.trigger }}</td>
                      <td class="comp-cell">{{ row.companion }}</td>
                      <td class="proph-cell">{{ row.prophet }}</td>
@@ -522,92 +533,97 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
                  </tbody>
                </table>
              </div>
+
+             <div class="ai-analysis"><h4>🧠 Stratégie Favori :</h4><p>{{ deepFavoriteResult.ai_analysis }}</p></div>
           </div>
         </div>
 
-        <!-- PROFIL NUMERO -->
+        <!-- NOUVEAU RESULTAT : PROFIL NUMERO (TABLEAU) -->
         <div v-if="profileResult" class="card result-spec-card" style="border-top:4px solid #ab47bc;">
           <div class="spec-header">
             <h3>👤 PROFIL COMPLET : {{ profileResult.profile_data.number }}</h3>
             <button @click="profileResult = null" class="close-btn">×</button>
           </div>
+          
           <div class="stats-grid">
              <div class="stat-item"><strong>Sorties Totales</strong><br>{{ profileResult.profile_data.hits }}</div>
              <div class="stat-item"><strong>Jour Favori</strong><br>{{ profileResult.profile_data.best_day }}</div>
              <div class="stat-item"><strong>Heure Favorite</strong><br>{{ profileResult.profile_data.best_time }}</div>
           </div>
+          
           <div class="summary-grid">
-             <div class="sum-card"><h5>Top Jours</h5><ul><li v-for="d in profileResult.profile_data.top_days" :key="d.val">{{ d.val }} ({{ d.count }})</li></ul></div>
-             <div class="sum-card"><h5>Top Heures</h5><ul><li v-for="h in profileResult.profile_data.top_hours" :key="h.val">{{ h.val }} ({{ h.count }})</li></ul></div>
-             <div class="sum-card"><h5>Top Compagnons</h5><ul><li v-for="c in profileResult.profile_data.top_companions" :key="c.val">{{ c.val }} ({{ c.count }})</li></ul></div>
-          </div>
-        </div>
-
-        <!-- RÉSULTATS STANDARDS ENRICHIS -->
-        <section v-if="standardResult" class="card results-card fade-in">
-          <div class="spec-header">
-             <h2>RÉSULTATS D'ANALYSE</h2>
-             <button @click="standardResult = null" class="close-btn">Fermer</button>
+             <div class="sum-card">
+               <h5>Top Jours</h5>
+               <ul>
+                 <li v-for="d in profileResult.profile_data.top_days" :key="d.val">{{ d.val }} ({{ d.count }})</li>
+               </ul>
+             </div>
+             <div class="sum-card">
+               <h5>Top Heures</h5>
+               <ul>
+                 <li v-for="h in profileResult.profile_data.top_hours" :key="h.val">{{ h.val }} ({{ h.count }})</li>
+               </ul>
+             </div>
+             <div class="sum-card">
+               <h5>Top Compagnons</h5>
+               <ul>
+                 <li v-for="c in profileResult.profile_data.top_companions" :key="c.val">{{ c.val }} ({{ c.count }})</li>
+               </ul>
+             </div>
           </div>
           
-          <div v-if="isTableVisible" class="view-controls">
-            <button @click="viewMode = 'table'" :class="{ active: viewMode === 'table' }" class="toggle-btn">📋 Tableau Stratégique</button>
+          <div class="summary-grid">
+              <div class="sum-card">
+                <h5>Top Déclencheurs (Avant)</h5>
+                <ul>
+                  <li v-for="t in profileResult.profile_data.top_triggers" :key="t.val">{{ t.val }} ({{ t.count }})</li>
+                </ul>
+              </div>
+              <div class="sum-card">
+                <h5>Top Prophètes (Après)</h5>
+                <ul>
+                  <li v-for="p in profileResult.profile_data.top_prophets" :key="p.val">{{ p.val }} ({{ p.count }})</li>
+                </ul>
+              </div>
+          </div>
+
+          <div class="ai-analysis"><h4>🧠 Analyse Expert :</h4><p>{{ profileResult.ai_strategic_profile }}</p></div>
+        </div>
+
+        <!-- RESULTATS STANDARDS -->
+        <section v-if="standardResult" class="card results-card fade-in">
+          <div class="spec-header">
+             <h2>Résultat Standard</h2>
+             <button @click="standardResult = null" class="close-btn">Fermer</button>
+          </div>
+          <div v-if="standardResult.message || standardResult.analysis_period" class="success-box large">
+            <p>✅ {{ standardResult.message || `Analyse : ${standardResult.analysis_period}` }}</p>
+          </div>
+          <div v-if="isTableVisible && !lastOperationType.includes('visual')" class="view-controls">
+            <button @click="viewMode = 'table'" :class="{ active: viewMode === 'table' }" class="toggle-btn">📋 Tableau</button>
             <button @click="viewMode = 'chart'" :class="{ active: viewMode === 'chart' }" class="toggle-btn">📊 Graphique</button>
           </div>
-
-          <div v-if="isTableVisible && viewMode === 'chart'" class="chart-container">
+          <div v-if="isTableVisible && viewMode === 'chart' && !lastOperationType.includes('visual')" class="chart-container">
             <Bar :data="chartData" :options="chartOptions" />
           </div>
-
           <table v-else-if="isTableVisible" class="styled-table">
-            <thead>
-              <tr>
-                <th style="width: 50px;">N°</th>
-                <th style="width: 80px;">Srt.</th>
-                <th>SYNTHÈSE STRATÉGIQUE (Top 3)</th>
-              </tr>
-            </thead>
+            <thead><tr><th v-for="h in tableHeaders" :key="h">{{ h }}</th></tr></thead>
             <tbody>
               <tr v-for="(row, index) in tableData" :key="index">
-                <td class="num-cell">{{ row.number }}</td>
-                <td style="font-weight:bold; font-size:1.2rem;">{{ row.count }}</td>
-                <td>
-                  <!-- GRILLE DE SYNTHÈSE STANDARDISÉE (Contextuelle) -->
-                  <div v-if="row.synthesis" class="summary-grid mini">
-                    
-                    <div v-if="row.synthesis.top_days" class="sum-card">
-                      <h5>Top Jours</h5>
-                      <div class="mini-list">{{ row.synthesis.top_days.join(', ') }}</div>
-                    </div>
-
-                    <div class="sum-card">
-                      <h5>Top Heures</h5>
-                      <div class="mini-list">{{ row.synthesis.top_hours.join(', ') }}</div>
-                    </div>
-
-                    <div class="sum-card">
-                      <h5>Déclencheurs</h5>
-                      <div class="mini-list" style="color:#e65100;">{{ row.synthesis.top_triggers.join(' - ') }}</div>
-                    </div>
-
-                    <div class="sum-card">
-                      <h5>Compagnons</h5>
-                      <div class="mini-list" style="color:#0277bd;">{{ row.synthesis.top_companions.join(' - ') }}</div>
-                    </div>
-
-                    <div class="sum-card">
-                      <h5>Prophètes</h5>
-                      <div class="mini-list" style="color:#7b1fa2;">{{ row.synthesis.top_prophets.join(' - ') }}</div>
-                    </div>
-
-                  </div>
-                  <span v-else>{{ row.details }}</span>
-                </td>
+                <td v-if="lastOperationType.includes('kanta-rank')">{{ row.pair }}</td>
+                <td v-else>#{{ index + 1 }}</td>
+                <td v-if="!lastOperationType.includes('kanta-rank')">{{ row.number }}</td>
+                <td>{{ row.count }}</td>
+                <!-- Colonne Détails ajoutée -->
+                <td v-if="row.details" style="font-size:0.8rem; color:#666;">{{ row.details }}</td>
               </tr>
             </tbody>
           </table>
-          
           <div v-if="standardResult.ai_strategic_analysis" class="ai-analysis"><h3>🧠 Stratégie</h3><p>{{ standardResult.ai_strategic_analysis }}</p></div>
+          <div v-if="standardResult.ai_strategic_profile" class="ai-analysis"><h3>🧠 Profil Numéro</h3><p>{{ standardResult.ai_strategic_profile }}</p></div>
+          <div v-if="standardResult.ai_sequence_analysis" class="ai-analysis"><h3>🧠 Suites</h3><p>{{ standardResult.ai_sequence_analysis }}</p></div>
+          <div v-if="standardResult.ai_trigger_analysis" class="ai-analysis"><h3>🧠 Déclencheurs</h3><p>{{ standardResult.ai_trigger_analysis }}</p></div>
+          <div v-if="standardResult.ai_prediction_analysis" class="ai-analysis prophet-analysis"><h3>🔮 Prédiction</h3><p>{{ standardResult.ai_prediction_analysis }}</p></div>
         </section>
 
         <div v-if="!dayAnalysisResult && !standardResult && !deepFavoriteResult && !profileResult && !matrixResult && !isLoading" class="welcome-message">
@@ -617,13 +633,14 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
         
         <div v-if="isLoading" class="loader">Analyse en cours...</div>
         <div v-if="error" class="error-box">{{ error }}</div>
+
       </div>
     </div>
   </main>
 </template>
 
 <style scoped>
-  /* STYLES GÉNÉRAUX */
+  /* STYLES CLEAN & PRO (DESIGN CLASSIQUE) */
   .loading-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; font-size: 1.5rem; color: #666; }
   .login-wrapper { display: flex; align-items: center; justify-content: center; min-height: 100vh; background-color: #f0f2f5; }
   .login-box { background: white; padding: 2.5rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
@@ -647,6 +664,7 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
   .styled-table th { background-color: #f2f2f2; }
   .ai-analysis { background-color: #fffbe6; border-left: 5px solid #ffc107; padding: 1rem; margin-top: 1rem; border-radius: 4px; }
   .success-box { background-color: #e8f5e9; color: #2e7d32; padding: 1rem; border-radius: 4px; text-align: center; }
+  .button-link { display: inline-block; padding: 0.5rem 1rem; background-color: #28a745; color: white; text-decoration: none; border-radius: 4px; margin-top: 0.5rem; }
   .view-controls { display: flex; justify-content: center; gap: 1rem; margin: 1rem 0; }
   .toggle-btn { background: #e0e0e0; color: #333; width: auto; padding: 0.5rem 1.5rem; }
   .toggle-btn.active { background: #007bff; color: white; }
@@ -665,50 +683,80 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
   hr { border: none; border-top: 1px solid #eee; margin: 1.5rem 0; }
   .prophet-card { border: 1px solid #d1c4e9; background: linear-gradient(to bottom right, #ffffff, #f3e5f5); }
   .prophet-btn { background-color: #7b1fa2; }
+  .prophet-btn:hover { background-color: #4a148c; }
+  .prophet-analysis { background-color: #f3e5f5; border-left: 5px solid #7b1fa2; }
+  .multi-prophet-card { border: 2px solid #6f42c1; background-color: #f8f0fc; }
   .multi-btn { background: linear-gradient(45deg, #6f42c1, #007bff); border: none; }
+  .multi-btn:hover { opacity: 0.9; transform: scale(1.02); }
+
   .period-label { font-size: 0.85rem; color: #666; font-weight: 500; margin-bottom: 2px; }
   .date-picker-row { display: flex; gap: 10px; margin-bottom: 10px; }
   .date-picker-row input { flex: 1; padding: 5px; font-size: 0.9rem; border: 1px solid #ccc; border-radius: 4px; }
+  .date-picker-row.mini { margin-top: 10px; margin-bottom: 5px; align-items: center; }
+  .date-picker-row.mini label { width: auto; margin: 0; font-size: 0.8rem; }
+  
   .tabs { display: flex; gap: 5px; margin-bottom: 10px; }
   .tabs button { flex: 1; padding: 8px; font-size: 0.8rem; background: #673ab7; opacity: 0.6; border: none; color: white; border-radius: 4px 4px 0 0; }
   .tabs button.active { opacity: 1; font-weight: bold; border-bottom: 2px solid white; }
 
-  /* STYLE SPÉCIALISTE & RÉSULTATS */
+  /* STYLE SPECIALISTE JOUR & DEEP SCAN */
   .spec-card { border: 1px solid #009688; border-top: 4px solid #009688; background-color: #e0f2f1; }
-  .badge-spec { background: #009688; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; }
+  .boss-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
+  .badge-spec { background: #009688; color: white; font-weight: bold; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; }
   .day-select { margin-bottom: 10px; font-weight: bold; color: #00796b; }
   .spec-btn { background: #00796b; color: white; margin-top: 10px; }
+  .spec-btn:hover { background: #004d40; }
+  
   .result-spec-card { border-top: 4px solid #009688; margin-bottom: 2rem; }
   .spec-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+  .total-badge { background: #eee; padding: 4px 8px; border-radius: 10px; font-size: 0.8rem; color: #555; }
   
-  /* GRID DE SYNTHÈSE (Version Table) */
+  /* GRID RESUME (NOUVEAU - STYLE SIMPLE) */
   .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-bottom: 15px; }
-  .summary-grid.mini { grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 5px; }
   .sum-card { background: #f8f9fa; padding: 8px; border: 1px solid #dee2e6; border-radius: 4px; }
-  .summary-grid.mini .sum-card { padding: 4px; border: 1px solid #eee; }
-  .sum-card h5 { margin: 0 0 5px 0; font-size: 0.75rem; color: #666; text-transform: uppercase; font-weight: bold; border-bottom: 1px solid #eee; }
-  .summary-grid.mini h5 { font-size: 0.65rem; margin-bottom: 2px; }
+  .sum-card h5 { margin: 0 0 5px 0; font-size: 0.75rem; color: #666; text-transform: uppercase; font-weight: bold; border-bottom: 1px solid #eee; padding-bottom: 3px; }
   .sum-card ul { list-style: none; padding: 0; margin: 0; }
   .sum-card li { font-size: 0.85rem; color: #333; font-weight: bold; }
-  .mini-list { font-size: 0.8rem; font-weight: bold; }
 
   .best-duo-box { background: linear-gradient(90deg, #ffc107, #ff9800); color: #000; padding: 10px; border-radius: 8px; margin-bottom: 15px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
+  .duo-label { text-transform: uppercase; font-size: 0.9rem; }
   .duo-val { font-size: 1.5rem; color: #d32f2f; }
   
   .table-responsive { overflow-x: auto; }
   .spec-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 0.9rem; }
-  .spec-table th { background: #009688; color: white; padding: 10px; }
+  .spec-table th { background: #009688; color: white; padding: 10px; white-space: nowrap; }
   .spec-table td { border-bottom: 1px solid #eee; padding: 8px; text-align: center; }
-  .num-cell { font-weight: bold; color: #00796b; font-size: 1.2rem; background: #f0f4f8; }
+  .num-cell { font-weight: bold; color: #00796b; font-size: 1.2rem; }
   .comp-cell { color: #0277bd; font-weight: 500; }
   .trig-cell { color: #e65100; font-weight: 500; }
-  .proph-cell { color: #7b1fa2; font-weight: bold; }
-
+  .proph-cell { color: #7b1fa2; font-weight: bold; background: #f3e5f5; border-radius: 4px; padding: 2px; }
+  .blink { animation: blinker 1.5s linear infinite; }
+  @keyframes blinker { 50% { opacity: 0; } }
+  
+  .stats-row { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
+  .badge-stat { background: #eee; padding: 5px 10px; border-radius: 20px; font-size: 0.85rem; font-weight: bold; color: #333; border: 1px solid #ccc; }
+  
   .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; text-align: center; margin-bottom: 15px; }
   .stat-item { background: #fff; padding: 10px; border-radius: 8px; border: 1px solid #eee; }
+
   .close-btn { background: transparent; border: none; color: #999; font-size: 1.5rem; cursor: pointer; width: auto; padding: 0 10px; }
-  
+  .close-btn:hover { color: #333; }
+  .fade-in { animation: fadeIn 0.5s ease-in; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* SCROLLBAR POUR LA COLONNE GAUCHE */
   .controls-column { max-height: 90vh; overflow-y: auto; padding-right: 10px; }
+  .controls-column::-webkit-scrollbar { width: 8px; }
+  .controls-column::-webkit-scrollbar-thumb { background-color: #ccc; border-radius: 4px; }
+  
   .quick-link-box { text-align: center; margin-bottom: 20px; }
-  .gsheet-btn { background: #0f9d58; color: white; padding: 10px 20px; border-radius: 30px; text-decoration: none; font-weight: bold; box-shadow: 0 4px 10px rgba(15, 157, 88, 0.3); }
+  .gsheet-btn { background: #0f9d58; color: white; padding: 10px 20px; border-radius: 30px; text-decoration: none; font-weight: bold; display: inline-block; box-shadow: 0 4px 10px rgba(15, 157, 88, 0.3); }
+  .gsheet-btn:hover { background: #0b8043; transform: scale(1.05); transition: 0.2s; }
+  
+  /* STYLE MATRICE TEMPORELLE */
+  .matrix-card { border: 2px solid #673ab7; background-color: #ede7f6; }
+  .badge-hit { background: #4caf50; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold; }
+  
+  /* PREDICTION TAB */
+  .prediction-tab { padding: 10px; background: #fff; border-radius: 8px; }
 </style>
