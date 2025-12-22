@@ -1,4 +1,4 @@
-<script setup>
+v,<script setup>
 import { ref, onMounted, computed } from 'vue';
 import { auth, db } from './firebase';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebase/auth";
