@@ -1,3 +1,4 @@
+<!-- app.vue (Version 72.5 - RESTAURATION DESIGN V72.0) -->
 <script setup>
 import { ref, onMounted, computed } from 'vue';
 import { auth, db } from './firebase';
@@ -144,12 +145,12 @@ async function runPredictionAnalysis() { await callApi(`/analysis/predict-next?o
 
   <main v-else class="dashboard">
     <header>
-      <h1>LE GUIDE DES FOURCASTER <span class="version-tag">V73 DEEP INTEL</span></h1>
+      <h1>LE GUIDE DES FOURCASTER <span class="version-tag">V72.5</span></h1>
       <div class="user-info"><span>{{ user.email }}</span><button @click="logout" class="logout-btn">Quitter</button></div>
     </header>
 
     <div class="main-layout">
-      <!-- SIDEBAR GAUCHE (RESTAURÉE) -->
+      <!-- SIDEBAR GAUCHE (V72 COMPLÉTE) -->
       <aside class="controls-column">
         <section class="card matrix-card">
           <h3>🕰️ MATRICE TEMPORELLE</h3>
@@ -188,6 +189,12 @@ async function runPredictionAnalysis() { await callApi(`/analysis/predict-next?o
           <input type="number" v-model="predictionNumber" placeholder="Numéro Vu 🔮" />
           <button @click="runPredictionAnalysis" class="btn-purple">PRÉDIRE FUTUR</button>
         </section>
+
+        <section v-if="isAdmin" class="card admin">
+          <h3>Maintenance Admin</h3>
+          <button @click="runDataUpdate('update-recent-weeks')">Mise à Jour Rapide</button>
+          <button @click="runBatchVisualAnalysis('frequency')" style="background:#ef5350; color:white;">Surlignage GSheets</button>
+        </section>
       </aside>
 
       <!-- RÉSULTATS -->
@@ -199,37 +206,53 @@ async function runPredictionAnalysis() { await callApi(`/analysis/predict-next?o
           <h3>🎯 SCAN SNIPER : {{ dayAnalysisResult.day_analyzed.toUpperCase() }}</h3>
           <div class="duo-box">DUO EN OR : {{ dayAnalysisResult.best_duo }}</div>
           <table>
-            <thead><tr><th>N°</th><th>KANTA</th><th>FRÉQ.</th><th>COMPAGNONS</th><th>PROPHÈTE</th></tr></thead>
-            <tbody><tr v-for="r in dayAnalysisResult.recurrence_data" :key="r.number"><td class="num">{{r.number}}</td><td class="kanta">{{r.kanta}}</td><td>{{r.count}}</td><td>{{r.top_companions}}</td><td class="proph">{{r.top_prophets}}</td></tr></tbody>
+            <thead><tr><th>N°</th><th>KANTA</th><th>FRÉQ.</th><th>SYNTHÈSE TOP 3 (Passé / Présent / Futur)</th></tr></thead>
+            <tbody>
+              <tr v-for="r in dayAnalysisResult.recurrence_data" :key="r.number">
+                <td class="num">{{r.number}}</td>
+                <td class="kanta">{{r.kanta}}</td>
+                <td>{{r.count}}</td>
+                <td>
+                  <div class="mini-grid">
+                    <div>⚡ {{r.top_triggers}}</div>
+                    <div>& {{r.top_companions}}</div>
+                    <div>🔮 {{r.top_prophets}}</div>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
           </table>
         </div>
 
-        <!-- DEEP FAVORITE RESULT -->
-        <div v-if="deepFavoriteResult" class="card res-card">
-          <h3>⭐ SCAN PROFOND : {{ deepFavoriteResult.favorite }}</h3>
-          <div class="summary-grid">
-             <div class="sum-card"><h5>Top Jours</h5><p>{{ deepFavoriteResult.summary.top_days.map(x=>x.val).join(', ') }}</p></div>
-             <div class="sum-card"><h5>Déclencheurs</h5><p>{{ deepFavoriteResult.summary.top_triggers.map(x=>x.val).join(', ') }}</p></div>
-             <div class="sum-card"><h5>Compagnons</h5><p>{{ deepFavoriteResult.summary.top_companions.map(x=>x.val).join(', ') }}</p></div>
-          </div>
-        </div>
-
-        <!-- CLASSEMENTS STANDARDS -->
+        <!-- CLASSEMENTS STANDARDS (V72 AVEC DEEP INTEL) -->
         <div v-if="standardResult && standardResult.results" class="card res-card">
           <h3>📊 CLASSEMENT {{ standardResult.mode }}</h3>
           <table>
-            <thead><tr><th>N°</th><th>FREQ.</th><th>SYNTHÈSE TOP 3</th></tr></thead>
-            <tbody><tr v-for="r in standardResult.results" :key="r.number">
-              <td class="num">{{r.number}}<br><small class="kanta">K:{{r.kanta}}</small></td><td>{{r.count}}</td>
-              <td>
-                <div class="mini-grid">
-                  <div>⚡ Passé : {{ r.top_triggers }}</div>
-                  <div>& Présent : {{ r.top_companions }}</div>
-                  <div>🔮 Futur : {{ r.top_prophets }}</div>
-                </div>
-              </td>
-            </tr></tbody>
+            <thead><tr><th>N°</th><th>FREQ.</th><th>SYNTHÈSE TOP 3 (Passé / Présent / Futur)</th></tr></thead>
+            <tbody>
+              <tr v-for="r in standardResult.results" :key="r.number">
+                <td class="num">{{r.number}}<br><small class="kanta">K:{{r.kanta}}</small></td>
+                <td class="bold">{{r.count}}</td>
+                <td>
+                  <div class="mini-grid">
+                    <div>⚡ Passé : {{ r.top_triggers }}</div>
+                    <div>& Présent : {{ r.top_companions }}</div>
+                    <div>🔮 Futur : {{ r.top_prophets }}</div>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
           </table>
+        </div>
+
+        <!-- FAVORITE RESULT -->
+        <div v-if="deepFavoriteResult" class="card res-card">
+           <h3>⭐ SCAN PROFOND : {{ deepFavoriteResult.favorite }}</h3>
+           <div class="summary-grid">
+              <div class="sum-card"><h5>Top Jours</h5><p>{{ deepFavoriteResult.summary.top_days.map(x=>x.val).join(', ') }}</p></div>
+              <div class="sum-card"><h5>Déclencheurs</h5><p>{{ deepFavoriteResult.summary.top_triggers.map(x=>x.val).join(', ') }}</p></div>
+              <div class="sum-card"><h5>Compagnons</h5><p>{{ deepFavoriteResult.summary.top_companions.map(x=>x.val).join(', ') }}</p></div>
+           </div>
         </div>
 
         <div v-if="isLoading" class="loader">ALGORITHMES EN COURS...</div>
@@ -239,7 +262,8 @@ async function runPredictionAnalysis() { await callApi(`/analysis/predict-next?o
 </template>
 
 <style scoped>
-.dashboard { max-width: 95%; margin: auto; padding: 20px; font-family: 'Segoe UI', sans-serif; background: #f4f7f6; min-height: 100vh; }
+/* STYLE V72 STRICT */
+.dashboard { max-width: 95%; margin: auto; padding: 20px; font-family: sans-serif; background: #f4f7f6; min-height: 100vh; }
 header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #ddd; padding-bottom: 10px; margin-bottom: 20px; }
 .main-layout { display: grid; grid-template-columns: 350px 1fr; gap: 20px; }
 .card { background: white; padding: 15px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-bottom: 15px; }
@@ -258,11 +282,12 @@ table { width: 100%; border-collapse: collapse; margin-top: 15px; }
 th { background: #eee; padding: 8px; font-size: 0.8rem; }
 td { padding: 10px; border-bottom: 1px solid #eee; text-align: center; }
 .num { font-weight: bold; font-size: 1.2rem; color: #00796b; }
+.bold { font-weight: bold; }
 .kanta { color: #d32f2f; font-weight: bold; }
-.proph { background: #f3e5f5; font-weight: bold; color: #7b1fa2; }
 .mini-grid { display: grid; gap: 3px; font-size: 0.75rem; text-align: left; }
 .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .sum-card { background: #f8f9fa; padding: 10px; border: 1px solid #dee2e6; border-radius: 4px; text-align: center; }
 .sum-card h5 { margin: 0 0 5px 0; font-size: 0.7rem; color: #888; text-transform: uppercase; }
 .loader { text-align: center; margin-top: 50px; font-size: 1.5rem; font-weight: bold; color: #999; }
+.gsheet-btn { background: #0f9d58; color: white; padding: 10px 20px; border-radius: 30px; text-decoration: none; font-weight: bold; display: inline-block; }
 </style>
