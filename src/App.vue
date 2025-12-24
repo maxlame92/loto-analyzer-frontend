@@ -21,6 +21,7 @@ const userFavorites = ref([]);
 const newFavoriteInput = ref('');
 const predictionNumber = ref('');
 const predictionCompanion = ref('');
+const multiPredictionInput = ref('');
 const profileNumber = ref('');
 const triggerTargetNumber = ref('');
 const triggerCompanionNumber = ref('');
@@ -58,7 +59,7 @@ const sheetDirectLink = computed(() => {
 
 const tableHeaders = computed(() => {
   if (!lastOperationType.value) return [];
-  if (lastOperationType.value.includes('frequency')) return ['#', 'Numéro', 'Sorties'];
+  if (lastOperationType.value.includes('frequency')) return ['#', 'Numéro', 'Sorties', 'Détails'];
   if (lastOperationType.value === 'companions') return ['#', 'Compagnon', 'Apparu avec'];
   if (lastOperationType.value === 'trigger') return ['#', 'N° Déclencheur', 'Fréquence'];
   if (lastOperationType.value === 'prediction') return ['#', 'Numéro Suivant (Probable)', 'Fréquence']; 
@@ -195,8 +196,10 @@ async function runSingleDayVisual(mode) { if (!selectedDate.value) return; lastO
 async function runReport(reportType) { if (!selectedDate.value) return; let url = `/analysis/daily-frequency/${selectedDate.value}`; if (reportType === 'weekly-frequency') url = `/analysis/weekly-frequency/${selectedDate.value}`; else if (reportType === 'companions') url = `/analysis/companions/${selectedNumber.value}?week_date_str=${selectedDate.value}`; await callApi(url, 'standard'); }
 async function runRangeAnalysis() { if (!startDate.value) return; lastOperationType.value = 'frequency'; await callApi(`/analysis/frequency-by-range?start_date=${startDate.value}&end_date=${endDate.value}`, 'standard'); }
 async function runProfileAnalysis() { if (!profileNumber.value) return; lastOperationType.value = 'profile'; profileResult.value = null; await callApi(`/analysis/number-profile?target_number=${profileNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'profile'); }
+async function runSequenceAnalysis() { if (!startDate.value) return; lastOperationType.value = 'sequence'; await callApi(`/analysis/sequence-detection?start_date=${startDate.value}&end_date=${endDate.value}`, 'standard'); }
 async function runTriggerAnalysis() { if (!triggerTargetNumber.value) return; lastOperationType.value = 'trigger'; let url = `/analysis/trigger-numbers?target_number=${triggerTargetNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`; if (triggerCompanionNumber.value) url += `&companion_number=${triggerCompanionNumber.value}`; await callApi(url, 'standard'); }
 async function runPredictionAnalysis() { if (!predictionNumber.value) return; lastOperationType.value = 'prediction'; let url = `/analysis/predict-next?observed_number=${predictionNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`; if (predictionCompanion.value) url += `&observed_companion=${predictionCompanion.value}`; await callApi(url, 'standard'); }
+async function runMultiPrediction() { if (!multiPredictionInput.value) return; lastOperationType.value = 'prediction'; await callApi(`/analysis/multi-prediction?numbers_str=${multiPredictionInput.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'standard'); }
 async function runKantaReport(reportType) { if (!selectedDate.value) return; lastOperationType.value = 'kanta-rank'; await callApi(`/analysis/kanta-${reportType}/${selectedDate.value}`, 'standard'); }
 async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/analysis/specific-day-recurrence?day_name=${selectedDayName.value}&target_hour=${selectedHour.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'specialist'); }
 </script>
@@ -217,7 +220,7 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
 
   <main v-else class="dashboard">
     <header>
-      <h1>LE GUIDE DES FOURCASTER <span class="version-tag">V80</span></h1>
+      <h1>LE GUIDE DES FOURCASTER <span class="version-tag">V72</span></h1>
       <div class="user-info">
         <span>Connecté : <strong>{{ user.email }}</strong></span>
         <button @click="logout" class="logout-button">Déconnexion</button>
@@ -289,6 +292,13 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
              <input type="date" v-model="startDate" />
              <input type="date" v-model="endDate" />
           </div>
+          
+          <label class="period-label">Contexte Visé (Optionnel) :</label>
+          <div class="date-picker-row">
+            <select v-model="favDayName" class="day-select"><option>Tous</option><option>Lundi</option><option>Mardi</option><option>Mercredi</option><option>Jeudi</option><option>Vendredi</option><option>Samedi</option><option>Dimanche</option></select>
+            <select v-model="favHour" class="day-select"><option>Toutes</option><option>10H</option><option>13H</option><option>16H</option><option>19H</option><option>21H</option><option>22H</option><option>23H</option></select>
+          </div>
+
           <div v-if="userFavorites.length > 0" class="favorites-list">
             <div v-for="item in userFavorites" :key="item" class="favorite-chip">
               <span class="fav-label">{{ item }}</span>
@@ -303,7 +313,6 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
 
         <section class="card">
           <h2>Analyse Visuelle (Batch)</h2>
-          <p class="small-text">Applique les couleurs sur toute la période choisie.</p>
           <div style="display:flex; gap:5px; margin-bottom:10px;">
              <input type="date" v-model="startDate" />
              <input type="date" v-model="endDate" />
@@ -354,12 +363,24 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
           <button @click="runPredictionAnalysis" :disabled="isLoading || !startDate || !endDate || !predictionNumber" class="prophet-btn">Voir Futur Probable</button>
         </section>
 
+        <section class="card multi-prophet-card">
+          <h2>🔮 Analyse Croisée</h2>
+          <div style="display:flex; gap:5px; margin-bottom:10px;">
+             <input type="date" v-model="startDate" />
+             <input type="date" v-model="endDate" />
+          </div>
+          <input type="text" v-model="multiPredictionInput" placeholder="Ex: 5 12 34 56 78" @keyup.enter="runMultiPrediction"/>
+          <button @click="runMultiPrediction" :disabled="isLoading || !startDate || !endDate || !multiPredictionInput" class="multi-btn">Lancer Projection</button>
+        </section>
+
         <section class="card">
           <h2>IA Avancée & Kanta</h2>
           <div style="display:flex; gap:5px; margin-bottom:10px;">
              <input type="date" v-model="startDate" />
              <input type="date" v-model="endDate" />
           </div>
+          <button @click="runSequenceAnalysis" :disabled="isLoading || !startDate || !endDate">Détecter Suites</button>
+          <hr />
           <input type="number" v-model="triggerTargetNumber" placeholder="Cible (ex: 18)" />
           <input type="number" v-model="triggerCompanionNumber" placeholder="Compagnon (Optionnel)" />
           <button @click="runTriggerAnalysis" :disabled="isLoading || !startDate || !endDate || !triggerTargetNumber">Trouver Déclencheurs ⚡</button>
@@ -416,13 +437,16 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
                   <span class="duo-label">🔮 TWO SHORT POUR LE : {{ matrixResult.prediction.target_date_label }}</span>
                   <span class="duo-val">{{ matrixResult.prediction.two_short }}</span>
                </div>
+               
                <div class="ai-analysis" style="background:#e8eaf6; border-left:4px solid #3f51b5; color:#1a237e;">
                   <h4>💡 Logique d'Apprentissage :</h4>
+                  <p>L'IA a identifié que les formules les plus performantes sur cette période sont :</p>
                   <ul>
                      <li v-for="(f, i) in matrixResult.prediction.top_formulas_rich" :key="i">
                         <strong>{{ f.name }}</strong> ({{ f.count }} Hits) - <em>Heures : {{ f.best_times }}</em>
                      </li>
                   </ul>
+                  <p>La prédiction ci-dessus applique ces formules gagnantes à la date cible (Base {{ matrixResult.prediction.target_base }}).</p>
                </div>
            </div>
         </div>
@@ -463,6 +487,7 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
             <h3>⭐ SCAN PROFOND : {{ deepFavoriteResult.favorite }}</h3>
             <button @click="deepFavoriteResult = null" class="close-btn">×</button>
           </div>
+          
           <div v-if="deepFavoriteResult.data === null">
              <p>Ce favori n'est jamais sorti sur la période.</p>
           </div>
@@ -474,45 +499,96 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
                <div class="sum-card"><h5>Top Compagnons</h5><ul><li v-for="x in deepFavoriteResult.summary.top_companions" :key="x.val">{{ x.val }} ({{x.count}})</li></ul></div>
                <div class="sum-card"><h5>Top Prophètes</h5><ul><li v-for="x in deepFavoriteResult.summary.top_prophets" :key="x.val">{{ x.val }} ({{x.count}})</li></ul></div>
              </div>
-             <div class="stats-row"><span class="badge-stat">Sorties Totales : {{ deepFavoriteResult.total_hits }}</span></div>
+
+             <div class="stats-row">
+                <span class="badge-stat">Sorties Totales : {{ deepFavoriteResult.total_hits }}</span>
+                <span class="badge-stat">Meilleur Jour : {{ deepFavoriteResult.best_day }}</span>
+                <span class="badge-stat">Meilleure Heure : {{ deepFavoriteResult.best_time }}</span>
+             </div>
+
              <div class="table-responsive">
                <table class="spec-table">
-                 <thead><tr><th>Date</th><th>Jour</th><th>Heure</th><th>Déclencheur</th><th>Compagnons</th><th>Prophète</th></tr></thead>
+                 <thead>
+                   <tr>
+                     <th>Date</th>
+                     <th>Jour</th>
+                     <th>Heure</th>
+                     <th>Déclencheur (Avant)</th>
+                     <th>Compagnons (Avec)</th>
+                     <th>Prophète (Après)</th>
+                   </tr>
+                 </thead>
                  <tbody>
                    <tr v-for="(row, idx) in deepFavoriteResult.history_table" :key="idx">
-                     <td>{{ row.date }}</td><td>{{ row.day }}</td><td>{{ row.time }}</td><td class="trig-cell">{{ row.trigger }}</td><td class="comp-cell">{{ row.companion }}</td><td class="proph-cell">{{ row.prophet }}</td>
+                     <td>{{ row.date }}</td>
+                     <td>{{ row.day }}</td>
+                     <td>{{ row.time }}</td>
+                     <td class="trig-cell">{{ row.trigger }}</td>
+                     <td class="comp-cell">{{ row.companion }}</td>
+                     <td class="proph-cell">{{ row.prophet }}</td>
                    </tr>
                  </tbody>
                </table>
              </div>
+
              <div class="ai-analysis"><h4>🧠 Stratégie Favori :</h4><p>{{ deepFavoriteResult.ai_analysis }}</p></div>
           </div>
         </div>
 
-        <!-- NOUVEAU RESULTAT : PROFIL NUMERO (TABLEAU) -->
+        <!-- NOUVEAU RESULTAT : PROFIL NUMERO (TABLEAU FIXÉ) -->
         <div v-if="profileResult" class="card result-spec-card" style="border-top:4px solid #ab47bc;">
           <div class="spec-header">
             <h3>👤 PROFIL COMPLET : {{ profileResult.profile_data.number }}</h3>
             <button @click="profileResult = null" class="close-btn">×</button>
           </div>
+          
           <div class="stats-grid">
              <div class="stat-item"><strong>Sorties Totales</strong><br>{{ profileResult.profile_data.hits }}</div>
              <div class="stat-item"><strong>Jour Favori</strong><br>{{ profileResult.profile_data.best_day }}</div>
              <div class="stat-item"><strong>Heure Favorite</strong><br>{{ profileResult.profile_data.best_time }}</div>
           </div>
+          
+          <!-- LISTES REMPLIES -->
           <div class="summary-grid">
-             <div class="sum-card"><h5>Top Jours</h5><ul><li v-for="d in profileResult.profile_data.top_days" :key="d.val">{{ d.val }} ({{ d.count }})</li></ul></div>
-             <div class="sum-card"><h5>Top Heures</h5><ul><li v-for="h in profileResult.profile_data.top_hours" :key="h.val">{{ h.val }} ({{ h.count }})</li></ul></div>
-             <div class="sum-card"><h5>Top Compagnons</h5><ul><li v-for="c in profileResult.profile_data.top_companions" :key="c.val">{{ c.val }} ({{ c.count }})</li></ul></div>
+             <div class="sum-card">
+               <h5>Top Jours</h5>
+               <ul>
+                 <li v-for="x in profileResult.profile_data.top_days" :key="x.val">{{ x.val }} ({{ x.count }})</li>
+               </ul>
+             </div>
+             <div class="sum-card">
+               <h5>Top Heures</h5>
+               <ul>
+                 <li v-for="x in profileResult.profile_data.top_hours" :key="x.val">{{ x.val }} ({{ x.count }})</li>
+               </ul>
+             </div>
+             <div class="sum-card">
+               <h5>Top Compagnons</h5>
+               <ul>
+                 <li v-for="x in profileResult.profile_data.top_companions" :key="x.val">{{ x.val }} ({{ x.count }})</li>
+               </ul>
+             </div>
           </div>
+
           <div class="summary-grid">
-              <div class="sum-card"><h5>Top Déclencheurs (Avant)</h5><ul><li v-for="t in profileResult.profile_data.top_triggers" :key="t.val">{{ t.val }} ({{ t.count }})</li></ul></div>
-              <div class="sum-card"><h5>Top Prophètes (Après)</h5><ul><li v-for="p in profileResult.profile_data.top_prophets" :key="p.val">{{ p.val }} ({{ p.count }})</li></ul></div>
+             <div class="sum-card">
+               <h5>Top Déclencheurs (Avant)</h5>
+               <ul>
+                 <li v-for="x in profileResult.profile_data.top_triggers" :key="x.val">{{ x.val }} ({{ x.count }})</li>
+               </ul>
+             </div>
+             <div class="sum-card">
+               <h5>Top Prophètes (Après)</h5>
+               <ul>
+                 <li v-for="x in profileResult.profile_data.top_prophets" :key="x.val">{{ x.val }} ({{ x.count }})</li>
+               </ul>
+             </div>
           </div>
+
           <div class="ai-analysis"><h4>🧠 Analyse Expert :</h4><p>{{ profileResult.ai_strategic_profile }}</p></div>
         </div>
 
-        <!-- RESULTATS STANDARDS -->
+        <!-- RESULTATS STANDARDS (TOP 10 FIXÉ) -->
         <section v-if="standardResult" class="card results-card fade-in">
           <div class="spec-header">
              <h2>Résultat Standard</h2>
@@ -536,10 +612,14 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
                 <td v-else>#{{ index + 1 }}</td>
                 <td v-if="!lastOperationType.includes('kanta-rank')">{{ row.number }}</td>
                 <td>{{ row.count }}</td>
+                <!-- Colonne Détails ajoutée -->
+                <td v-if="row.details" style="font-size:0.8rem; color:#666;">{{ row.details }}</td>
               </tr>
             </tbody>
           </table>
           <div v-if="standardResult.ai_strategic_analysis" class="ai-analysis"><h3>🧠 Stratégie</h3><p>{{ standardResult.ai_strategic_analysis }}</p></div>
+          <div v-if="standardResult.ai_strategic_profile" class="ai-analysis"><h3>🧠 Profil Numéro</h3><p>{{ standardResult.ai_strategic_profile }}</p></div>
+          <div v-if="standardResult.ai_sequence_analysis" class="ai-analysis"><h3>🧠 Suites</h3><p>{{ standardResult.ai_sequence_analysis }}</p></div>
           <div v-if="standardResult.ai_trigger_analysis" class="ai-analysis"><h3>🧠 Déclencheurs</h3><p>{{ standardResult.ai_trigger_analysis }}</p></div>
           <div v-if="standardResult.ai_prediction_analysis" class="ai-analysis prophet-analysis"><h3>🔮 Prédiction</h3><p>{{ standardResult.ai_prediction_analysis }}</p></div>
         </section>
@@ -654,7 +734,8 @@ async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/
   
   .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; text-align: center; margin-bottom: 15px; }
   .stat-item { background: #fff; padding: 10px; border-radius: 8px; border: 1px solid #eee; }
-  
+
+  /* GRID RESUME (NOUVEAU - STYLE SIMPLE) */
   .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-bottom: 15px; }
   .sum-card { background: #f8f9fa; padding: 8px; border: 1px solid #dee2e6; border-radius: 4px; }
   .sum-card h5 { margin: 0 0 5px 0; font-size: 0.75rem; color: #666; text-transform: uppercase; font-weight: bold; border-bottom: 1px solid #eee; padding-bottom: 3px; }
