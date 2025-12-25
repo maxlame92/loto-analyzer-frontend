@@ -29,8 +29,8 @@ const triggerCompanionNumber = ref('');
 const selectedDayName = ref('Mercredi');
 const selectedHour = ref('Toute la journée'); 
 const dayAnalysisResult = ref(null); 
-const standardResult = ref(null); // Simple table result
-const generalResult = ref(null);  // Rich card result
+const generalResult = ref(null);  // Résultat riche
+const standardResult = ref(null); // Résultat simple
 const deepFavoriteResult = ref(null);
 const profileResult = ref(null);
 const matrixResult = ref(null);
@@ -49,7 +49,7 @@ const isLoading = ref(false);
 const error = ref(null);
 const activeSheetGid = ref(null);
 const showWelcomeMessage = ref(true);
-const viewMode = ref('cards'); 
+const viewMode = ref('cards'); // 'cards' par défaut pour les résultats riches
 const lastOperationType = ref('');
 
 const isAdmin = computed(() => userRole.value === 'admin');
@@ -60,8 +60,6 @@ const sheetDirectLink = computed(() => {
 
 const tableHeaders = computed(() => {
   if (lastOperationType.value === 'simple') {
-      if (standardResult.value?.frequency_ranking) return ['#', 'Numéro', 'Sorties'];
-      if (standardResult.value?.companion_ranking) return ['#', 'Compagnon', 'Apparu avec'];
       if (standardResult.value?.trigger_numbers_ranking) return ['#', 'N° Déclencheur', 'Fréquence'];
       if (standardResult.value?.prediction_ranking) return ['#', 'Numéro Suivant', 'Fréquence']; 
       if (standardResult.value?.kanta_pairs) return ['Paire Kanta', 'Apparitions'];
@@ -70,8 +68,6 @@ const tableHeaders = computed(() => {
 });
 
 const tableData = computed(() => {
-  if (standardResult.value?.frequency_ranking) return standardResult.value.frequency_ranking;
-  if (standardResult.value?.companion_ranking) return standardResult.value.companion_ranking;
   if (standardResult.value?.trigger_numbers_ranking) return standardResult.value.trigger_numbers_ranking;
   if (standardResult.value?.prediction_ranking) return standardResult.value.prediction_ranking;
   if (standardResult.value?.kanta_pairs) return standardResult.value.kanta_pairs;
@@ -157,12 +153,10 @@ async function removeFavorite(item) {
   } catch (e) { console.error(e); }
 }
 
-// APPEL API GENÉRIQUE
 async function callApi(url, targetVar = 'general') {
   showWelcomeMessage.value = false; isLoading.value = true; error.value = null;
   if (targetVar === 'general') generalResult.value = null;
   if (targetVar === 'standard') standardResult.value = null;
-
   try {
     const token = await user.value.getIdToken();
     const headers = { 'Authorization': `Bearer ${token}` };
@@ -175,36 +169,27 @@ async function callApi(url, targetVar = 'general') {
     else if (targetVar === 'deep') deepFavoriteResult.value = data;
     else if (targetVar === 'profile') profileResult.value = data;
     else if (targetVar === 'matrix') matrixResult.value = data;
-    else if (targetVar === 'general') generalResult.value = data; // Pour les cartes riches
-    else standardResult.value = data; // Pour les tableaux simples
+    else if (targetVar === 'general') generalResult.value = data; 
+    else standardResult.value = data;
 
     if (data.worksheet_gid) activeSheetGid.value = data.worksheet_gid;
     
-    // Auto-switch view mode
     if (targetVar === 'general') viewMode.value = 'cards';
     else viewMode.value = 'table';
-
   } catch (err) { error.value = err.message; } finally { isLoading.value = false; }
 }
 
-// WRAPPERS API
 async function runDataUpdate(endpoint) { lastOperationType.value = 'update'; await callApi(`/collection/${endpoint}`, 'standard'); }
 async function runBatchVisualAnalysis(mode) { if (!startDate.value) return; lastOperationType.value = 'visual'; await callApi(`/analysis/highlight-range?start_date=${startDate.value}&end_date=${endDate.value}&mode=${mode}`, 'standard'); }
 async function runSingleDayVisual(mode) { if (!selectedDate.value) return; lastOperationType.value = 'visual'; await callApi(`/analysis/highlight-range?start_date=${selectedDate.value}&end_date=${selectedDate.value}&mode=${mode}`, 'standard'); }
 
-// CLASSEMENTS ENRICHIS (Utilise generalResult)
 async function runReport(reportType) {
   if (!selectedDate.value) return;
-  
-  if (reportType === 'daily-frequency') {
+  if (reportType === 'daily-frequency' || reportType === 'weekly-frequency') {
       lastOperationType.value = 'ranking_rich';
-      await callApi(`/analysis/daily-frequency/${selectedDate.value}`, 'general');
-  }
-  else if (reportType === 'weekly-frequency') {
-      lastOperationType.value = 'ranking_rich';
-      await callApi(`/analysis/weekly-frequency/${selectedDate.value}`, 'general');
-  }
-  else if (reportType === 'companions') { 
+      let url = reportType === 'daily-frequency' ? `/analysis/daily-frequency/${selectedDate.value}` : `/analysis/weekly-frequency/${selectedDate.value}`;
+      await callApi(url, 'general');
+  } else if (reportType === 'companions') { 
       lastOperationType.value = 'simple'; 
       await callApi(`/analysis/companions/${selectedNumber.value}?week_date_str=${selectedDate.value}`, 'standard'); 
   }
@@ -215,28 +200,16 @@ async function runRangeAnalysis() {
   await callApi(`/analysis/frequency-by-range?start_date=${startDate.value}&end_date=${endDate.value}`, 'general');
 }
 
-// FONCTIONS SPECIALES
-async function runProfileAnalysis() {
-  if (!profileNumber.value) return;
-  lastOperationType.value = 'profile';
-  profileResult.value = null;
-  await callApi(`/analysis/number-profile?target_number=${profileNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'profile');
-}
-async function analyzeDeepFavorite(item) {
-  if (!startDate.value) { alert("Vérifiez les dates."); return; }
-  deepFavoriteResult.value = null;
-  await callApi(`/analysis/deep-favorite?target=${item}&start_date=${startDate.value}&end_date=${endDate.value}&context_day=${favDayName.value}&context_hour=${favHour.value}`, 'deep');
-}
+async function runProfileAnalysis() { if (!profileNumber.value) return; lastOperationType.value = 'profile'; profileResult.value = null; await callApi(`/analysis/number-profile?target_number=${profileNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'profile'); }
+async function analyzeDeepFavorite(item) { if (!startDate.value) return; deepFavoriteResult.value = null; await callApi(`/analysis/deep-favorite?target=${item}&start_date=${startDate.value}&end_date=${endDate.value}&context_day=${favDayName.value}&context_hour=${favHour.value}`, 'deep'); }
 async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/analysis/specific-day-recurrence?day_name=${selectedDayName.value}&target_hour=${selectedHour.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'specialist'); }
 async function runTimeMatrix() { matrixResult.value = null; let url = `/analysis/time-matrix?start_date=${startDate.value}&end_date=${endDate.value}&mode=${matrixMode.value}`; if (matrixMode.value === 'cyclic') url += `&target_cyclic_day=${cyclicDay.value}`; await callApi(url, 'matrix'); }
 
-// FONCTIONS SIMPLES (Standard Table)
 async function runSequenceAnalysis() { if (!startDate.value) return; lastOperationType.value = 'simple'; await callApi(`/analysis/sequence-detection?start_date=${startDate.value}&end_date=${endDate.value}`, 'standard'); }
 async function runTriggerAnalysis() { if (!triggerTargetNumber.value) return; lastOperationType.value = 'simple'; let url = `/analysis/trigger-numbers?target_number=${triggerTargetNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`; if (triggerCompanionNumber.value) url += `&companion_number=${triggerCompanionNumber.value}`; await callApi(url, 'standard'); }
 async function runPredictionAnalysis() { if (!predictionNumber.value) return; lastOperationType.value = 'simple'; let url = `/analysis/predict-next?observed_number=${predictionNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`; if (predictionCompanion.value) url += `&observed_companion=${predictionCompanion.value}`; await callApi(url, 'standard'); }
 async function runMultiPrediction() { if (!multiPredictionInput.value) return; lastOperationType.value = 'simple'; await callApi(`/analysis/multi-prediction?numbers_str=${multiPredictionInput.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'standard'); }
 async function runKantaReport(reportType) { if (!selectedDate.value) return; lastOperationType.value = 'simple'; await callApi(`/analysis/kanta-${reportType}/${selectedDate.value}`, 'standard'); }
-
 </script>
 
 <template>
@@ -254,7 +227,7 @@ async function runKantaReport(reportType) { if (!selectedDate.value) return; las
   </div>
 
   <main v-else class="dashboard">
-    <header><h1>LE GUIDE DES FOURCASTER <span class="version-tag">V75.1</span></h1><div class="user-info"><span>{{ user.email }}</span><button @click="logout" class="logout-button">Déconnexion</button></div></header>
+    <header><h1>LE GUIDE DES FOURCASTER <span class="version-tag">V76</span></h1><div class="user-info"><span>{{ user.email }}</span><button @click="logout" class="logout-button">Déconnexion</button></div></header>
 
     <div class="main-layout">
       <!-- COLONNE GAUCHE (CONTROLS) -->
@@ -349,7 +322,7 @@ async function runKantaReport(reportType) { if (!selectedDate.value) return; las
           </div>
         </div>
 
-        <!-- 4. PROFIL NUMERO (TABLEAU FIXÉ AVEC HISTORIQUE) -->
+        <!-- 4. PROFIL NUMERO (TABLEAU FIXÉ) -->
         <div v-if="profileResult" class="card result-spec-card" style="border-top:4px solid #ab47bc;">
           <div class="spec-header"><h3>👤 PROFIL COMPLET : {{ profileResult.profile_data.number }}</h3><button @click="profileResult=null" class="close-btn">×</button></div>
           <div class="stats-grid"><div class="stat-item"><strong>Sorties</strong><br>{{ profileResult.profile_data.total_hits }}</div><div class="stat-item"><strong>Jour</strong><br>{{ profileResult.profile_data.best_day }}</div><div class="stat-item"><strong>Heure</strong><br>{{ profileResult.profile_data.best_time }}</div></div>
