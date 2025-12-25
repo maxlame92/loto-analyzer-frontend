@@ -29,8 +29,8 @@ const triggerCompanionNumber = ref('');
 const selectedDayName = ref('Mercredi');
 const selectedHour = ref('Toute la journée'); 
 const dayAnalysisResult = ref(null); 
-const standardResult = ref(null);
-const generalResult = ref(null);
+const standardResult = ref(null); // Simple table result
+const generalResult = ref(null);  // Rich card result
 const deepFavoriteResult = ref(null);
 const profileResult = ref(null);
 const matrixResult = ref(null);
@@ -49,7 +49,7 @@ const isLoading = ref(false);
 const error = ref(null);
 const activeSheetGid = ref(null);
 const showWelcomeMessage = ref(true);
-const viewMode = ref('table');
+const viewMode = ref('cards'); 
 const lastOperationType = ref('');
 
 const isAdmin = computed(() => userRole.value === 'admin');
@@ -157,23 +157,12 @@ async function removeFavorite(item) {
   } catch (e) { console.error(e); }
 }
 
-async function analyzeDeepFavorite(item) {
-  if (!startDate.value || !endDate.value) { alert("Vérifiez les dates."); return; }
-  deepFavoriteResult.value = null;
-  await callApi(`/analysis/deep-favorite?target=${item}&start_date=${startDate.value}&end_date=${endDate.value}&context_day=${favDayName.value}&context_hour=${favHour.value}`, 'deep');
-}
-
-async function runTimeMatrix() {
-  matrixResult.value = null;
-  let url = `/analysis/time-matrix?start_date=${startDate.value}&end_date=${endDate.value}&mode=${matrixMode.value}`;
-  if (matrixMode.value === 'cyclic') url += `&target_cyclic_day=${cyclicDay.value}`;
-  await callApi(url, 'matrix');
-}
-
+// APPEL API GENÉRIQUE
 async function callApi(url, targetVar = 'general') {
   showWelcomeMessage.value = false; isLoading.value = true; error.value = null;
   if (targetVar === 'general') generalResult.value = null;
   if (targetVar === 'standard') standardResult.value = null;
+
   try {
     const token = await user.value.getIdToken();
     const headers = { 'Authorization': `Bearer ${token}` };
@@ -186,20 +175,24 @@ async function callApi(url, targetVar = 'general') {
     else if (targetVar === 'deep') deepFavoriteResult.value = data;
     else if (targetVar === 'profile') profileResult.value = data;
     else if (targetVar === 'matrix') matrixResult.value = data;
-    else if (targetVar === 'general') generalResult.value = data;
-    else standardResult.value = data;
+    else if (targetVar === 'general') generalResult.value = data; // Pour les cartes riches
+    else standardResult.value = data; // Pour les tableaux simples
 
     if (data.worksheet_gid) activeSheetGid.value = data.worksheet_gid;
     
+    // Auto-switch view mode
     if (targetVar === 'general') viewMode.value = 'cards';
     else viewMode.value = 'table';
+
   } catch (err) { error.value = err.message; } finally { isLoading.value = false; }
 }
 
+// WRAPPERS API
 async function runDataUpdate(endpoint) { lastOperationType.value = 'update'; await callApi(`/collection/${endpoint}`, 'standard'); }
 async function runBatchVisualAnalysis(mode) { if (!startDate.value) return; lastOperationType.value = 'visual'; await callApi(`/analysis/highlight-range?start_date=${startDate.value}&end_date=${endDate.value}&mode=${mode}`, 'standard'); }
 async function runSingleDayVisual(mode) { if (!selectedDate.value) return; lastOperationType.value = 'visual'; await callApi(`/analysis/highlight-range?start_date=${selectedDate.value}&end_date=${selectedDate.value}&mode=${mode}`, 'standard'); }
 
+// CLASSEMENTS ENRICHIS (Utilise generalResult)
 async function runReport(reportType) {
   if (!selectedDate.value) return;
   
@@ -222,6 +215,7 @@ async function runRangeAnalysis() {
   await callApi(`/analysis/frequency-by-range?start_date=${startDate.value}&end_date=${endDate.value}`, 'general');
 }
 
+// FONCTIONS SPECIALES
 async function runProfileAnalysis() {
   if (!profileNumber.value) return;
   lastOperationType.value = 'profile';
@@ -236,6 +230,7 @@ async function analyzeDeepFavorite(item) {
 async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/analysis/specific-day-recurrence?day_name=${selectedDayName.value}&target_hour=${selectedHour.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'specialist'); }
 async function runTimeMatrix() { matrixResult.value = null; let url = `/analysis/time-matrix?start_date=${startDate.value}&end_date=${endDate.value}&mode=${matrixMode.value}`; if (matrixMode.value === 'cyclic') url += `&target_cyclic_day=${cyclicDay.value}`; await callApi(url, 'matrix'); }
 
+// FONCTIONS SIMPLES (Standard Table)
 async function runSequenceAnalysis() { if (!startDate.value) return; lastOperationType.value = 'simple'; await callApi(`/analysis/sequence-detection?start_date=${startDate.value}&end_date=${endDate.value}`, 'standard'); }
 async function runTriggerAnalysis() { if (!triggerTargetNumber.value) return; lastOperationType.value = 'simple'; let url = `/analysis/trigger-numbers?target_number=${triggerTargetNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`; if (triggerCompanionNumber.value) url += `&companion_number=${triggerCompanionNumber.value}`; await callApi(url, 'standard'); }
 async function runPredictionAnalysis() { if (!predictionNumber.value) return; lastOperationType.value = 'simple'; let url = `/analysis/predict-next?observed_number=${predictionNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`; if (predictionCompanion.value) url += `&observed_companion=${predictionCompanion.value}`; await callApi(url, 'standard'); }
@@ -259,7 +254,7 @@ async function runKantaReport(reportType) { if (!selectedDate.value) return; las
   </div>
 
   <main v-else class="dashboard">
-    <header><h1>LE GUIDE DES FOURCASTER <span class="version-tag">V76</span></h1><div class="user-info"><span>{{ user.email }}</span><button @click="logout" class="logout-button">Déconnexion</button></div></header>
+    <header><h1>LE GUIDE DES FOURCASTER <span class="version-tag">V75.1</span></h1><div class="user-info"><span>{{ user.email }}</span><button @click="logout" class="logout-button">Déconnexion</button></div></header>
 
     <div class="main-layout">
       <!-- COLONNE GAUCHE (CONTROLS) -->
@@ -385,11 +380,6 @@ async function runKantaReport(reportType) { if (!selectedDate.value) return; las
         <!-- 5. RESULTATS STANDARDS ENRICHIS (LISTE DE CARTES) -->
         <section v-if="generalResult && lastOperationType === 'ranking_rich'" class="card results-card fade-in">
           <div class="spec-header"><h2>Classement Top 10 (Deep Intelligence)</h2><button @click="generalResult=null" class="close-btn">Fermer</button></div>
-          
-          <div v-if="generalResult.data.length === 0" style="padding:20px; text-align:center; color:#666;">
-             <p>⚠️ Aucune donnée trouvée pour cette période. Vérifiez les dates ou élargissez la recherche.</p>
-          </div>
-
           <div class="ranking-list">
              <div v-for="(item, index) in generalResult.data" :key="item.number" class="rank-card">
                 <div class="rank-badge">#{{ index + 1 }}</div>
