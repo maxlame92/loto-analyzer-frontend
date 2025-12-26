@@ -199,7 +199,6 @@ async function runDataUpdate(endpoint) { lastOperationType.value = 'update'; awa
 async function runBatchVisualAnalysis(mode) { if (!startDate.value) return; lastOperationType.value = 'visual'; await callApi(`/analysis/highlight-range?start_date=${startDate.value}&end_date=${endDate.value}&mode=${mode}`, 'standard'); }
 async function runSingleDayVisual(mode) { if (!selectedDate.value) return; lastOperationType.value = 'visual'; await callApi(`/analysis/highlight-range?start_date=${selectedDate.value}&end_date=${selectedDate.value}&mode=${mode}`, 'standard'); }
 
-// CLASSEMENTS ENRICHIS (Utilise generalResult)
 async function runReport(reportType) {
   if (!selectedDate.value) return;
   
@@ -222,7 +221,6 @@ async function runRangeAnalysis() {
   await callApi(`/analysis/frequency-by-range?start_date=${startDate.value}&end_date=${endDate.value}`, 'general');
 }
 
-// FONCTIONS SPECIALES
 async function runProfileAnalysis() {
   if (!profileNumber.value) return;
   lastOperationType.value = 'profile';
@@ -231,7 +229,6 @@ async function runProfileAnalysis() {
 }
 async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/analysis/specific-day-recurrence?day_name=${selectedDayName.value}&target_hour=${selectedHour.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'specialist'); }
 
-// FONCTIONS SIMPLES
 async function runSequenceAnalysis() { if (!startDate.value) return; lastOperationType.value = 'simple'; await callApi(`/analysis/sequence-detection?start_date=${startDate.value}&end_date=${endDate.value}`, 'standard'); }
 async function runTriggerAnalysis() { if (!triggerTargetNumber.value) return; lastOperationType.value = 'simple'; let url = `/analysis/trigger-numbers?target_number=${triggerTargetNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`; if (triggerCompanionNumber.value) url += `&companion_number=${triggerCompanionNumber.value}`; await callApi(url, 'standard'); }
 async function runPredictionAnalysis() { if (!predictionNumber.value) return; lastOperationType.value = 'simple'; let url = `/analysis/predict-next?observed_number=${predictionNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`; if (predictionCompanion.value) url += `&observed_companion=${predictionCompanion.value}`; await callApi(url, 'standard'); }
@@ -255,7 +252,7 @@ async function runKantaReport(reportType) { if (!selectedDate.value) return; las
   </div>
 
   <main v-else class="dashboard">
-    <header><h1>LE GUIDE DES FOURCASTER <span class="version-tag">V78</span></h1><div class="user-info"><span>{{ user.email }}</span><button @click="logout" class="logout-button">Déconnexion</button></div></header>
+    <header><h1>LE GUIDE DES FOURCASTER <span class="version-tag">V79</span></h1><div class="user-info"><span>{{ user.email }}</span><button @click="logout" class="logout-button">Déconnexion</button></div></header>
 
     <div class="main-layout">
       <!-- COLONNE GAUCHE (CONTROLS) -->
@@ -269,7 +266,7 @@ async function runKantaReport(reportType) { if (!selectedDate.value) return; las
           </div>
         </section>
 
-        <!-- ... (Matrice, Spécialiste, Favoris, Visuel, Prophet, Multi, IA Avancée inchangés) ... -->
+        <!-- MATRICE -->
         <section class="card matrix-card">
           <div class="boss-header"><h2>🕰️ MATRICE TEMPORELLE</h2><span class="badge-spec" style="background:#ff9800;">PREDICTOR</span></div>
           <p class="small-text">Apprentissage sur la formule Date/Renversé/Kanta.</p>
@@ -279,6 +276,7 @@ async function runKantaReport(reportType) { if (!selectedDate.value) return; las
           <button @click="runTimeMatrix" :disabled="isLoading" class="spec-btn" style="background:#ff9800;">ANALYSER & PRÉDIRE</button>
         </section>
 
+        <!-- SPECIALISTE -->
         <section class="card spec-card">
           <div class="boss-header"><h2>📅 ANALYSTE SPÉCIALISTE</h2><span class="badge-spec">360°</span></div>
           <label>Jour :</label><select v-model="selectedDayName" class="day-select"><option>Lundi</option><option>Mardi</option><option>Mercredi</option><option>Jeudi</option><option>Vendredi</option><option>Samedi</option><option>Dimanche</option></select>
@@ -287,6 +285,7 @@ async function runKantaReport(reportType) { if (!selectedDate.value) return; las
           <button @click="runDayAnalysis" :disabled="isLoading" class="spec-btn">SCANNER {{ selectedDayName.toUpperCase() }}</button>
         </section>
 
+        <!-- FAVORIS -->
         <section class="card">
           <h2>⭐ Mes Numéros Favoris</h2>
           <div class="favorites-input-group"><input type="text" v-model="newFavoriteInput" placeholder="Ex: 7 ou 12-45" @keyup.enter="addFavorite"/><button @click="addFavorite" :disabled="!newFavoriteInput" class="btn-small">Ajouter</button></div>
@@ -322,6 +321,7 @@ async function runKantaReport(reportType) { if (!selectedDate.value) return; las
           <input type="number" v-model="profileNumber" placeholder="N° Profil"/><button @click="runProfileAnalysis" :disabled="isLoading||!startDate||!profileNumber">Générer Profil</button>
         </section>
 
+        <!-- Autres cartes (Prophet, Multi...) conservées -->
         <section class="card prophet-card"><h2>🔮 Le Prophète</h2><div style="display:flex; gap:5px; margin-bottom:10px;"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div><input type="number" v-model="predictionNumber" placeholder="N° vu"/><input type="number" v-model="predictionCompanion" placeholder="Compagnon"/><button @click="runPredictionAnalysis" :disabled="isLoading||!startDate||!predictionNumber" class="prophet-btn">Voir Futur</button></section>
         <section class="card multi-prophet-card"><h2>🔮 Analyse Croisée</h2><div style="display:flex; gap:5px; margin-bottom:10px;"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div><input type="text" v-model="multiPredictionInput" placeholder="Ex: 5 12 34"/><button @click="runMultiPrediction" :disabled="isLoading||!startDate||!multiPredictionInput" class="multi-btn">Lancer</button></section>
         <section class="card"><h2>IA Avancée</h2><div style="display:flex; gap:5px; margin-bottom:10px;"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div><button @click="runSequenceAnalysis" :disabled="isLoading">Suites</button><hr><input type="number" v-model="triggerTargetNumber" placeholder="Cible"/><button @click="runTriggerAnalysis" :disabled="isLoading||!triggerTargetNumber">Déclencheurs ⚡</button><hr><div class="button-group-horizontal"><button @click="runKantaReport('daily-rank')">Kanta J</button><button @click="runKantaReport('weekly-rank')">Kanta S</button></div></section>
@@ -362,18 +362,13 @@ async function runKantaReport(reportType) { if (!selectedDate.value) return; las
         <!-- 4. PROFIL NUMERO (TABLEAU FIXÉ) -->
         <div v-if="profileResult" class="card result-spec-card" style="border-top:4px solid #ab47bc;">
           <div class="spec-header"><h3>👤 PROFIL COMPLET : {{ profileResult.profile_data.number }}</h3><button @click="profileResult=null" class="close-btn">×</button></div>
-          <div class="stats-grid"><div class="stat-item"><strong>Sorties</strong><br>{{ profileResult.profile_data.total_hits }}</div><div class="stat-item"><strong>Jour</strong><br>{{ profileResult.profile_data.top_days[0]?.val }}</div><div class="stat-item"><strong>Heure</strong><br>{{ profileResult.profile_data.top_hours[0]?.val }}</div></div>
-          
-          <div class="summary-grid">
-             <div class="sum-card"><h5>Top Déclencheurs (Avant)</h5><ul><li v-for="t in profileResult.profile_data.top_triggers" :key="t.val">{{ t.val }} ({{ t.count }})</li></ul></div>
-             <div class="sum-card"><h5>Top Compagnons (Avec)</h5><ul><li v-for="c in profileResult.profile_data.top_companions" :key="c.val">{{ c.val }} ({{ c.count }})</li></ul></div>
-             <div class="sum-card"><h5>Top Prophètes (Après)</h5><ul><li v-for="p in profileResult.profile_data.top_prophets" :key="p.val">{{ p.val }} ({{ p.count }})</li></ul></div>
-          </div>
-
+          <div class="stats-grid"><div class="stat-item"><strong>Sorties</strong><br>{{ profileResult.profile_data.hits }}</div><div class="stat-item"><strong>Jour</strong><br>{{ profileResult.profile_data.best_day }}</div><div class="stat-item"><strong>Heure</strong><br>{{ profileResult.profile_data.best_time }}</div></div>
+          <div class="summary-grid"><div class="sum-card"><h5>Top Jours</h5><ul><li v-for="d in profileResult.profile_data.top_days" :key="d.val">{{ d.val }} ({{ d.count }})</li></ul></div><div class="sum-card"><h5>Top Heures</h5><ul><li v-for="h in profileResult.profile_data.top_hours" :key="h.val">{{ h.val }} ({{ h.count }})</li></ul></div><div class="sum-card"><h5>Top Compagnons</h5><ul><li v-for="c in profileResult.profile_data.top_companions" :key="c.val">{{ c.val }} ({{ c.count }})</li></ul></div></div>
+          <div class="summary-grid"><div class="sum-card"><h5>Top Déclencheurs (Avant)</h5><ul><li v-for="t in profileResult.profile_data.top_triggers" :key="t.val">{{ t.val }} ({{ t.count }})</li></ul></div><div class="sum-card"><h5>Top Prophètes (Après)</h5><ul><li v-for="p in profileResult.profile_data.top_prophets" :key="p.val">{{ p.val }} ({{ p.count }})</li></ul></div></div>
           <div class="ai-analysis"><h4>🧠 Analyse Expert :</h4><p>{{ profileResult.ai_strategic_profile }}</p></div>
         </div>
 
-        <!-- 5. RESULTATS STANDARDS ENRICHIS (LISTE DE CARTES) -->
+        <!-- 5. RESULTATS STANDARDS ENRICHIS (LISTE DE CARTES AVEC VIRGULES) -->
         <section v-if="generalResult && lastOperationType === 'ranking_rich'" class="card results-card fade-in">
           <div class="spec-header"><h2>Classement Top 10 (Deep Context)</h2><button @click="generalResult=null" class="close-btn">Fermer</button></div>
           <div class="ranking-list">
@@ -381,11 +376,11 @@ async function runKantaReport(reportType) { if (!selectedDate.value) return; las
                 <div class="rank-badge">#{{ index + 1 }}</div>
                 <div class="rank-main"><span class="rank-num">{{ item.number }}</span><span class="rank-hits">{{ item.total_hits }} Sorties</span></div>
                 <div class="rank-details">
-                   <div class="detail-col"><strong>Top Jours</strong> <span v-for="d in item.top_days" :key="d.val">{{d.val}} </span></div>
-                   <div class="detail-col"><strong>Top Heures</strong> <span v-for="h in item.top_hours" :key="h.val">{{h.val}} </span></div>
-                   <div class="detail-col red"><strong>Déclencheurs</strong> <span v-for="t in item.top_triggers" :key="t.val">{{t.val}} </span></div>
-                   <div class="detail-col blue"><strong>Compagnons</strong> <span v-for="c in item.top_companions" :key="c.val">{{c.val}} </span></div>
-                   <div class="detail-col purple"><strong>Prophètes</strong> <span v-for="p in item.top_prophets" :key="p.val">{{p.val}} </span></div>
+                   <div class="detail-col"><strong>Top Jours</strong> <span v-for="(d, i) in item.top_days" :key="d.val">{{d.val}} ({{d.count}}){{ i < item.top_days.length - 1 ? ', ' : '' }}</span></div>
+                   <div class="detail-col"><strong>Top Heures</strong> <span v-for="(h, i) in item.top_hours" :key="h.val">{{h.val}} ({{h.count}}){{ i < item.top_hours.length - 1 ? ', ' : '' }}</span></div>
+                   <div class="detail-col red"><strong>Déclencheurs</strong> <span v-for="(t, i) in item.top_triggers" :key="t.val">{{t.val}} ({{t.count}}){{ i < item.top_triggers.length - 1 ? ', ' : '' }}</span></div>
+                   <div class="detail-col blue"><strong>Compagnons</strong> <span v-for="(c, i) in item.top_companions" :key="c.val">{{c.val}} ({{c.count}}){{ i < item.top_companions.length - 1 ? ', ' : '' }}</span></div>
+                   <div class="detail-col purple"><strong>Prophètes</strong> <span v-for="(p, i) in item.top_prophets" :key="p.val">{{p.val}} ({{p.count}}){{ i < item.top_prophets.length - 1 ? ', ' : '' }}</span></div>
                 </div>
              </div>
           </div>
@@ -394,6 +389,7 @@ async function runKantaReport(reportType) { if (!selectedDate.value) return; las
         <!-- RESULTATS SIMPLES (STANDARD) -->
         <section v-if="standardResult && lastOperationType === 'simple'" class="card results-card fade-in">
           <div class="spec-header"><h2>Résultat Standard</h2><button @click="standardResult=null" class="close-btn">Fermer</button></div>
+          <div v-if="standardResult.message || standardResult.analysis_period" class="success-box large"><p>✅ {{ standardResult.message || `Analyse : ${standardResult.analysis_period}` }}</p></div>
           <div v-if="isTableVisible && !lastOperationType.includes('visual')" class="view-controls"><button @click="viewMode = 'table'" :class="{ active: viewMode === 'table' }" class="toggle-btn">📋 Tableau</button><button @click="viewMode = 'chart'" :class="{ active: viewMode === 'chart' }" class="toggle-btn">📊 Graphique</button></div>
           <div v-if="isTableVisible && viewMode === 'chart' && !lastOperationType.includes('visual')" class="chart-container"><Bar :data="chartData" :options="chartOptions" /></div>
           <table v-else-if="isTableVisible" class="styled-table">
@@ -417,7 +413,7 @@ async function runKantaReport(reportType) { if (!selectedDate.value) return; las
 </template>
 
 <style scoped>
-  /* ... (Reprenez tout le CSS V67 complet ici) ... */
+  /* ... (Copiez ici le CSS complet fourni précédemment dans V67) ... */
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
   body { font-family: 'Inter', sans-serif; background-color: #f8f9fa; color: #1e293b; }
   
