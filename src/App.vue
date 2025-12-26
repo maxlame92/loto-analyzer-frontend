@@ -29,8 +29,8 @@ const triggerCompanionNumber = ref('');
 const selectedDayName = ref('Mercredi');
 const selectedHour = ref('Toute la journée'); 
 const dayAnalysisResult = ref(null); 
-const standardResult = ref(null); // Simple table result
-const generalResult = ref(null);  // Rich card result
+const standardResult = ref(null);
+const generalResult = ref(null);  
 const deepFavoriteResult = ref(null);
 const profileResult = ref(null);
 const matrixResult = ref(null);
@@ -73,7 +73,6 @@ const tableData = computed(() => {
   if (standardResult.value?.trigger_numbers_ranking) return standardResult.value.trigger_numbers_ranking;
   if (standardResult.value?.prediction_ranking) return standardResult.value.prediction_ranking;
   if (standardResult.value?.kanta_pairs) return standardResult.value.kanta_pairs;
-  if (standardResult.value?.kanta_pairs_ranking) return standardResult.value.kanta_pairs_ranking;
   return [];
 });
 const isTableVisible = computed(() => tableData.value.length > 0);
@@ -242,7 +241,6 @@ async function runKantaReport(reportType) { if (!selectedDate.value) return; las
 </script>
 
 <template>
-  <!-- ... (Header et Login inchangés) ... -->
   <div v-if="!isAuthReady" class="loading-screen"><p>Chargement...</p></div>
   <div v-else-if="!user" class="login-wrapper">
     <div class="login-box">
@@ -257,7 +255,7 @@ async function runKantaReport(reportType) { if (!selectedDate.value) return; las
   </div>
 
   <main v-else class="dashboard">
-    <header><h1>LE GUIDE DES FOURCASTER <span class="version-tag">V77</span></h1><div class="user-info"><span>{{ user.email }}</span><button @click="logout" class="logout-button">Déconnexion</button></div></header>
+    <header><h1>LE GUIDE DES FOURCASTER <span class="version-tag">V78</span></h1><div class="user-info"><span>{{ user.email }}</span><button @click="logout" class="logout-button">Déconnexion</button></div></header>
 
     <div class="main-layout">
       <!-- COLONNE GAUCHE (CONTROLS) -->
@@ -271,7 +269,7 @@ async function runKantaReport(reportType) { if (!selectedDate.value) return; las
           </div>
         </section>
 
-        <!-- ... (Matrice, Spécialiste, Favoris, Visuel, Prophet, Multi, IA Avancée inchangés - reprendre de V76) ... -->
+        <!-- ... (Matrice, Spécialiste, Favoris, Visuel, Prophet, Multi, IA Avancée inchangés) ... -->
         <section class="card matrix-card">
           <div class="boss-header"><h2>🕰️ MATRICE TEMPORELLE</h2><span class="badge-spec" style="background:#ff9800;">PREDICTOR</span></div>
           <p class="small-text">Apprentissage sur la formule Date/Renversé/Kanta.</p>
@@ -334,7 +332,7 @@ async function runKantaReport(reportType) { if (!selectedDate.value) return; las
         
         <div class="quick-link-box"><a :href="sheetDirectLink" target="_blank" class="gsheet-btn">📂 OUVRIR GOOGLE SHEETS</a></div>
 
-        <!-- ... (Matrice, Spécialiste, Deep Favori, Profil identiques V76) ... -->
+        <!-- 1. MATRICE TEMPORELLE -->
         <div v-if="matrixResult" class="card result-spec-card" style="border-top:4px solid #ff9800;">
            <div class="spec-header"><h3>🕰️ MATRICE TEMPORELLE</h3><button @click="matrixResult=null" class="close-btn">×</button></div>
            <div v-if="matrixResult.prediction" class="prediction-tab">
@@ -344,58 +342,56 @@ async function runKantaReport(reportType) { if (!selectedDate.value) return; las
            <div class="table-responsive"><table class="spec-table"><thead><tr><th>Date</th><th>Base</th><th>Hits</th></tr></thead><tbody><tr v-for="(row, idx) in matrixResult.matrix_data" :key="idx"><td>{{ row.date }}</td><td class="num-cell">{{ row.base_number }}</td><td><div v-for="h in row.detailed_hits" :key="h.num"><span class="badge-hit">{{ h.num }}</span> ({{ h.time }} - {{ h.reason }})</div></td></tr></tbody></table></div>
         </div>
 
+        <!-- 2. SPECIALISTE JOUR -->
         <div v-if="dayAnalysisResult" class="card result-spec-card">
           <div class="spec-header"><h3>📊 TOP 5 : {{ dayAnalysisResult.day_analyzed }}</h3><button @click="dayAnalysisResult=null" class="close-btn">×</button></div>
           <div class="best-duo-box"><span class="duo-label">🔥 DUO OR :</span><span class="duo-val">{{ dayAnalysisResult.best_duo }}</span></div>
-          <div class="table-responsive"><table class="spec-table"><thead><tr><th>Stat</th><th>N°</th><th>Kanta</th><th>Compagnons</th><th>Déclencheurs</th><th>Prophète</th></tr></thead><tbody><tr v-for="row in dayAnalysisResult.recurrence_data" :key="row.number"><td style="font-size:1.2rem;">{{ row.status_icon }}</td><td class="num-cell">{{ row.number }}</td><td style="color:#d32f2f;">{{ row.kanta }}</td><td>{{ row.best_companion }}</td><td>{{ row.best_trigger }}</td><td class="proph-cell">{{ row.best_prophet }}</td></tr></tbody></table></div>
+          <div class="table-responsive"><table class="spec-table"><thead><tr><th>Stat</th><th>N°</th><th>Kanta</th><th>Compagnons</th><th>Déclencheurs</th></tr></thead><tbody><tr v-for="row in dayAnalysisResult.recurrence_data" :key="row.number"><td style="font-size:1.2rem;">{{ row.status_icon }}</td><td class="num-cell">{{ row.number }}</td><td style="color:#d32f2f;">{{ row.kanta }}</td><td>{{ row.best_companion }}</td><td>{{ row.best_trigger }}</td></tr></tbody></table></div>
         </div>
 
+        <!-- 3. DEEP FAVORITE -->
         <div v-if="deepFavoriteResult" class="card result-spec-card" style="border-top:4px solid #fdd835;">
           <div class="spec-header"><h3>⭐ SCAN PROFOND : {{ deepFavoriteResult.favorite }}</h3><button @click="deepFavoriteResult=null" class="close-btn">×</button></div>
           <div v-if="deepFavoriteResult.data===null"><p>Jamais sorti.</p></div>
           <div v-else>
-             <div class="summary-grid"><div class="sum-card"><h5>Top Jours</h5><ul><li v-for="x in deepFavoriteResult.summary.top_days">{{ x.val }} ({{x.count}})</li></ul></div><div class="sum-card"><h5>Top Heures</h5><ul><li v-for="x in deepFavoriteResult.summary.top_hours">{{ x.val }} ({{x.count}})</li></ul></div><div class="sum-card"><h5>Top Déclencheurs</h5><ul><li v-for="x in deepFavoriteResult.summary.top_triggers">{{ x.val }} ({{x.count}})</li></ul></div><div class="sum-card"><h5>Top Compagnons</h5><ul><li v-for="x in deepFavoriteResult.summary.top_companions">{{ x.val }} ({{x.count}})</li></ul></div><div class="sum-card"><h5>Top Prophètes</h5><ul><li v-for="x in deepFavoriteResult.summary.top_prophets">{{ x.val }} ({{x.count}})</li></ul></div></div>
+             <div class="summary-grid"><div class="sum-card"><h5>Top Jours</h5><ul><li v-for="x in deepFavoriteResult.summary.top_days">{{ x.val }} ({{x.count}})</li></ul></div><div class="sum-card"><h5>Top Heures</h5><ul><li v-for="x in deepFavoriteResult.summary.top_hours">{{ x.val }} ({{x.count}})</li></ul></div><div class="sum-card"><h5>Top Déclencheurs</h5><ul><li v-for="x in deepFavoriteResult.summary.top_triggers">{{ x.val }} ({{x.count}})</li></ul></div></div>
              <div class="table-responsive"><table class="spec-table"><thead><tr><th>Date</th><th>Heure</th><th>Déclencheur</th><th>Compagnons</th><th>Prophète</th></tr></thead><tbody><tr v-for="(row, idx) in deepFavoriteResult.history_table" :key="idx"><td>{{ row.date }} {{row.day}}</td><td>{{ row.time }}</td><td>{{ row.trigger }}</td><td>{{ row.companion }}</td><td>{{ row.prophet }}</td></tr></tbody></table></div>
           </div>
         </div>
 
+        <!-- 4. PROFIL NUMERO (TABLEAU FIXÉ) -->
         <div v-if="profileResult" class="card result-spec-card" style="border-top:4px solid #ab47bc;">
           <div class="spec-header"><h3>👤 PROFIL COMPLET : {{ profileResult.profile_data.number }}</h3><button @click="profileResult=null" class="close-btn">×</button></div>
-          <div class="stats-grid"><div class="stat-item"><strong>Sorties</strong><br>{{ profileResult.profile_data.hits }}</div><div class="stat-item"><strong>Jour</strong><br>{{ profileResult.profile_data.best_day }}</div><div class="stat-item"><strong>Heure</strong><br>{{ profileResult.profile_data.best_time }}</div></div>
+          <div class="stats-grid"><div class="stat-item"><strong>Sorties</strong><br>{{ profileResult.profile_data.total_hits }}</div><div class="stat-item"><strong>Jour</strong><br>{{ profileResult.profile_data.top_days[0]?.val }}</div><div class="stat-item"><strong>Heure</strong><br>{{ profileResult.profile_data.top_hours[0]?.val }}</div></div>
           
           <div class="summary-grid">
-             <div class="sum-card"><h5>Top Jours</h5><ul><li v-for="d in profileResult.profile_data.top_days" :key="d.val">{{ d.val }} ({{ d.count }})</li></ul></div>
-             <div class="sum-card"><h5>Top Heures</h5><ul><li v-for="h in profileResult.profile_data.top_hours" :key="h.val">{{ h.val }} ({{ h.count }})</li></ul></div>
-             <div class="sum-card"><h5>Top Compagnons</h5><ul><li v-for="c in profileResult.profile_data.top_companions" :key="c.val">{{ c.val }} ({{ c.count }})</li></ul></div>
+             <div class="sum-card"><h5>Top Déclencheurs (Avant)</h5><ul><li v-for="t in profileResult.profile_data.top_triggers" :key="t.val">{{ t.val }} ({{ t.count }})</li></ul></div>
+             <div class="sum-card"><h5>Top Compagnons (Avec)</h5><ul><li v-for="c in profileResult.profile_data.top_companions" :key="c.val">{{ c.val }} ({{ c.count }})</li></ul></div>
+             <div class="sum-card"><h5>Top Prophètes (Après)</h5><ul><li v-for="p in profileResult.profile_data.top_prophets" :key="p.val">{{ p.val }} ({{ p.count }})</li></ul></div>
           </div>
-          <div class="summary-grid">
-              <div class="sum-card"><h5>Top Déclencheurs</h5><ul><li v-for="t in profileResult.profile_data.top_triggers" :key="t.val">{{ t.val }} ({{ t.count }})</li></ul></div>
-              <div class="sum-card"><h5>Top Prophètes</h5><ul><li v-for="p in profileResult.profile_data.top_prophets" :key="p.val">{{ p.val }} ({{ p.count }})</li></ul></div>
-          </div>
-          <div class="table-responsive"><table class="spec-table"><thead><tr><th>Date</th><th>Heure</th><th>Déclencheur</th><th>Compagnons</th><th>Prophète</th></tr></thead><tbody><tr v-for="(row, idx) in profileResult.history_table" :key="idx"><td>{{ row.date }} {{row.day}}</td><td>{{ row.time }}</td><td>{{ row.trigger }}</td><td>{{ row.companion }}</td><td>{{ row.prophet }}</td></tr></tbody></table></div>
+
           <div class="ai-analysis"><h4>🧠 Analyse Expert :</h4><p>{{ profileResult.ai_strategic_profile }}</p></div>
         </div>
 
         <!-- 5. RESULTATS STANDARDS ENRICHIS (LISTE DE CARTES) -->
         <section v-if="generalResult && lastOperationType === 'ranking_rich'" class="card results-card fade-in">
-          <div class="spec-header"><h2>Classement Top 10 (Deep Intelligence)</h2><button @click="generalResult=null" class="close-btn">Fermer</button></div>
+          <div class="spec-header"><h2>Classement Top 10 (Deep Context)</h2><button @click="generalResult=null" class="close-btn">Fermer</button></div>
           <div class="ranking-list">
              <div v-for="(item, index) in generalResult.data" :key="item.number" class="rank-card">
                 <div class="rank-badge">#{{ index + 1 }}</div>
                 <div class="rank-main"><span class="rank-num">{{ item.number }}</span><span class="rank-hits">{{ item.total_hits }} Sorties</span></div>
                 <div class="rank-details">
-                   <div class="detail-col"><strong>Top Jours</strong> <span v-for="(d, i) in item.top_days" :key="d.val">{{d.val}}<span v-if="i<item.top_days.length-1">, </span></span></div>
-                   <div class="detail-col"><strong>Top Heures</strong> <span v-for="(h, i) in item.top_hours" :key="h.val">{{h.val}}<span v-if="i<item.top_hours.length-1">, </span></span></div>
-                   <div class="detail-col red"><strong>Déclencheurs</strong> <span v-for="(t, i) in item.top_triggers" :key="t.val">{{t.val}}<span v-if="i<item.top_triggers.length-1">, </span></span></div>
-                   <div class="detail-col blue"><strong>Compagnons</strong> <span v-for="(c, i) in item.top_companions" :key="c.val">{{c.val}}<span v-if="i<item.top_companions.length-1">, </span></span></div>
-                   <div class="detail-col purple"><strong>Prophètes</strong> <span v-for="(p, i) in item.top_prophets" :key="p.val">{{p.val}}<span v-if="i<item.top_prophets.length-1">, </span></span></div>
+                   <div class="detail-col"><strong>Top Jours</strong> <span v-for="d in item.top_days" :key="d.val">{{d.val}} </span></div>
+                   <div class="detail-col"><strong>Top Heures</strong> <span v-for="h in item.top_hours" :key="h.val">{{h.val}} </span></div>
+                   <div class="detail-col red"><strong>Déclencheurs</strong> <span v-for="t in item.top_triggers" :key="t.val">{{t.val}} </span></div>
+                   <div class="detail-col blue"><strong>Compagnons</strong> <span v-for="c in item.top_companions" :key="c.val">{{c.val}} </span></div>
+                   <div class="detail-col purple"><strong>Prophètes</strong> <span v-for="p in item.top_prophets" :key="p.val">{{p.val}} </span></div>
                 </div>
-                <button @click="profileNumber=item.number; runProfileAnalysis()" class="icon-btn" title="Voir Historique">📜</button>
              </div>
           </div>
         </section>
 
-        <!-- RESULTATS SIMPLES -->
+        <!-- RESULTATS SIMPLES (STANDARD) -->
         <section v-if="standardResult && lastOperationType === 'simple'" class="card results-card fade-in">
           <div class="spec-header"><h2>Résultat Standard</h2><button @click="standardResult=null" class="close-btn">Fermer</button></div>
           <div v-if="isTableVisible && !lastOperationType.includes('visual')" class="view-controls"><button @click="viewMode = 'table'" :class="{ active: viewMode === 'table' }" class="toggle-btn">📋 Tableau</button><button @click="viewMode = 'chart'" :class="{ active: viewMode === 'chart' }" class="toggle-btn">📊 Graphique</button></div>
@@ -421,7 +417,7 @@ async function runKantaReport(reportType) { if (!selectedDate.value) return; las
 </template>
 
 <style scoped>
-  /* ... (Tout le CSS précédent V67 + V53) ... */
+  /* ... (Reprenez tout le CSS V67 complet ici) ... */
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
   body { font-family: 'Inter', sans-serif; background-color: #f8f9fa; color: #1e293b; }
   
@@ -438,7 +434,7 @@ async function runKantaReport(reportType) { if (!selectedDate.value) return; las
   .detail-col.blue span { color: #1976d2; font-weight: bold; }
   .detail-col.purple span { color: #7b1fa2; font-weight: bold; }
 
-  /* (Copiez le reste du style : dashboard, card, table, summary-grid, etc.) */
+  /* (Reste du CSS standard : dashboard, card, table, summary-grid, etc.) */
   .dashboard { max-width: 98%; margin: 0 auto; }
   header { display: flex; justify-content: space-between; align-items: center; padding: 1.5rem; background: white; box-shadow: 0 2px 10px rgba(0,0,0,0.05); margin-bottom: 2rem; border-radius: 0 0 12px 12px; }
   h1 { font-weight: 800; color: #0f172a; margin: 0; font-size: 1.5rem; }
