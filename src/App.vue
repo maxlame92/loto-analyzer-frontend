@@ -22,8 +22,7 @@ const newFavoriteInput = ref('');
 const predictionNumber = ref('');
 const predictionCompanion = ref('');
 const profileNumber = ref('');
-const triggerTargetNumber = ref('');
-const triggerCompanionNumber = ref('');
+const triggerInput = ref(''); // NOUVEAU: Entrée unique pour trigger
 
 const selectedDayName = ref('Mercredi');
 const selectedHour = ref('Toute la journée'); 
@@ -41,6 +40,10 @@ const favHour = ref('Toutes');
 const selectedDate = ref('');
 const startDate = ref('');
 const endDate = ref('');
+// NOUVEAU : Date spécifique pour les Rapports Ponctuels
+const spotStartDate = ref('');
+const spotEndDate = ref('');
+
 const selectedNumber = ref('');
 const isLoading = ref(false);
 const error = ref(null);
@@ -100,9 +103,13 @@ onMounted(() => {
   const day = today.getDate().toString().padStart(2, '0');
   selectedDate.value = `${year}-${month}-${day}`;
   endDate.value = `${year}-${month}-${day}`;
+  spotEndDate.value = `${year}-${month}-${day}`; // Init spot end date
+  
   const oneMonthAgo = new Date();
   oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
-  startDate.value = `${oneMonthAgo.getFullYear()}-${(oneMonthAgo.getMonth()+1).toString().padStart(2,'0')}-${oneMonthAgo.getDate().toString().padStart(2,'0')}`;
+  const startStr = `${oneMonthAgo.getFullYear()}-${(oneMonthAgo.getMonth()+1).toString().padStart(2,'0')}-${oneMonthAgo.getDate().toString().padStart(2,'0')}`;
+  startDate.value = startStr;
+  spotStartDate.value = startStr; // Init spot start date
 
   onAuthStateChanged(auth, async (firebaseUser) => {
     if (firebaseUser) {
@@ -190,7 +197,13 @@ async function callApi(url, targetVar = 'standard') {
 
 async function runDataUpdate(endpoint) { lastOperationType.value = 'update'; await callApi(`/collection/${endpoint}`, 'standard'); }
 async function runBatchVisualAnalysis(mode) { if (!startDate.value) return; lastOperationType.value = 'visual'; await callApi(`/analysis/highlight-range?start_date=${startDate.value}&end_date=${endDate.value}&mode=${mode}`, 'standard'); }
-async function runSingleDayVisual(mode) { if (!selectedDate.value) return; lastOperationType.value = 'visual'; await callApi(`/analysis/highlight-range?start_date=${selectedDate.value}&end_date=${selectedDate.value}&mode=${mode}`, 'standard'); }
+
+// NOUVEAU: Surlignage Période "Rapports Ponctuels"
+async function runSpotVisualAnalysis(mode) { 
+  if (!spotStartDate.value || !spotEndDate.value) { error.value = "Période requise."; return; }
+  lastOperationType.value = 'visual'; 
+  await callApi(`/analysis/highlight-range?start_date=${spotStartDate.value}&end_date=${spotEndDate.value}&mode=${mode}`, 'standard'); 
+}
 
 async function runReport(reportType) {
   if (!selectedDate.value) return;
@@ -221,7 +234,25 @@ async function runProfileAnalysis() {
 }
 async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/analysis/specific-day-recurrence?day_name=${selectedDayName.value}&target_hour=${selectedHour.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'specialist'); }
 
-async function runTriggerAnalysis() { if (!triggerTargetNumber.value) return; lastOperationType.value = 'simple'; let url = `/analysis/trigger-numbers?target_number=${triggerTargetNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`; if (triggerCompanionNumber.value) url += `&companion_number=${triggerCompanionNumber.value}`; await callApi(url, 'standard'); }
+// NOUVEAU: Trigger Flexible (1 ou 2 chiffres)
+async function runTriggerAnalysis() { 
+  if (!triggerInput.value) return; 
+  lastOperationType.value = 'simple'; 
+  
+  let target = '';
+  let companion = '';
+  
+  // Analyse de l'entrée (ex: "12-14" ou "12 14" ou "12")
+  const parts = triggerInput.value.replace(/[^0-9]/g, ' ').trim().split(/\s+/);
+  if (parts.length > 0) target = parts[0];
+  if (parts.length > 1) companion = parts[1];
+
+  let url = `/analysis/trigger-numbers?target_number=${target}&start_date=${startDate.value}&end_date=${endDate.value}`; 
+  if (companion) url += `&companion_number=${companion}`; 
+  
+  await callApi(url, 'standard'); 
+}
+
 async function runPredictionAnalysis() { if (!predictionNumber.value) return; lastOperationType.value = 'simple'; let url = `/analysis/predict-next?observed_number=${predictionNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`; if (predictionCompanion.value) url += `&observed_companion=${predictionCompanion.value}`; await callApi(url, 'standard'); }
 async function runKantaReport(reportType) { if (!selectedDate.value) return; lastOperationType.value = 'simple'; await callApi(`/analysis/kanta-${reportType}/${selectedDate.value}`, 'standard'); }
 
@@ -242,7 +273,7 @@ async function runKantaReport(reportType) { if (!selectedDate.value) return; las
   </div>
 
   <main v-else class="dashboard">
-    <header><h1>LE GUIDE DES FOURCASTER <span class="version-tag">V82</span></h1><div class="user-info"><span>{{ user.email }}</span><button @click="logout" class="logout-button">Déconnexion</button></div></header>
+    <header><h1>LE GUIDE DES FOURCASTER <span class="version-tag">V83</span></h1><div class="user-info"><span>{{ user.email }}</span><button @click="logout" class="logout-button">Déconnexion</button></div></header>
 
     <div class="main-layout">
       <!-- CONTROLS -->
@@ -257,15 +288,47 @@ async function runKantaReport(reportType) { if (!selectedDate.value) return; las
         
         <section class="card"><h2>Analyse Visuelle</h2><div style="display:flex; gap:5px; margin-bottom:10px;"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div><div class="button-group-vertical"><button @click="runBatchVisualAnalysis('frequency')" :disabled="isLoading||!startDate" style="background:#ef5350;">Rouge/Bleu (Période)</button><button @click="runBatchVisualAnalysis('kanta')" :disabled="isLoading||!startDate" style="background:#66bb6a;">Kanta (Période)</button></div></section>
         
-        <section class="card"><h2>Rapports Ponctuels</h2><input type="date" v-model="selectedDate"/><div class="button-group-vertical" style="margin-top:10px;"><button @click="runSingleDayVisual('frequency')" :disabled="isLoading||!selectedDate" style="border:1px solid #ef5350; background:transparent; color:#d32f2f;">🎨 Surlignage Jour</button><button @click="runSingleDayVisual('kanta')" :disabled="isLoading||!selectedDate" style="border:1px solid #66bb6a; background:transparent; color:#388e3c;">🎨 Surlignage Kanta</button></div><hr><div class="button-group-vertical"><button @click="runReport('daily-frequency')" :disabled="isLoading||!selectedDate">Classement Jour (Top 10)</button><button @click="runReport('weekly-frequency')" :disabled="isLoading||!selectedDate">Classement Semaine (Top 10)</button><hr><input type="number" v-model="selectedNumber" placeholder="N° Compagnons"/><button @click="runReport('companions')" :disabled="isLoading||!selectedDate||!selectedNumber">Analyser Compagnons</button></div></section>
+        <!-- RAPPORTS PONCTUELS (MODIFIE) -->
+        <section class="card">
+          <h2>Rapports Ponctuels</h2>
+          
+          <label style="font-weight:bold; font-size:0.8rem;">Période Surlignage & Kanta :</label>
+          <div class="date-picker-row">
+             <input type="date" v-model="spotStartDate"/>
+             <input type="date" v-model="spotEndDate"/>
+          </div>
+          <div class="button-group-vertical" style="margin-top:5px; margin-bottom:15px;">
+             <button @click="runSpotVisualAnalysis('frequency')" :disabled="isLoading||!spotStartDate" style="border:1px solid #ef5350; background:transparent; color:#d32f2f;">🎨 Surlignage (Période)</button>
+             <button @click="runSpotVisualAnalysis('kanta')" :disabled="isLoading||!spotStartDate" style="border:1px solid #66bb6a; background:transparent; color:#388e3c;">🎨 Surlignage Kanta (Période)</button>
+          </div>
+          
+          <hr>
+          <label style="font-weight:bold; font-size:0.8rem;">Date Classement :</label>
+          <input type="date" v-model="selectedDate"/>
+          <div class="button-group-vertical">
+            <button @click="runReport('daily-frequency')" :disabled="isLoading||!selectedDate">Classement Jour (Top 10)</button>
+            <button @click="runReport('weekly-frequency')" :disabled="isLoading||!selectedDate">Classement Semaine (Top 10)</button>
+            <hr>
+            <input type="number" v-model="selectedNumber" placeholder="N° Compagnons"/><button @click="runReport('companions')" :disabled="isLoading||!selectedDate||!selectedNumber">Analyser Compagnons</button>
+          </div>
+        </section>
         
         <section class="card"><h2>Période & Profilage</h2><div style="display:flex; gap:5px; margin-bottom:10px;"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div><button @click="runRangeAnalysis" :disabled="isLoading||!startDate">Fréquence Période (Top 10)</button><hr><input type="number" v-model="profileNumber" placeholder="N° Profil"/><button @click="runProfileAnalysis" :disabled="isLoading||!startDate||!profileNumber">Générer Profil</button></section>
         
         <section class="card prophet-card"><h2>🔮 Le Prophète</h2><div style="display:flex; gap:5px; margin-bottom:10px;"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div><input type="number" v-model="predictionNumber" placeholder="N° vu"/><input type="number" v-model="predictionCompanion" placeholder="Compagnon"/><button @click="runPredictionAnalysis" :disabled="isLoading||!startDate||!predictionNumber" class="prophet-btn">Voir Futur</button></section>
-        <section class="card"><h2>IA Avancée</h2><div style="display:flex; gap:5px; margin-bottom:10px;"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div><input type="number" v-model="triggerTargetNumber" placeholder="Cible"/><button @click="runTriggerAnalysis" :disabled="isLoading||!triggerTargetNumber">Déclencheurs ⚡</button><hr><div class="button-group-horizontal"><button @click="runKantaReport('daily-rank')">Kanta J</button><button @click="runKantaReport('weekly-rank')">Kanta S</button></div></section>
+        
+        <!-- IA AVANCEE (NETTOYEE & DECLENCHEUR FLEXIBLE) -->
+        <section class="card">
+           <h2>IA Avancée</h2>
+           <div style="display:flex; gap:5px; margin-bottom:10px;"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div>
+           <input type="text" v-model="triggerInput" placeholder="Cible (ex: 18 ou 12-45)"/>
+           <button @click="runTriggerAnalysis" :disabled="isLoading||!triggerInput">Déclencheurs ⚡</button>
+           <hr>
+           <div class="button-group-horizontal"><button @click="runKantaReport('daily-rank')">Classement Kanta J</button><button @click="runKantaReport('weekly-rank')">Classement Kanta S</button></div>
+        </section>
       </div>
 
-      <!-- RESULTS -->
+      <!-- RESULTS (UNCHANGED BUT INCLUDED FOR COMPLETENESS) -->
       <div class="results-column">
         <div class="quick-link-box"><a :href="sheetDirectLink" target="_blank" class="gsheet-btn">📂 OUVRIR GOOGLE SHEETS</a></div>
 
@@ -323,7 +386,8 @@ async function runKantaReport(reportType) { if (!selectedDate.value) return; las
 </template>
 
 <style scoped>
-/* POLICE D'ORIGINE & STYLE PREMIUM */
+/* COPIEZ EXACTEMENT LE STYLE "PREMIUM" FOURNI DANS LA REPONSE PRECEDENTE */
+/* JE LE REMETS ICI POUR ETRE SUR QUE VOUS AVEZ TOUT */
 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;800&family=Roboto:wght@400;500;700&display=swap');
 
 :root {
