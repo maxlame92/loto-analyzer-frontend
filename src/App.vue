@@ -35,7 +35,6 @@ const profileResult = ref(null);
 const matrixResult = ref(null);
 
 const matrixMode = ref('continuous'); 
-const matrixTab = ref('analysis');
 const cyclicDay = ref(1);
 const favDayName = ref('Tous');
 const favHour = ref('Toutes');
@@ -73,7 +72,7 @@ const tableData = computed(() => {
   if (standardResult.value?.trigger_numbers_ranking) return standardResult.value.trigger_numbers_ranking;
   if (standardResult.value?.prediction_ranking) return standardResult.value.prediction_ranking;
   if (standardResult.value?.kanta_pairs) return standardResult.value.kanta_pairs;
-  if (standardResult.value?.kanta_pairs_ranking) return standardResult.value.kanta_pairs_ranking;
+  if (standardResult.value?.data) return standardResult.value.data;
   return [];
 });
 const isTableVisible = computed(() => tableData.value.length > 0);
@@ -89,7 +88,7 @@ const chartData = computed(() => {
     else if (row.number) labels.push(row.number.toString());
     else if (row.companion) labels.push(row.companion.toString());
     else labels.push('?');
-    counts.push(row.count);
+    counts.push(row.count || row.total_hits);
   });
   return { labels, datasets: [{ label: 'Occurrences', backgroundColor: '#007bff', borderRadius: 4, data: counts }] };
 });
@@ -246,87 +245,34 @@ async function runKantaReport(reportType) { if (!selectedDate.value) return; las
   </div>
 
   <main v-else class="dashboard">
-    <header><h1>LE GUIDE DES FOURCASTER <span class="version-tag">V80</span></h1><div class="user-info"><span>{{ user.email }}</span><button @click="logout" class="logout-button">Déconnexion</button></div></header>
+    <header><h1>LE GUIDE DES FOURCASTER <span class="version-tag">V81</span></h1><div class="user-info"><span>{{ user.email }}</span><button @click="logout" class="logout-button">Déconnexion</button></div></header>
 
     <div class="main-layout">
-      <!-- COLONNE GAUCHE (CONTROLS) -->
+      <!-- CONTROLS -->
       <div class="controls-column">
+        <section v-if="isAdmin" class="card data-update"><h2>Maintenance</h2><div class="button-group-horizontal"><button @click="runDataUpdate('update-recent-weeks')" :disabled="isLoading">Mise à Jour</button><button @click="runDataUpdate('start-full-rebuild')" :disabled="isLoading" class="danger">Rebuild</button></div></section>
         
-        <section v-if="isAdmin" class="card data-update">
-          <h2>Maintenance (Admin)</h2>
-          <div class="button-group-horizontal">
-            <button @click="runDataUpdate('update-recent-weeks')" :disabled="isLoading">Mise à Jour Rapide</button>
-            <button @click="runDataUpdate('start-full-rebuild')" :disabled="isLoading" class="danger">Reconstruction</button>
-          </div>
-        </section>
-
-        <!-- MATRICE -->
-        <section class="card matrix-card">
-          <div class="boss-header"><h2>🕰️ MATRICE TEMPORELLE</h2><span class="badge-spec" style="background:#ff9800;">PREDICTOR</span></div>
-          <p class="small-text">Apprentissage sur la formule Date/Renversé/Kanta.</p>
-          <div class="tabs"><button @click="matrixMode='continuous'" :class="{active: matrixMode==='continuous'}">CONTINU</button><button @click="matrixMode='cyclic'" :class="{active: matrixMode==='cyclic'}">CYCLIQUE</button></div>
-          <div v-if="matrixMode==='cyclic'" style="margin-bottom:10px;"><label>Jour (1-31):</label><input type="number" v-model="cyclicDay" min="1" max="31"/></div>
-          <div class="date-picker-row"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div>
-          <button @click="runTimeMatrix" :disabled="isLoading" class="spec-btn" style="background:#ff9800;">ANALYSER & PRÉDIRE</button>
-        </section>
-
-        <!-- SPECIALISTE -->
-        <section class="card spec-card">
-          <div class="boss-header"><h2>📅 ANALYSTE SPÉCIALISTE</h2><span class="badge-spec">360°</span></div>
-          <label>Jour :</label><select v-model="selectedDayName" class="day-select"><option>Lundi</option><option>Mardi</option><option>Mercredi</option><option>Jeudi</option><option>Vendredi</option><option>Samedi</option><option>Dimanche</option></select>
-          <label>Heure :</label><select v-model="selectedHour" class="day-select"><option>Toute la journée</option><option>01H</option><option>03H</option><option>07H</option><option>08H</option><option>10H</option><option>13H</option><option>16H</option><option>19H</option><option>21H</option><option>22H</option><option>23H</option></select>
-          <div class="date-picker-row"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div>
-          <button @click="runDayAnalysis" :disabled="isLoading" class="spec-btn">SCANNER {{ selectedDayName.toUpperCase() }}</button>
-        </section>
-
-        <!-- FAVORIS -->
-        <section class="card">
-          <h2>⭐ Mes Numéros Favoris</h2>
-          <div class="favorites-input-group"><input type="text" v-model="newFavoriteInput" placeholder="Ex: 7 ou 12-45" @keyup.enter="addFavorite"/><button @click="addFavorite" :disabled="!newFavoriteInput" class="btn-small">Ajouter</button></div>
-          <div style="display:flex; gap:5px; margin-bottom:10px;"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div>
-          <div class="date-picker-row"><select v-model="favDayName" class="day-select"><option>Tous</option><option>Lundi</option><option>Mardi</option><option>Mercredi</option><option>Jeudi</option><option>Vendredi</option><option>Samedi</option><option>Dimanche</option></select><select v-model="favHour" class="day-select"><option>Toutes</option><option>10H</option><option>13H</option><option>16H</option><option>19H</option><option>21H</option><option>22H</option><option>23H</option></select></div>
-          <div v-if="userFavorites.length>0" class="favorites-list"><div v-for="item in userFavorites" :key="item" class="favorite-chip"><span class="fav-label">{{ item }}</span><div class="fav-actions"><button @click="analyzeDeepFavorite(item)" class="icon-btn">⚡</button></div><span @click="removeFavorite(item)" class="fav-delete">×</span></div></div>
-        </section>
-
-        <section class="card">
-          <h2>Analyse Visuelle</h2>
-          <div style="display:flex; gap:5px; margin-bottom:10px;"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div>
-          <div class="button-group-vertical"><button @click="runBatchVisualAnalysis('frequency')" :disabled="isLoading||!startDate" style="background:#ef5350;">Rouge/Bleu (Période)</button><button @click="runBatchVisualAnalysis('kanta')" :disabled="isLoading||!startDate" style="background:#66bb6a;">Kanta (Période)</button></div>
-        </section>
-
-        <section class="card">
-          <h2>Rapports Ponctuels</h2>
-          <input type="date" v-model="selectedDate"/>
-          <div class="button-group-vertical" style="margin-top:10px;"><button @click="runSingleDayVisual('frequency')" :disabled="isLoading||!selectedDate" style="border:1px solid #ef5350; background:transparent; color:#d32f2f;">🎨 Surlignage Jour</button><button @click="runSingleDayVisual('kanta')" :disabled="isLoading||!selectedDate" style="border:1px solid #66bb6a; background:transparent; color:#388e3c;">🎨 Surlignage Kanta</button></div>
-          <hr>
-          <div class="button-group-vertical">
-            <button @click="runReport('daily-frequency')" :disabled="isLoading||!selectedDate">Classement Jour (Top 10)</button>
-            <button @click="runReport('weekly-frequency')" :disabled="isLoading||!selectedDate">Classement Semaine (Top 10)</button>
-            <hr>
-            <input type="number" v-model="selectedNumber" placeholder="N° Compagnons"/><button @click="runReport('companions')" :disabled="isLoading||!selectedDate||!selectedNumber">Analyser Compagnons</button>
-          </div>
-        </section>
-
-        <section class="card">
-          <h2>Période & Profilage</h2>
-          <div style="display:flex; gap:5px; margin-bottom:10px;"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div>
-          <button @click="runRangeAnalysis" :disabled="isLoading||!startDate">Fréquence Période (Top 10)</button>
-          <hr>
-          <input type="number" v-model="profileNumber" placeholder="N° Profil"/><button @click="runProfileAnalysis" :disabled="isLoading||!startDate||!profileNumber">Générer Profil</button>
-        </section>
-
-        <!-- Autres cartes (Prophet, Multi...) conservées -->
+        <section class="card matrix-card"><div class="boss-header"><h2>🕰️ MATRICE TEMPORELLE</h2><span class="badge-spec" style="background:#ff9800;">PREDICTOR</span></div><div class="tabs"><button @click="matrixMode='continuous'" :class="{active: matrixMode==='continuous'}">CONTINU</button><button @click="matrixMode='cyclic'" :class="{active: matrixMode==='cyclic'}">CYCLIQUE</button></div><div v-if="matrixMode==='cyclic'" style="margin-bottom:10px;"><label>Jour (1-31):</label><input type="number" v-model="cyclicDay" min="1" max="31"/></div><div class="date-picker-row"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div><button @click="runTimeMatrix" :disabled="isLoading" class="spec-btn" style="background:#ff9800;">ANALYSER & PRÉDIRE</button></section>
+        
+        <section class="card spec-card"><div class="boss-header"><h2>📅 ANALYSTE SPÉCIALISTE</h2><span class="badge-spec">360°</span></div><label>Jour :</label><select v-model="selectedDayName" class="day-select"><option>Lundi</option><option>Mardi</option><option>Mercredi</option><option>Jeudi</option><option>Vendredi</option><option>Samedi</option><option>Dimanche</option></select><label>Heure :</label><select v-model="selectedHour" class="day-select"><option>Toute la journée</option><option>01H</option><option>03H</option><option>07H</option><option>08H</option><option>10H</option><option>13H</option><option>16H</option><option>19H</option><option>21H</option><option>22H</option><option>23H</option></select><div class="date-picker-row"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div><button @click="runDayAnalysis" :disabled="isLoading" class="spec-btn">SCANNER {{ selectedDayName.toUpperCase() }}</button></section>
+        
+        <section class="card"><h2>⭐ Mes Numéros Favoris</h2><div class="favorites-input-group"><input type="text" v-model="newFavoriteInput" placeholder="Ex: 7 ou 12-45" @keyup.enter="addFavorite"/><button @click="addFavorite" :disabled="!newFavoriteInput" class="btn-small">Ajouter</button></div><div style="display:flex; gap:5px; margin-bottom:10px;"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div><div class="date-picker-row"><select v-model="favDayName" class="day-select"><option>Tous</option><option>Lundi</option><option>Mardi</option><option>Mercredi</option><option>Jeudi</option><option>Vendredi</option><option>Samedi</option><option>Dimanche</option></select><select v-model="favHour" class="day-select"><option>Toutes</option><option>10H</option><option>13H</option><option>16H</option><option>19H</option><option>21H</option><option>22H</option><option>23H</option></select></div><div v-if="userFavorites.length>0" class="favorites-list"><div v-for="item in userFavorites" :key="item" class="favorite-chip"><span class="fav-label">{{ item }}</span><div class="fav-actions"><button @click="analyzeDeepFavorite(item)" class="icon-btn">⚡</button></div><span @click="removeFavorite(item)" class="fav-delete">×</span></div></div></section>
+        
+        <section class="card"><h2>Analyse Visuelle</h2><div style="display:flex; gap:5px; margin-bottom:10px;"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div><div class="button-group-vertical"><button @click="runBatchVisualAnalysis('frequency')" :disabled="isLoading||!startDate" style="background:#ef5350;">Rouge/Bleu (Période)</button><button @click="runBatchVisualAnalysis('kanta')" :disabled="isLoading||!startDate" style="background:#66bb6a;">Kanta (Période)</button></div></section>
+        
+        <section class="card"><h2>Rapports Ponctuels</h2><input type="date" v-model="selectedDate"/><div class="button-group-vertical" style="margin-top:10px;"><button @click="runSingleDayVisual('frequency')" :disabled="isLoading||!selectedDate" style="border:1px solid #ef5350; background:transparent; color:#d32f2f;">🎨 Surlignage Jour</button><button @click="runSingleDayVisual('kanta')" :disabled="isLoading||!selectedDate" style="border:1px solid #66bb6a; background:transparent; color:#388e3c;">🎨 Surlignage Kanta</button></div><hr><div class="button-group-vertical"><button @click="runReport('daily-frequency')" :disabled="isLoading||!selectedDate">Classement Jour (Top 10)</button><button @click="runReport('weekly-frequency')" :disabled="isLoading||!selectedDate">Classement Semaine (Top 10)</button><hr><input type="number" v-model="selectedNumber" placeholder="N° Compagnons"/><button @click="runReport('companions')" :disabled="isLoading||!selectedDate||!selectedNumber">Analyser Compagnons</button></div></section>
+        
+        <section class="card"><h2>Période & Profilage</h2><div style="display:flex; gap:5px; margin-bottom:10px;"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div><button @click="runRangeAnalysis" :disabled="isLoading||!startDate">Fréquence Période (Top 10)</button><hr><input type="number" v-model="profileNumber" placeholder="N° Profil"/><button @click="runProfileAnalysis" :disabled="isLoading||!startDate||!profileNumber">Générer Profil</button></section>
+        
         <section class="card prophet-card"><h2>🔮 Le Prophète</h2><div style="display:flex; gap:5px; margin-bottom:10px;"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div><input type="number" v-model="predictionNumber" placeholder="N° vu"/><input type="number" v-model="predictionCompanion" placeholder="Compagnon"/><button @click="runPredictionAnalysis" :disabled="isLoading||!startDate||!predictionNumber" class="prophet-btn">Voir Futur</button></section>
         <section class="card multi-prophet-card"><h2>🔮 Analyse Croisée</h2><div style="display:flex; gap:5px; margin-bottom:10px;"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div><input type="text" v-model="multiPredictionInput" placeholder="Ex: 5 12 34"/><button @click="runMultiPrediction" :disabled="isLoading||!startDate||!multiPredictionInput" class="multi-btn">Lancer</button></section>
         <section class="card"><h2>IA Avancée</h2><div style="display:flex; gap:5px; margin-bottom:10px;"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div><button @click="runSequenceAnalysis" :disabled="isLoading">Suites</button><hr><input type="number" v-model="triggerTargetNumber" placeholder="Cible"/><button @click="runTriggerAnalysis" :disabled="isLoading||!triggerTargetNumber">Déclencheurs ⚡</button><hr><div class="button-group-horizontal"><button @click="runKantaReport('daily-rank')">Kanta J</button><button @click="runKantaReport('weekly-rank')">Kanta S</button></div></section>
       </div>
 
-      <!-- COLONNE DROITE (RESULTATS) -->
+      <!-- RESULTS -->
       <div class="results-column">
-        
         <div class="quick-link-box"><a :href="sheetDirectLink" target="_blank" class="gsheet-btn">📂 OUVRIR GOOGLE SHEETS</a></div>
 
-        <!-- 1. MATRICE TEMPORELLE -->
         <div v-if="matrixResult" class="card result-spec-card" style="border-top:4px solid #ff9800;">
            <div class="spec-header"><h3>🕰️ MATRICE TEMPORELLE</h3><button @click="matrixResult=null" class="close-btn">×</button></div>
            <div v-if="matrixResult.prediction" class="prediction-tab">
@@ -336,14 +282,12 @@ async function runKantaReport(reportType) { if (!selectedDate.value) return; las
            <div class="table-responsive"><table class="spec-table"><thead><tr><th>Date</th><th>Base</th><th>Hits</th></tr></thead><tbody><tr v-for="(row, idx) in matrixResult.matrix_data" :key="idx"><td>{{ row.date }}</td><td class="num-cell">{{ row.base_number }}</td><td><div v-for="h in row.detailed_hits" :key="h.num"><span class="badge-hit">{{ h.num }}</span> ({{ h.time }} - {{ h.reason }})</div></td></tr></tbody></table></div>
         </div>
 
-        <!-- 2. SPECIALISTE JOUR -->
         <div v-if="dayAnalysisResult" class="card result-spec-card">
           <div class="spec-header"><h3>📊 TOP 5 : {{ dayAnalysisResult.day_analyzed }}</h3><button @click="dayAnalysisResult=null" class="close-btn">×</button></div>
           <div class="best-duo-box"><span class="duo-label">🔥 DUO OR :</span><span class="duo-val">{{ dayAnalysisResult.best_duo }}</span></div>
           <div class="table-responsive"><table class="spec-table"><thead><tr><th>Stat</th><th>N°</th><th>Kanta</th><th>Compagnons</th><th>Déclencheurs</th><th>Prophète</th></tr></thead><tbody><tr v-for="row in dayAnalysisResult.recurrence_data" :key="row.number"><td style="font-size:1.2rem;">{{ row.status_icon }}</td><td class="num-cell">{{ row.number }}</td><td style="color:#d32f2f;">{{ row.kanta }}</td><td>{{ row.best_companion }}</td><td>{{ row.best_trigger }}</td><td class="proph-cell">{{ row.best_prophet }}</td></tr></tbody></table></div>
         </div>
 
-        <!-- 3. DEEP FAVORITE -->
         <div v-if="deepFavoriteResult" class="card result-spec-card" style="border-top:4px solid #fdd835;">
           <div class="spec-header"><h3>⭐ SCAN PROFOND : {{ deepFavoriteResult.favorite }}</h3><button @click="deepFavoriteResult=null" class="close-btn">×</button></div>
           <div v-if="deepFavoriteResult.data===null"><p>Jamais sorti.</p></div>
@@ -353,123 +297,197 @@ async function runKantaReport(reportType) { if (!selectedDate.value) return; las
           </div>
         </div>
 
-        <!-- 4. PROFIL NUMERO (TABLEAU FIXÉ) -->
         <div v-if="profileResult" class="card result-spec-card" style="border-top:4px solid #ab47bc;">
           <div class="spec-header"><h3>👤 PROFIL COMPLET : {{ profileResult.profile_data.number }}</h3><button @click="profileResult=null" class="close-btn">×</button></div>
           <div class="stats-grid"><div class="stat-item"><strong>Sorties</strong><br>{{ profileResult.profile_data.hits }}</div><div class="stat-item"><strong>Jour</strong><br>{{ profileResult.profile_data.best_day }}</div><div class="stat-item"><strong>Heure</strong><br>{{ profileResult.profile_data.best_time }}</div></div>
-          
-          <div class="summary-grid">
-             <div class="sum-card"><h5>Top Jours</h5><ul><li v-for="d in profileResult.profile_data.top_days" :key="d.val">{{ d.val }} ({{ d.count }})</li></ul></div>
-             <div class="sum-card"><h5>Top Heures</h5><ul><li v-for="h in profileResult.profile_data.top_hours" :key="h.val">{{ h.val }} ({{ h.count }})</li></ul></div>
-             <div class="sum-card"><h5>Top Compagnons</h5><ul><li v-for="c in profileResult.profile_data.top_companions" :key="c.val">{{ c.val }} ({{ c.count }})</li></ul></div>
-          </div>
-          
-          <div class="summary-grid">
-              <div class="sum-card"><h5>Top Déclencheurs (Avant)</h5><ul><li v-for="t in profileResult.profile_data.top_triggers" :key="t.val">{{ t.val }} ({{ t.count }})</li></ul></div>
-              <div class="sum-card"><h5>Top Prophètes (Après)</h5><ul><li v-for="p in profileResult.profile_data.top_prophets" :key="p.val">{{ p.val }} ({{ p.count }})</li></ul></div>
-          </div>
-
+          <div class="summary-grid"><div class="sum-card"><h5>Top Jours</h5><ul><li v-for="d in profileResult.profile_data.top_days" :key="d.val">{{ d.val }} ({{ d.count }})</li></ul></div><div class="sum-card"><h5>Top Heures</h5><ul><li v-for="h in profileResult.profile_data.top_hours" :key="h.val">{{ h.val }} ({{ h.count }})</li></ul></div><div class="sum-card"><h5>Top Compagnons</h5><ul><li v-for="c in profileResult.profile_data.top_companions" :key="c.val">{{ c.val }} ({{ c.count }})</li></ul></div></div>
+          <div class="summary-grid"><div class="sum-card"><h5>Top Déclencheurs (Avant)</h5><ul><li v-for="t in profileResult.profile_data.top_triggers" :key="t.val">{{ t.val }} ({{ t.count }})</li></ul></div><div class="sum-card"><h5>Top Prophètes (Après)</h5><ul><li v-for="p in profileResult.profile_data.top_prophets" :key="p.val">{{ p.val }} ({{ p.count }})</li></ul></div></div>
           <div class="ai-analysis"><h4>🧠 Analyse Expert :</h4><p>{{ profileResult.ai_strategic_profile }}</p></div>
         </div>
 
-        <!-- 5. RESULTATS STANDARDS ENRICHIS (LISTE DE CARTES AVEC VIRGULES) -->
         <section v-if="standardResult && lastOperationType === 'ranking_rich'" class="card results-card fade-in">
           <div class="spec-header"><h2>Classement Top 10 (Deep Context)</h2><button @click="standardResult=null" class="close-btn">Fermer</button></div>
-          <div class="ranking-list">
-             <div v-for="(item, index) in standardResult.data" :key="item.number" class="rank-card">
-                <div class="rank-badge">#{{ index + 1 }}</div>
-                <div class="rank-main"><span class="rank-num">{{ item.number }}</span><span class="rank-hits">{{ item.total_hits }} Sorties</span></div>
-                <div class="rank-details">
-                   <div class="detail-col"><strong>Top Jours</strong> <span v-for="(d, i) in item.top_days" :key="d.val">{{d.val}} ({{d.count}}){{ i < item.top_days.length - 1 ? ', ' : '' }}</span></div>
-                   <div class="detail-col"><strong>Top Heures</strong> <span v-for="(h, i) in item.top_hours" :key="h.val">{{h.val}} ({{h.count}}){{ i < item.top_hours.length - 1 ? ', ' : '' }}</span></div>
-                   <div class="detail-col red"><strong>Déclencheurs</strong> <span v-for="(t, i) in item.top_triggers" :key="t.val">{{t.val}} ({{t.count}}){{ i < item.top_triggers.length - 1 ? ', ' : '' }}</span></div>
-                   <div class="detail-col blue"><strong>Compagnons</strong> <span v-for="(c, i) in item.top_companions" :key="c.val">{{c.val}} ({{c.count}}){{ i < item.top_companions.length - 1 ? ', ' : '' }}</span></div>
-                   <div class="detail-col purple"><strong>Prophètes</strong> <span v-for="(p, i) in item.top_prophets" :key="p.val">{{p.val}} ({{p.count}}){{ i < item.top_prophets.length - 1 ? ', ' : '' }}</span></div>
-                </div>
-             </div>
-          </div>
+          <div class="ranking-list"><div v-for="(item, index) in standardResult.data" :key="item.number" class="rank-card"><div class="rank-badge">#{{ index + 1 }}</div><div class="rank-main"><span class="rank-num">{{ item.number }}</span><span class="rank-hits">{{ item.total_hits }} Sorties</span></div><div class="rank-details"><div class="detail-col"><strong>Top Jours</strong> <span v-for="(d, i) in item.top_days">{{d.val}} ({{d.count}}){{ i < item.top_days.length - 1 ? ', ' : '' }}</span></div><div class="detail-col"><strong>Top Heures</strong> <span v-for="(h, i) in item.top_hours">{{h.val}} ({{h.count}}){{ i < item.top_hours.length - 1 ? ', ' : '' }}</span></div><div class="detail-col red"><strong>Déclencheurs</strong> <span v-for="(t, i) in item.top_triggers">{{t.val}} ({{t.count}}){{ i < item.top_triggers.length - 1 ? ', ' : '' }}</span></div><div class="detail-col blue"><strong>Compagnons</strong> <span v-for="(c, i) in item.top_companions">{{c.val}} ({{c.count}}){{ i < item.top_companions.length - 1 ? ', ' : '' }}</span></div><div class="detail-col purple"><strong>Prophètes</strong> <span v-for="(p, i) in item.top_prophets">{{p.val}} ({{p.count}}){{ i < item.top_prophets.length - 1 ? ', ' : '' }}</span></div></div></div></div>
         </section>
 
-        <!-- RESULTATS SIMPLES (STANDARD) -->
         <section v-if="standardResult && lastOperationType === 'simple'" class="card results-card fade-in">
           <div class="spec-header"><h2>Résultat Standard</h2><button @click="standardResult=null" class="close-btn">Fermer</button></div>
           <div v-if="standardResult.message || standardResult.analysis_period" class="success-box large"><p>✅ {{ standardResult.message || `Analyse : ${standardResult.analysis_period}` }}</p></div>
           <div v-if="isTableVisible && !lastOperationType.includes('visual')" class="view-controls"><button @click="viewMode = 'table'" :class="{ active: viewMode === 'table' }" class="toggle-btn">📋 Tableau</button><button @click="viewMode = 'chart'" :class="{ active: viewMode === 'chart' }" class="toggle-btn">📊 Graphique</button></div>
           <div v-if="isTableVisible && viewMode === 'chart' && !lastOperationType.includes('visual')" class="chart-container"><Bar :data="chartData" :options="chartOptions" /></div>
-          <table v-else-if="isTableVisible" class="styled-table">
-            <thead><tr><th v-for="h in tableHeaders" :key="h">{{ h }}</th></tr></thead>
-            <tbody><tr v-for="(row, index) in tableData" :key="index"><td v-if="lastOperationType.includes('kanta-rank')">{{ row.pair }}</td><td v-else>#{{ index + 1 }}</td><td v-if="!lastOperationType.includes('kanta-rank')">{{ row.number }}</td><td>{{ row.count }}</td></tr></tbody>
-          </table>
-          <div v-if="standardResult.ai_strategic_analysis" class="ai-analysis"><h3>🧠 Stratégie</h3><p>{{ standardResult.ai_strategic_analysis }}</p></div>
-          <div v-if="standardResult.ai_trigger_analysis" class="ai-analysis"><h3>🧠 Déclencheurs</h3><p>{{ standardResult.ai_trigger_analysis }}</p></div>
-          <div v-if="standardResult.ai_prediction_analysis" class="ai-analysis prophet-analysis"><h3>🔮 Prédiction</h3><p>{{ standardResult.ai_prediction_analysis }}</p></div>
+          <table v-else-if="isTableVisible" class="styled-table"><thead><tr><th v-for="h in tableHeaders" :key="h">{{ h }}</th></tr></thead><tbody><tr v-for="(row, index) in tableData" :key="index"><td v-if="lastOperationType.includes('kanta-rank')">{{ row.pair }}</td><td v-else>#{{ index + 1 }}</td><td v-if="!lastOperationType.includes('kanta-rank')">{{ row.number }}</td><td>{{ row.count }}</td></tr></tbody></table>
+          <div v-if="standardResult.ai_strategic_analysis" class="ai-analysis"><h3>🧠 Stratégie</h3><p>{{ standardResult.ai_strategic_analysis }}</p></div><div v-if="standardResult.ai_trigger_analysis" class="ai-analysis"><h3>🧠 Déclencheurs</h3><p>{{ standardResult.ai_trigger_analysis }}</p></div><div v-if="standardResult.ai_prediction_analysis" class="ai-analysis prophet-analysis"><h3>🔮 Prédiction</h3><p>{{ standardResult.ai_prediction_analysis }}</p></div>
         </section>
 
-        <div v-if="!dayAnalysisResult && !standardResult && !deepFavoriteResult && !profileResult && !matrixResult && !isLoading" class="welcome-message">
-            <h3>Prêt à analyser</h3><p>Sélectionnez une fonction à gauche.</p>
-        </div>
-        <div v-if="isLoading" class="loader">Analyse en cours...</div>
-        <div v-if="error" class="error-box">{{ error }}</div>
-
+        <div v-if="!dayAnalysisResult && !standardResult && !deepFavoriteResult && !profileResult && !matrixResult && !isLoading" class="welcome-message"><h3>Prêt à analyser</h3><p>Sélectionnez une fonction à gauche.</p></div>
+        <div v-if="isLoading" class="loader">Analyse en cours...</div><div v-if="error" class="error-box">{{ error }}</div>
       </div>
     </div>
   </main>
 </template>
 
 <style scoped>
-  /* ... (Copiez ici le CSS complet fourni précédemment dans V67) ... */
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
-  body { font-family: 'Inter', sans-serif; background-color: #f8f9fa; color: #1e293b; }
-  
-  .ranking-list { display: flex; flex-direction: column; gap: 15px; }
-  .rank-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; display: flex; align-items: flex-start; gap: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-  .rank-badge { background: #3b82f6; color: white; font-weight: bold; padding: 5px 10px; border-radius: 50%; font-size: 1.2rem; min-width: 40px; text-align: center; }
-  .rank-main { display: flex; flex-direction: column; align-items: center; min-width: 80px; border-right: 1px solid #eee; padding-right: 15px; }
-  .rank-num { font-size: 2rem; font-weight: 800; color: #0f172a; }
-  .rank-hits { font-size: 0.8rem; color: #64748b; font-weight: 600; }
-  .rank-details { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; width: 100%; }
-  .detail-col { font-size: 0.8rem; color: #334155; }
-  .detail-col strong { display: block; color: #64748b; text-transform: uppercase; font-size: 0.7rem; margin-bottom: 2px; }
-  .detail-col.red span { color: #d32f2f; font-weight: bold; }
-  .detail-col.blue span { color: #1976d2; font-weight: bold; }
-  .detail-col.purple span { color: #7b1fa2; font-weight: bold; }
+/* POLICE D'ORIGINE & STYLE PREMIUM */
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;800&family=Roboto:wght@400;500;700&display=swap');
 
-  /* (Reste du CSS standard : dashboard, card, table, summary-grid, etc.) */
-  .dashboard { max-width: 98%; margin: 0 auto; }
-  header { display: flex; justify-content: space-between; align-items: center; padding: 1.5rem; background: white; box-shadow: 0 2px 10px rgba(0,0,0,0.05); margin-bottom: 2rem; border-radius: 0 0 12px 12px; }
-  h1 { font-weight: 800; color: #0f172a; margin: 0; font-size: 1.5rem; }
-  .version-tag { background: #f59e0b; color: white; padding: 4px 8px; border-radius: 6px; font-size: 0.8rem; margin-left: 10px; }
-  .main-layout { display: grid; grid-template-columns: 350px 1fr; gap: 2rem; padding: 0 1rem; }
-  .card { background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); margin-bottom: 1.5rem; }
-  .card h2 { margin-top: 0; font-size: 1.1rem; color: #334155; border-bottom: 2px solid #f1f5f9; padding-bottom: 0.8rem; margin-bottom: 1rem; font-weight: 600; }
-  input, select { width: 100%; padding: 0.8rem; border: 1px solid #cbd5e1; border-radius: 8px; box-sizing: border-box; font-family: 'Inter', sans-serif; }
-  button { padding: 0.9rem; background-color: #3b82f6; color: white; border: none; border-radius: 8px; cursor: pointer; width: 100%; font-weight: 600; }
-  button:disabled { background-color: #94a3b8; }
-  .matrix-card { border-top: 4px solid #ff9800; background: #fff8e1; }
-  .spec-card { border-top: 4px solid #10b981; background: #f0fdf4; }
-  .spec-btn { background: #059669; }
-  .boss-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
-  .badge-spec { background: #10b981; color: white; padding: 4px 8px; border-radius: 20px; font-size: 0.7rem; }
-  .result-spec-card { border-top: 4px solid #3b82f6; }
-  .spec-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-  .best-duo-box { background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); color: white; padding: 15px; border-radius: 12px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
-  .duo-val { font-size: 2rem; font-weight: 800; color: #fbbf24; }
-  .styled-table, .spec-table { width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 1rem; border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0; }
-  .styled-table th, .spec-table th { background-color: #f8fafc; color: #64748b; font-weight: 600; padding: 12px; text-align: center; }
-  .styled-table td, .spec-table td { padding: 12px; text-align: center; border-bottom: 1px solid #e2e8f0; color: #334155; }
-  .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 20px; }
-  .sum-card { background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0; }
-  .sum-card h5 { margin: 0 0 8px 0; font-size: 0.8rem; color: #64748b; text-transform: uppercase; font-weight: 700; }
-  .sum-card ul { list-style: none; padding: 0; margin: 0; }
-  .sum-card li { font-size: 0.9rem; color: #0f172a; font-weight: 600; margin-bottom: 4px; }
-  .controls-column { max-height: 90vh; overflow-y: auto; padding-right: 10px; }
-  .close-btn { width: auto; background: transparent; color: #94a3b8; font-size: 1.5rem; padding: 0; }
-  .ai-analysis { background: #fffbeb; border-left: 4px solid #f59e0b; padding: 1rem; border-radius: 6px; margin-top: 1rem; color: #92400e; }
-  .fade-in { animation: fadeIn 0.4s ease-out; }
-  @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-  .icon-btn { background: white; border: 1px solid #bbdefb; color: #333; border-radius: 50%; width: 28px; height: 28px; padding: 0; font-size: 0.8rem; display: flex; align-items: center; justify-content: center; }
-  .gsheet-btn { background: #0f9d58; color: white; padding: 10px 20px; border-radius: 30px; text-decoration: none; font-weight: bold; display: inline-block; box-shadow: 0 4px 10px rgba(15, 157, 88, 0.3); }
-  .prediction-tab { padding: 10px; background: #fff; border-radius: 8px; }
-  .badge-hit { background: #4caf50; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold; }
-  .proph-cell { color: #7b1fa2; font-weight: bold; background: #f3e5f5; border-radius: 4px; padding: 2px; }
+:root {
+  --primary: #4361ee;
+  --secondary: #3f37c9;
+  --success: #4cc9f0;
+  --danger: #f72585;
+  --dark: #1b263b;
+  --light: #f8f9fa;
+  --glass: rgba(255, 255, 255, 0.95);
+}
+
+body {
+  font-family: 'Poppins', sans-serif;
+  background-color: #f0f2f5;
+  color: #2c3e50;
+  margin: 0;
+}
+
+/* HEADER & LAYOUT */
+.dashboard { max-width: 98%; margin: 0 auto; padding-top: 10px; }
+header {
+  background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+  color: white;
+  padding: 1.5rem;
+  border-radius: 12px;
+  margin-bottom: 2rem;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+  display: flex; justify-content: space-between; align-items: center;
+}
+h1 { font-family: 'Poppins', sans-serif; font-weight: 800; font-size: 1.8rem; letter-spacing: -1px; margin: 0; }
+.version-tag { background: #f72585; padding: 5px 10px; border-radius: 20px; font-size: 0.8rem; vertical-align: middle; }
+.main-layout { display: grid; grid-template-columns: 380px 1fr; gap: 25px; padding-bottom: 50px; }
+
+/* CARTES (STYLE D'ORIGINE) */
+.card {
+  background: white;
+  border-radius: 16px;
+  padding: 1.5rem;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.05);
+  margin-bottom: 20px;
+  border: none;
+  transition: transform 0.2s;
+}
+.card:hover { transform: translateY(-2px); }
+
+/* EN-TÊTES DE FONCTIONS */
+.matrix-card { border-top: 5px solid #7209b7; background: linear-gradient(to bottom, #fff, #fdf4ff); }
+.spec-card { border-top: 5px solid #00b4d8; background: linear-gradient(to bottom, #fff, #e0f7fa); }
+.prophet-card { border-top: 5px solid #f72585; background: linear-gradient(to bottom, #fff, #fce4ec); }
+.card h2 {
+  font-family: 'Roboto', sans-serif;
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 1.1rem;
+  color: #333;
+  margin-top: 0;
+  border-bottom: 2px solid rgba(0,0,0,0.05);
+  padding-bottom: 10px;
+  margin-bottom: 15px;
+}
+
+/* BOUTONS (GRADIENTS ORIGINAUX) */
+button {
+  font-family: 'Poppins', sans-serif;
+  font-weight: 600;
+  border: none;
+  border-radius: 10px;
+  padding: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-size: 0.9rem;
+  color: white;
+  background-color: #4361ee;
+}
+button:active { transform: scale(0.98); }
+button:disabled { background: #cbd5e1 !important; transform: none; box-shadow: none; }
+.spec-btn { background: linear-gradient(45deg, #00b4d8, #0077b6); }
+.prophet-btn { background: linear-gradient(45deg, #f72585, #b5179e); }
+.multi-btn { background: linear-gradient(45deg, #4361ee, #3a0ca3); }
+.close-btn { background: transparent; color: #999; box-shadow: none; width: auto; font-size: 1.5rem; padding: 0 10px; }
+.logout-button { background: #64748b; padding: 0.5rem 1rem; width: auto; font-size: 0.8rem; }
+
+/* INPUTS */
+input, select {
+  padding: 12px;
+  border: 2px solid #e2e8f0;
+  border-radius: 10px;
+  font-family: 'Roboto', sans-serif;
+  font-size: 0.95rem;
+  transition: border-color 0.3s;
+  width: 100%; box-sizing: border-box; margin-bottom: 10px;
+}
+input:focus, select:focus { border-color: #4361ee; outline: none; }
+.date-picker-row { display: flex; gap: 10px; margin-bottom: 10px; }
+.favorites-input-group { display: flex; gap: 5px; margin-bottom: 10px; }
+.btn-small { width: auto; padding: 10px 20px; }
+
+/* TABLEAUX DE RÉSULTATS */
+.result-spec-card { border-top: 5px solid #4361ee; }
+.spec-table, .styled-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+.spec-table th, .styled-table th { background: #f1f5f9; color: #475569; font-weight: 800; text-transform: uppercase; font-size: 0.8rem; padding: 15px; text-align: center; }
+.spec-table td, .styled-table td { padding: 15px; border-bottom: 1px solid #f1f5f9; font-weight: 500; text-align: center; }
+.num-cell { font-size: 1.4rem; font-weight: 800; color: #1e293b; }
+
+/* BADGES & TAGS */
+.badge-spec { background: #00b4d8; color: white; padding: 5px 10px; border-radius: 20px; font-size: 0.7rem; font-weight: bold; }
+.best-duo-box {
+  background: linear-gradient(135deg, #11998e, #38ef7d);
+  color: white; padding: 20px; border-radius: 15px;
+  box-shadow: 0 10px 20px rgba(17, 153, 142, 0.3);
+  margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;
+}
+.duo-val { font-size: 2.5rem; font-weight: 800; text-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+.duo-label { font-weight: bold; text-transform: uppercase; }
+
+/* CONTROLS SCROLLBAR */
+.controls-column { padding-right: 15px; max-height: 85vh; overflow-y: auto; }
+.controls-column::-webkit-scrollbar { width: 6px; }
+.controls-column::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+
+/* AI BOX */
+.ai-analysis {
+  background: #fff; border-left: 5px solid #f72585;
+  box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+  padding: 20px; border-radius: 0 10px 10px 0;
+  font-family: 'Roboto', sans-serif; line-height: 1.6; margin-top: 15px;
+}
+
+/* RANKING LIST (RICH) */
+.ranking-list { display: flex; flex-direction: column; gap: 15px; }
+.rank-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; display: flex; align-items: flex-start; gap: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+.rank-badge { background: linear-gradient(135deg, #4361ee, #3a0ca3); box-shadow: 0 4px 10px rgba(67, 97, 238, 0.3); color: white; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; min-width: 40px; }
+.rank-main { display: flex; flex-direction: column; align-items: center; min-width: 80px; border-right: 1px solid #eee; padding-right: 15px; }
+.rank-num { font-size: 2rem; font-weight: 800; color: #0f172a; }
+.rank-hits { font-size: 0.8rem; color: #64748b; font-weight: 600; }
+.rank-details { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; width: 100%; }
+.detail-col { font-size: 0.8rem; color: #334155; }
+.detail-col strong { display: block; color: #64748b; text-transform: uppercase; font-size: 0.7rem; margin-bottom: 2px; }
+.detail-col.red span { color: #d32f2f; font-weight: bold; }
+.detail-col.blue span { color: #1976d2; font-weight: bold; }
+.detail-col.purple span { color: #7b1fa2; font-weight: bold; }
+
+.loader { text-align: center; font-weight: bold; color: #4361ee; margin: 20px 0; }
+.error-box { background: #fee2e2; color: #b91c1c; padding: 15px; border-radius: 10px; border: 1px solid #fecaca; text-align: center; }
+.favorites-list { display: flex; flex-wrap: wrap; gap: 5px; }
+.favorite-chip { background: #e0f2f1; border: 1px solid #80cbc4; padding: 5px 10px; border-radius: 20px; display: flex; align-items: center; gap: 5px; font-weight: bold; color: #00695c; }
+.icon-btn { background: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; cursor: pointer; border: 1px solid #ccc; color: #333; }
+.fav-delete { cursor: pointer; color: #d32f2f; font-size: 1.2rem; margin-left: 5px; }
+.summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+.sum-card { background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0; }
+.sum-card h5 { margin: 0 0 5px 0; font-size: 0.75rem; color: #64748b; text-transform: uppercase; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+.sum-card ul { padding: 0; margin: 0; list-style: none; }
+.sum-card li { font-size: 0.85rem; font-weight: bold; color: #334155; }
+.tabs { display: flex; gap: 5px; margin-bottom: 10px; }
+.tabs button { flex: 1; padding: 8px; font-size: 0.8rem; background: #673ab7; opacity: 0.6; border: none; color: white; border-radius: 4px 4px 0 0; }
+.tabs button.active { opacity: 1; font-weight: bold; border-bottom: 2px solid white; }
+.gsheet-btn { background: #0f9d58; color: white; padding: 10px 20px; border-radius: 30px; text-decoration: none; font-weight: bold; display: inline-block; box-shadow: 0 4px 10px rgba(15, 157, 88, 0.3); }
+.quick-link-box { text-align: center; margin-bottom: 20px; }
 </style>
