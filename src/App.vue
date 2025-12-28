@@ -22,7 +22,7 @@ const newFavoriteInput = ref('');
 const predictionNumber = ref('');
 const predictionCompanion = ref('');
 const profileNumber = ref('');
-const triggerInput = ref(''); // NOUVEAU: Entrée unique pour trigger
+const triggerInput = ref(''); 
 
 const selectedDayName = ref('Mercredi');
 const selectedHour = ref('Toute la journée'); 
@@ -37,12 +37,9 @@ const cyclicDay = ref(1);
 const favDayName = ref('Tous');
 const favHour = ref('Toutes');
 
-const selectedDate = ref('');
-const startDate = ref('');
-const endDate = ref('');
-// NOUVEAU : Date spécifique pour les Rapports Ponctuels
-const spotStartDate = ref('');
-const spotEndDate = ref('');
+const selectedDate = ref(''); // DATE UNIQUE (V80 Style)
+const startDate = ref(''); 
+const endDate = ref(''); 
 
 const selectedNumber = ref('');
 const isLoading = ref(false);
@@ -103,13 +100,11 @@ onMounted(() => {
   const day = today.getDate().toString().padStart(2, '0');
   selectedDate.value = `${year}-${month}-${day}`;
   endDate.value = `${year}-${month}-${day}`;
-  spotEndDate.value = `${year}-${month}-${day}`; // Init spot end date
   
   const oneMonthAgo = new Date();
   oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
   const startStr = `${oneMonthAgo.getFullYear()}-${(oneMonthAgo.getMonth()+1).toString().padStart(2,'0')}-${oneMonthAgo.getDate().toString().padStart(2,'0')}`;
   startDate.value = startStr;
-  spotStartDate.value = startStr; // Init spot start date
 
   onAuthStateChanged(auth, async (firebaseUser) => {
     if (firebaseUser) {
@@ -198,15 +193,18 @@ async function callApi(url, targetVar = 'standard') {
 async function runDataUpdate(endpoint) { lastOperationType.value = 'update'; await callApi(`/collection/${endpoint}`, 'standard'); }
 async function runBatchVisualAnalysis(mode) { if (!startDate.value) return; lastOperationType.value = 'visual'; await callApi(`/analysis/highlight-range?start_date=${startDate.value}&end_date=${endDate.value}&mode=${mode}`, 'standard'); }
 
-// NOUVEAU: Surlignage Période "Rapports Ponctuels"
-async function runSpotVisualAnalysis(mode) { 
-  if (!spotStartDate.value || !spotEndDate.value) { error.value = "Période requise."; return; }
+// RESTAURATION V80 : SURLIGNAGE JOUR UNIQUE
+async function runSingleDayVisual(mode) { 
+  if (!selectedDate.value) { error.value = "Date requise."; return; }
   lastOperationType.value = 'visual'; 
-  await callApi(`/analysis/highlight-range?start_date=${spotStartDate.value}&end_date=${spotEndDate.value}&mode=${mode}`, 'standard'); 
+  // On envoie la même date en début et fin pour cibler le jour unique
+  await callApi(`/analysis/highlight-range?start_date=${selectedDate.value}&end_date=${selectedDate.value}&mode=${mode}`, 'standard'); 
 }
 
+// RESTAURATION V80 : DATE UNIQUE
 async function runReport(reportType) {
-  if (!selectedDate.value) return;
+  if (!selectedDate.value) { alert("Sélectionnez une date."); return; }
+  
   if (reportType === 'daily-frequency') {
       lastOperationType.value = 'ranking_rich';
       await callApi(`/analysis/daily-frequency/${selectedDate.value}`, 'standard');
@@ -220,6 +218,7 @@ async function runReport(reportType) {
       await callApi(`/analysis/companions/${selectedNumber.value}?week_date_str=${selectedDate.value}`, 'standard'); 
   }
 }
+
 async function runRangeAnalysis() {
   if (!startDate.value) return;
   lastOperationType.value = 'ranking_rich';
@@ -234,27 +233,22 @@ async function runProfileAnalysis() {
 }
 async function runDayAnalysis() { if (!startDate.value) return; await callApi(`/analysis/specific-day-recurrence?day_name=${selectedDayName.value}&target_hour=${selectedHour.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'specialist'); }
 
-// NOUVEAU: Trigger Flexible (1 ou 2 chiffres)
 async function runTriggerAnalysis() { 
   if (!triggerInput.value) return; 
   lastOperationType.value = 'simple'; 
-  
-  let target = '';
-  let companion = '';
-  
-  // Analyse de l'entrée (ex: "12-14" ou "12 14" ou "12")
   const parts = triggerInput.value.replace(/[^0-9]/g, ' ').trim().split(/\s+/);
-  if (parts.length > 0) target = parts[0];
-  if (parts.length > 1) companion = parts[1];
-
-  let url = `/analysis/trigger-numbers?target_number=${target}&start_date=${startDate.value}&end_date=${endDate.value}`; 
-  if (companion) url += `&companion_number=${companion}`; 
-  
+  let url = `/analysis/trigger-numbers?target_number=${parts[0]}&start_date=${startDate.value}&end_date=${endDate.value}`; 
+  if (parts.length > 1) url += `&companion_number=${parts[1]}`; 
   await callApi(url, 'standard'); 
 }
 
 async function runPredictionAnalysis() { if (!predictionNumber.value) return; lastOperationType.value = 'simple'; let url = `/analysis/predict-next?observed_number=${predictionNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`; if (predictionCompanion.value) url += `&observed_companion=${predictionCompanion.value}`; await callApi(url, 'standard'); }
-async function runKantaReport(reportType) { if (!selectedDate.value) return; lastOperationType.value = 'simple'; await callApi(`/analysis/kanta-${reportType}/${selectedDate.value}`, 'standard'); }
+
+async function runKantaReport(reportType) { 
+  if (!selectedDate.value) { alert("Sélectionnez une date."); return; }
+  lastOperationType.value = 'simple'; 
+  await callApi(`/analysis/kanta-daily-rank?date_str=${selectedDate.value}`, 'standard'); 
+}
 
 </script>
 
@@ -273,7 +267,7 @@ async function runKantaReport(reportType) { if (!selectedDate.value) return; las
   </div>
 
   <main v-else class="dashboard">
-    <header><h1>LE GUIDE DES FOURCASTER <span class="version-tag">V83</span></h1><div class="user-info"><span>{{ user.email }}</span><button @click="logout" class="logout-button">Déconnexion</button></div></header>
+    <header><h1>LE GUIDE DES FOURCASTER <span class="version-tag">V86</span></h1><div class="user-info"><span>{{ user.email }}</span><button @click="logout" class="logout-button">Déconnexion</button></div></header>
 
     <div class="main-layout">
       <!-- CONTROLS -->
@@ -286,30 +280,31 @@ async function runKantaReport(reportType) { if (!selectedDate.value) return; las
         
         <section class="card"><h2>⭐ Mes Numéros Favoris</h2><div class="favorites-input-group"><input type="text" v-model="newFavoriteInput" placeholder="Ex: 7 ou 12-45" @keyup.enter="addFavorite"/><button @click="addFavorite" :disabled="!newFavoriteInput" class="btn-small">Ajouter</button></div><div style="display:flex; gap:5px; margin-bottom:10px;"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div><div class="date-picker-row"><select v-model="favDayName" class="day-select"><option>Tous</option><option>Lundi</option><option>Mardi</option><option>Mercredi</option><option>Jeudi</option><option>Vendredi</option><option>Samedi</option><option>Dimanche</option></select><select v-model="favHour" class="day-select"><option>Toutes</option><option>10H</option><option>13H</option><option>16H</option><option>19H</option><option>21H</option><option>22H</option><option>23H</option></select></div><div v-if="userFavorites.length>0" class="favorites-list"><div v-for="item in userFavorites" :key="item" class="favorite-chip"><span class="fav-label">{{ item }}</span><div class="fav-actions"><button @click="analyzeDeepFavorite(item)" class="icon-btn">⚡</button></div><span @click="removeFavorite(item)" class="fav-delete">×</span></div></div></section>
         
-        <section class="card"><h2>Analyse Visuelle</h2><div style="display:flex; gap:5px; margin-bottom:10px;"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div><div class="button-group-vertical"><button @click="runBatchVisualAnalysis('frequency')" :disabled="isLoading||!startDate" style="background:#ef5350;">Rouge/Bleu (Période)</button><button @click="runBatchVisualAnalysis('kanta')" :disabled="isLoading||!startDate" style="background:#66bb6a;">Kanta (Période)</button></div></section>
+        <section class="card"><h2>Analyse Visuelle (Batch)</h2><div style="display:flex; gap:5px; margin-bottom:10px;"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div><div class="button-group-vertical"><button @click="runBatchVisualAnalysis('frequency')" :disabled="isLoading||!startDate" style="background:#ef5350;">Rouge/Bleu (Période)</button><button @click="runBatchVisualAnalysis('kanta')" :disabled="isLoading||!startDate" style="background:#66bb6a;">Kanta (Période)</button></div></section>
         
-        <!-- RAPPORTS PONCTUELS (MODIFIE) -->
+        <!-- RAPPORTS PONCTUELS (VERSION V80 RESTAUREE) -->
         <section class="card">
           <h2>Rapports Ponctuels</h2>
           
-          <label style="font-weight:bold; font-size:0.8rem;">Période Surlignage & Kanta :</label>
-          <div class="date-picker-row">
-             <input type="date" v-model="spotStartDate"/>
-             <input type="date" v-model="spotEndDate"/>
-          </div>
-          <div class="button-group-vertical" style="margin-top:5px; margin-bottom:15px;">
-             <button @click="runSpotVisualAnalysis('frequency')" :disabled="isLoading||!spotStartDate" style="border:1px solid #ef5350; background:transparent; color:#d32f2f;">🎨 Surlignage (Période)</button>
-             <button @click="runSpotVisualAnalysis('kanta')" :disabled="isLoading||!spotStartDate" style="border:1px solid #66bb6a; background:transparent; color:#388e3c;">🎨 Surlignage Kanta (Période)</button>
+          <input type="date" v-model="selectedDate"/>
+          
+          <div class="button-group-vertical" style="margin-top:10px;">
+             <button @click="runSingleDayVisual('frequency')" :disabled="isLoading||!selectedDate" style="border:1px solid #ef5350; background:transparent; color:#d32f2f;">🎨 Surlignage Jour</button>
+             <button @click="runSingleDayVisual('kanta')" :disabled="isLoading||!selectedDate" style="border:1px solid #66bb6a; background:transparent; color:#388e3c;">🎨 Surlignage Kanta</button>
           </div>
           
           <hr>
-          <label style="font-weight:bold; font-size:0.8rem;">Date Classement :</label>
-          <input type="date" v-model="selectedDate"/>
           <div class="button-group-vertical">
             <button @click="runReport('daily-frequency')" :disabled="isLoading||!selectedDate">Classement Jour (Top 10)</button>
             <button @click="runReport('weekly-frequency')" :disabled="isLoading||!selectedDate">Classement Semaine (Top 10)</button>
             <hr>
-            <input type="number" v-model="selectedNumber" placeholder="N° Compagnons"/><button @click="runReport('companions')" :disabled="isLoading||!selectedDate||!selectedNumber">Analyser Compagnons</button>
+            <div class="button-group-horizontal">
+                <button @click="runKantaReport('daily-rank')" :disabled="isLoading||!selectedDate">Kanta Rank</button>
+            </div>
+            <div class="input-group" style="margin-top:10px;">
+                <input type="number" v-model="selectedNumber" placeholder="N° Compagnons"/>
+                <button @click="runReport('companions')" :disabled="isLoading||!selectedDate||!selectedNumber">Analyser Compagnons</button>
+            </div>
           </div>
         </section>
         
@@ -317,18 +312,10 @@ async function runKantaReport(reportType) { if (!selectedDate.value) return; las
         
         <section class="card prophet-card"><h2>🔮 Le Prophète</h2><div style="display:flex; gap:5px; margin-bottom:10px;"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div><input type="number" v-model="predictionNumber" placeholder="N° vu"/><input type="number" v-model="predictionCompanion" placeholder="Compagnon"/><button @click="runPredictionAnalysis" :disabled="isLoading||!startDate||!predictionNumber" class="prophet-btn">Voir Futur</button></section>
         
-        <!-- IA AVANCEE (NETTOYEE & DECLENCHEUR FLEXIBLE) -->
-        <section class="card">
-           <h2>IA Avancée</h2>
-           <div style="display:flex; gap:5px; margin-bottom:10px;"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div>
-           <input type="text" v-model="triggerInput" placeholder="Cible (ex: 18 ou 12-45)"/>
-           <button @click="runTriggerAnalysis" :disabled="isLoading||!triggerInput">Déclencheurs ⚡</button>
-           <hr>
-           <div class="button-group-horizontal"><button @click="runKantaReport('daily-rank')">Classement Kanta J</button><button @click="runKantaReport('weekly-rank')">Classement Kanta S</button></div>
-        </section>
+        <section class="card"><h2>IA Avancée</h2><div style="display:flex; gap:5px; margin-bottom:10px;"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div><input type="text" v-model="triggerInput" placeholder="Cible (ex: 18 ou 12-45)"/><button @click="runTriggerAnalysis" :disabled="isLoading||!triggerInput">Déclencheurs ⚡</button></section>
       </div>
 
-      <!-- RESULTS (UNCHANGED BUT INCLUDED FOR COMPLETENESS) -->
+      <!-- RESULTS -->
       <div class="results-column">
         <div class="quick-link-box"><a :href="sheetDirectLink" target="_blank" class="gsheet-btn">📂 OUVRIR GOOGLE SHEETS</a></div>
 
@@ -386,8 +373,7 @@ async function runKantaReport(reportType) { if (!selectedDate.value) return; las
 </template>
 
 <style scoped>
-/* COPIEZ EXACTEMENT LE STYLE "PREMIUM" FOURNI DANS LA REPONSE PRECEDENTE */
-/* JE LE REMETS ICI POUR ETRE SUR QUE VOUS AVEZ TOUT */
+/* STYLE D'ORIGINE PREMIUM (INCHANGE) */
 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;800&family=Roboto:wght@400;500;700&display=swap');
 
 :root {
@@ -407,7 +393,6 @@ body {
   margin: 0;
 }
 
-/* HEADER & LAYOUT */
 .dashboard { max-width: 98%; margin: 0 auto; padding-top: 10px; }
 header {
   background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
@@ -422,7 +407,6 @@ h1 { font-family: 'Poppins', sans-serif; font-weight: 800; font-size: 1.8rem; le
 .version-tag { background: #f72585; padding: 5px 10px; border-radius: 20px; font-size: 0.8rem; vertical-align: middle; }
 .main-layout { display: grid; grid-template-columns: 380px 1fr; gap: 25px; padding-bottom: 50px; }
 
-/* CARTES (STYLE D'ORIGINE) */
 .card {
   background: white;
   border-radius: 16px;
@@ -434,7 +418,6 @@ h1 { font-family: 'Poppins', sans-serif; font-weight: 800; font-size: 1.8rem; le
 }
 .card:hover { transform: translateY(-2px); }
 
-/* EN-TÊTES DE FONCTIONS */
 .matrix-card { border-top: 5px solid #7209b7; background: linear-gradient(to bottom, #fff, #fdf4ff); }
 .spec-card { border-top: 5px solid #00b4d8; background: linear-gradient(to bottom, #fff, #e0f7fa); }
 .prophet-card { border-top: 5px solid #f72585; background: linear-gradient(to bottom, #fff, #fce4ec); }
@@ -450,7 +433,6 @@ h1 { font-family: 'Poppins', sans-serif; font-weight: 800; font-size: 1.8rem; le
   margin-bottom: 15px;
 }
 
-/* BOUTONS (GRADIENTS ORIGINAUX) */
 button {
   font-family: 'Poppins', sans-serif;
   font-weight: 600;
@@ -474,7 +456,6 @@ button:disabled { background: #cbd5e1 !important; transform: none; box-shadow: n
 .close-btn { background: transparent; color: #999; box-shadow: none; width: auto; font-size: 1.5rem; padding: 0 10px; }
 .logout-button { background: #64748b; padding: 0.5rem 1rem; width: auto; font-size: 0.8rem; }
 
-/* INPUTS */
 input, select {
   padding: 12px;
   border: 2px solid #e2e8f0;
@@ -489,14 +470,12 @@ input:focus, select:focus { border-color: #4361ee; outline: none; }
 .favorites-input-group { display: flex; gap: 5px; margin-bottom: 10px; }
 .btn-small { width: auto; padding: 10px 20px; }
 
-/* TABLEAUX DE RÉSULTATS */
 .result-spec-card { border-top: 5px solid #4361ee; }
 .spec-table, .styled-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
 .spec-table th, .styled-table th { background: #f1f5f9; color: #475569; font-weight: 800; text-transform: uppercase; font-size: 0.8rem; padding: 15px; text-align: center; }
 .spec-table td, .styled-table td { padding: 15px; border-bottom: 1px solid #f1f5f9; font-weight: 500; text-align: center; }
 .num-cell { font-size: 1.4rem; font-weight: 800; color: #1e293b; }
 
-/* BADGES & TAGS */
 .badge-spec { background: #00b4d8; color: white; padding: 5px 10px; border-radius: 20px; font-size: 0.7rem; font-weight: bold; }
 .best-duo-box {
   background: linear-gradient(135deg, #11998e, #38ef7d);
@@ -507,12 +486,10 @@ input:focus, select:focus { border-color: #4361ee; outline: none; }
 .duo-val { font-size: 2.5rem; font-weight: 800; text-shadow: 0 2px 4px rgba(0,0,0,0.2); }
 .duo-label { font-weight: bold; text-transform: uppercase; }
 
-/* CONTROLS SCROLLBAR */
 .controls-column { padding-right: 15px; max-height: 85vh; overflow-y: auto; }
 .controls-column::-webkit-scrollbar { width: 6px; }
 .controls-column::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
 
-/* AI BOX */
 .ai-analysis {
   background: #fff; border-left: 5px solid #f72585;
   box-shadow: 0 5px 15px rgba(0,0,0,0.05);
@@ -520,7 +497,6 @@ input:focus, select:focus { border-color: #4361ee; outline: none; }
   font-family: 'Roboto', sans-serif; line-height: 1.6; margin-top: 15px;
 }
 
-/* RANKING LIST (RICH) */
 .ranking-list { display: flex; flex-direction: column; gap: 15px; }
 .rank-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; display: flex; align-items: flex-start; gap: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
 .rank-badge { background: linear-gradient(135deg, #4361ee, #3a0ca3); box-shadow: 0 4px 10px rgba(67, 97, 238, 0.3); color: white; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; min-width: 40px; }
