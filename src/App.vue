@@ -35,9 +35,11 @@ const cyclicDay = ref(1);
 const favDayName = ref('Tous');
 const favHour = ref('Toutes');
 
-const selectedDate = ref(''); // DATE UNIQUE (Rapports)
-const startDate = ref(''); // DEBUT GLOBAL
-const endDate = ref(''); // FIN GLOBAL
+const selectedDate = ref('');
+const startDate = ref('');
+const endDate = ref('');
+const spotStartDate = ref('');
+const spotEndDate = ref('');
 
 const selectedNumber = ref('');
 const isLoading = ref(false);
@@ -86,7 +88,7 @@ const chartData = computed(() => {
     else labels.push('?');
     counts.push(row.count || row.total_hits);
   });
-  return { labels, datasets: [{ label: 'Occurrences', backgroundColor: '#4361ee', borderRadius: 4, data: counts }] };
+  return { labels, datasets: [{ label: 'Occurrences', backgroundColor: '#007bff', borderRadius: 4, data: counts }] };
 });
 
 const chartOptions = { responsive: true, maintainAspectRatio: false };
@@ -99,11 +101,13 @@ onMounted(() => {
   const day = today.getDate().toString().padStart(2, '0');
   selectedDate.value = `${year}-${month}-${day}`;
   endDate.value = `${year}-${month}-${day}`;
+  spotEndDate.value = `${year}-${month}-${day}`;
   
   const oneMonthAgo = new Date();
   oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
   const startStr = `${oneMonthAgo.getFullYear()}-${(oneMonthAgo.getMonth()+1).toString().padStart(2,'0')}-${oneMonthAgo.getDate().toString().padStart(2,'0')}`;
   startDate.value = startStr;
+  spotStartDate.value = startStr;
 
   onAuthStateChanged(auth, async (firebaseUser) => {
     if (firebaseUser) {
@@ -215,9 +219,14 @@ async function runTriggerAnalysis() { requireVip(async () => {
   await callApi(url, 'standard'); 
 });}
 
-async function runSingleDayVisual(mode) { requireVip(async () => {
+async function runBatchVisualAnalysis(mode) { requireVip(async () => {
   lastOperationType.value = 'visual'; 
-  await callApi(`/analysis/highlight-range?start_date=${selectedDate.value}&end_date=${selectedDate.value}&mode=${mode}`, 'standard'); 
+  await callApi(`/analysis/highlight-range?start_date=${startDate.value}&end_date=${endDate.value}&mode=${mode}`, 'standard'); 
+});}
+
+async function runSpotVisualAnalysis(mode) { requireVip(async () => {
+  lastOperationType.value = 'visual'; 
+  await callApi(`/analysis/highlight-range?start_date=${spotStartDate.value}&end_date=${spotEndDate.value}&mode=${mode}`, 'standard'); 
 });}
 
 async function runReport(reportType) { requireVip(async () => {
@@ -334,17 +343,22 @@ function contactWhatsApp() {
           </div>
         </section>
         
-        <!-- RAPPORTS PONCTUELS (DESIGN V80 RESTAURE : DATE UNIQUE) -->
         <section class="card">
           <h2>Rapports Ponctuels</h2>
-          <input type="date" v-model="selectedDate"/>
           
-          <div class="button-group-vertical" style="margin-top:10px;">
-             <button @click="runSingleDayVisual('frequency')" :disabled="isLoading||!selectedDate"><span v-if="!isVip">🔒 </span>🎨 Surlignage Jour</button>
-             <button @click="runSingleDayVisual('kanta')" :disabled="isLoading||!selectedDate"><span v-if="!isVip">🔒 </span>🎨 Surlignage Kanta</button>
+          <label style="font-weight:bold; font-size:0.8rem; color:#007bff;">Période Surlignage & Kanta :</label>
+          <div class="date-picker-row">
+             <input type="date" v-model="spotStartDate"/>
+             <input type="date" v-model="spotEndDate"/>
+          </div>
+          <div class="button-group-vertical" style="margin-top:5px; margin-bottom:15px;">
+             <button @click="runSpotVisualAnalysis('frequency')" :disabled="isLoading||!spotStartDate"><span v-if="!isVip">🔒 </span>🎨 Surlignage (Période)</button>
+             <button @click="runSpotVisualAnalysis('kanta')" :disabled="isLoading||!spotStartDate"><span v-if="!isVip">🔒 </span>🎨 Surlignage Kanta (Période)</button>
           </div>
           
           <hr>
+          <label style="font-weight:bold; font-size:0.8rem;">Date Classement :</label>
+          <input type="date" v-model="selectedDate"/>
           <div class="button-group-vertical">
             <button @click="runReport('daily-frequency')" :disabled="isLoading||!selectedDate"><span v-if="!isVip">🔒 </span>Classement Jour</button>
             <button @click="runReport('weekly-frequency')" :disabled="isLoading||!selectedDate"><span v-if="!isVip">🔒 </span>Classement Semaine</button>
@@ -364,8 +378,7 @@ function contactWhatsApp() {
 
       <!-- RESULTATS -->
       <div class="results-column">
-        <div class="quick-link-box"><a :href="sheetDirectLink" target="_blank" class="gsheet-btn">📂 OUVRIR GOOGLE SHEETS</a></div>
-
+        
         <section v-if="standardResult && lastOperationType === 'ranking_rich'" class="card results-card fade-in">
           <div class="spec-header"><h2>Classement Top 10</h2><button @click="standardResult=null" class="close-btn">Fermer</button></div>
           <div class="ranking-list"><div v-for="(item, index) in standardResult.data" :key="item.number" class="rank-card"><div class="rank-badge">#{{ index + 1 }}</div><div class="rank-main"><span class="rank-num">{{ item.number }}</span><span class="rank-hits">{{ item.total_hits }} Sorties</span></div><div class="rank-details"><div class="detail-col"><strong>Top Jours</strong> <span v-for="(d, i) in item.top_days">{{d.val}} ({{d.count}}){{ i < item.top_days.length - 1 ? ', ' : '' }}</span></div><div class="detail-col"><strong>Top Heures</strong> <span v-for="(h, i) in item.top_hours">{{h.val}} ({{h.count}}){{ i < item.top_hours.length - 1 ? ', ' : '' }}</span></div><div class="detail-col red"><strong>Déclencheurs</strong> <span v-for="(t, i) in item.top_triggers">{{t.val}} ({{t.count}}){{ i < item.top_triggers.length - 1 ? ', ' : '' }}</span></div><div class="detail-col blue"><strong>Compagnons</strong> <span v-for="(c, i) in item.top_companions">{{c.val}} ({{c.count}}){{ i < item.top_companions.length - 1 ? ', ' : '' }}</span></div><div class="detail-col purple"><strong>Prophètes</strong> <span v-for="(p, i) in item.top_prophets">{{p.val}} ({{p.count}}){{ i < item.top_prophets.length - 1 ? ', ' : '' }}</span></div></div></div></div>
@@ -382,7 +395,6 @@ function contactWhatsApp() {
            <div class="table-responsive"><table class="spec-table"><thead><tr><th>Date</th><th>Base</th><th>Hits</th></tr></thead><tbody><tr v-for="(row, idx) in matrixResult.matrix_data" :key="idx"><td>{{ row.date }}</td><td class="num-cell">{{ row.base_number }}</td><td><div v-for="h in row.detailed_hits" :key="h.num"><span class="badge-hit">{{ h.num }}</span> ({{ h.time }} - {{ h.reason }})</div></td></tr></tbody></table></div>
         </div>
 
-        <!-- Autres résultats -->
         <div v-if="dayAnalysisResult" class="card result-spec-card"><div class="spec-header"><h3>📊 TOP 5 : {{ dayAnalysisResult.day_analyzed }}</h3><button @click="dayAnalysisResult=null" class="close-btn">×</button></div><div class="best-duo-box"><span class="duo-label">🔥 DUO OR :</span><span class="duo-val">{{ dayAnalysisResult.best_duo }}</span></div><div class="table-responsive"><table class="spec-table"><thead><tr><th>Stat</th><th>N°</th><th>Kanta</th><th>Compagnons</th><th>Déclencheurs</th><th>Prophète</th></tr></thead><tbody><tr v-for="row in dayAnalysisResult.recurrence_data" :key="row.number"><td style="font-size:1.2rem;">{{ row.status_icon }}</td><td class="num-cell">{{ row.number }}</td><td style="color:#d32f2f;">{{ row.kanta }}</td><td>{{ row.best_companion }}</td><td>{{ row.best_trigger }}</td><td class="proph-cell">{{ row.best_prophet }}</td></tr></tbody></table></div></div>
         <div v-if="deepFavoriteResult" class="card result-spec-card" style="border-top:4px solid #fdd835;"><div class="spec-header"><h3>⭐ SCAN PROFOND : {{ deepFavoriteResult.favorite }}</h3><button @click="deepFavoriteResult=null" class="close-btn">×</button></div><div v-if="deepFavoriteResult.data===null"><p>Jamais sorti.</p></div><div v-else><div class="summary-grid"><div class="sum-card"><h5>Top Jours</h5><ul><li v-for="x in deepFavoriteResult.summary.top_days">{{ x.val }} ({{x.count}})</li></ul></div><div class="sum-card"><h5>Top Heures</h5><ul><li v-for="x in deepFavoriteResult.summary.top_hours">{{ x.val }} ({{x.count}})</li></ul></div><div class="sum-card"><h5>Top Déclencheurs</h5><ul><li v-for="x in deepFavoriteResult.summary.top_triggers">{{ x.val }} ({{x.count}})</li></ul></div><div class="sum-card"><h5>Top Compagnons</h5><ul><li v-for="x in deepFavoriteResult.summary.top_companions">{{ x.val }} ({{x.count}})</li></ul></div><div class="sum-card"><h5>Top Prophètes</h5><ul><li v-for="x in deepFavoriteResult.summary.top_prophets">{{ x.val }} ({{x.count}})</li></ul></div></div><div class="table-responsive"><table class="spec-table"><thead><tr><th>Date</th><th>Heure</th><th>Déclencheur</th><th>Compagnons</th><th>Prophète</th></tr></thead><tbody><tr v-for="(row, idx) in deepFavoriteResult.history_table" :key="idx"><td>{{ row.date }} {{row.day}}</td><td>{{ row.time }}</td><td>{{ row.trigger }}</td><td>{{ row.companion }}</td><td>{{ row.prophet }}</td></tr></tbody></table></div></div></div>
         <div v-if="profileResult" class="card result-spec-card" style="border-top:4px solid #ab47bc;"><div class="spec-header"><h3>👤 PROFIL COMPLET : {{ profileResult.profile_data.number }}</h3><button @click="profileResult=null" class="close-btn">×</button></div><div class="stats-grid"><div class="stat-item"><strong>Sorties</strong><br>{{ profileResult.profile_data.hits }}</div><div class="stat-item"><strong>Jour</strong><br>{{ profileResult.profile_data.best_day }}</div><div class="stat-item"><strong>Heure</strong><br>{{ profileResult.profile_data.best_time }}</div></div><div class="summary-grid"><div class="sum-card"><h5>Top Jours</h5><ul><li v-for="d in profileResult.profile_data.top_days" :key="d.val">{{ d.val }} ({{ d.count }})</li></ul></div><div class="sum-card"><h5>Top Heures</h5><ul><li v-for="h in profileResult.profile_data.top_hours" :key="h.val">{{ h.val }} ({{ h.count }})</li></ul></div><div class="sum-card"><h5>Top Compagnons</h5><ul><li v-for="c in profileResult.profile_data.top_companions" :key="c.val">{{ c.val }} ({{ c.count }})</li></ul></div></div><div class="summary-grid"><div class="sum-card"><h5>Top Déclencheurs (Avant)</h5><ul><li v-for="t in profileResult.profile_data.top_triggers" :key="t.val">{{ t.val }} ({{ t.count }})</li></ul></div><div class="sum-card"><h5>Top Prophètes (Après)</h5><ul><li v-for="p in profileResult.profile_data.top_prophets" :key="p.val">{{ p.val }} ({{ p.count }})</li></ul></div></div><div class="ai-analysis"><h4>🧠 Analyse Expert :</h4><p>{{ profileResult.ai_strategic_profile }}</p></div></div>
@@ -391,81 +403,34 @@ function contactWhatsApp() {
 
         <div v-if="!standardResult && !matrixResult && !isLoading" class="welcome-message">
             <h3>Bienvenue sur Le Guide</h3>
-            <p v-if="!isVip">Vous êtes en mode <strong>GRATUIT</strong>. Utilisez la fonction "Fréquence Période" pour tester la puissance de l'outil.</p>
+            <p v-if="!isVip">Vous êtes en mode <strong>GRATUIT</strong>. Utilisez "Fréquence Période" pour tester.</p>
             <p v-else>Mode <strong>VIP ACTIF</strong>. Bon gain !</p>
         </div>
         <div v-if="isLoading" class="loader">Analyse en cours...</div><div v-if="error" class="error-box">{{ error }}</div>
       </div>
     </div>
 
-    <!-- MODAL GUIDE EXPERT (CONTENU DETAILLE) -->
+    <!-- GUIDE ET PAYWALL -->
     <div v-if="showGuide" class="modal-overlay">
       <div class="modal-box guide-box">
         <button @click="showGuide = false" class="close-modal-btn">×</button>
         <h2>📘 LA MÉTHODE DU GAGNANT</h2>
         <div class="guide-content">
           <p>Bienvenue dans l'élite. Ici, on ne joue pas au hasard, on joue avec des <strong>Données</strong>.</p>
-          
-          <div class="guide-section free-section">
-            <h3>🚀 ÉTAPE 1 : LA PREUVE (Gratuit)</h3>
-            <p>Avant de payer, <strong>testez la puissance</strong> avec la fonction "Fréquence Période".</p>
-            <p><strong>LA STRATÉGIE DE TEST :</strong></p>
-            <ol>
-               <li>Mettez une période récente (ex: les 3 derniers mois).</li>
-               <li>Lancez l'analyse. Regardez le <strong>TOP 3</strong> des numéros.</li>
-               <li><strong>Action :</strong> Surveillez ces 3 numéros. Vous verrez qu'ils sortent presque tous les jours. C'est votre "Base".</li>
-               <li><em>Mais attention : Savoir "Quoi" jouer ne suffit pas. Il faut savoir "Quand".</em></li>
-            </ol>
-          </div>
-
-          <div class="guide-section vip-section">
-            <h3>💎 ÉTAPE 2 : LA PRÉCISION CHIRURGICALE (VIP)</h3>
-            <p>Pour gagner gros, il vous faut l'arsenal complet (10 000 FCFA/Mois).</p>
-            
-            <h4>1. 📅 L'ANALYSTE SPÉCIALISTE (Le Sniper)</h4>
-            <p>Il ne vous donne pas un numéro au hasard. Il vous dit : <em>"Le Lundi à 10H00, le 14 sort toujours avec le 55"</em>. C'est la fonction reine pour les <strong>Two-Sure</strong>.</p>
-            
-            <h4>2. 🕰️ LA MATRICE TEMPORELLE (Le Décodeur)</h4>
-            <p>C'est des mathématiques pures. Si on est le 27 du mois, la matrice calcule les numéros "obligatoires" (Renversé J+1, Kanta J-1...). C'est infaillible sur le long terme.</p>
-            
-            <h4>3. ⭐ LE SCAN PROFOND (L'Espion)</h4>
-            <p>Vous aimez le numéro 10 ? Le Scan Profond vous dira : <em>"Attention, le 10 ne sort jamais le Mardi, mais il adore le Jeudi à 13H"</em>. Ne perdez plus votre argent aux mauvaises heures.</p>
-            
-            <h4>⚡ LA COMBINAISON GAGNANTE</h4>
-            <p>Si la <strong>Matrice</strong> vous donne le <strong>82</strong> ET que le <strong>Spécialiste</strong> vous dit que le 82 est fort à 10H... <strong>C'EST LE JACKPOT.</strong></p>
-          </div>
-
-          <div class="guide-cta">
-            <p>Ne restez pas spectateur.</p>
-            <div class="price-tag-large">10 000 FCFA / MOIS</div>
-            <button @click="showGuide = false; showPaywall = true" class="cta-btn">JE PASSE VIP MAINTENANT</button>
-          </div>
+          <div class="guide-section free-section"><h3>🚀 ÉTAPE 1 : LA PREUVE (Gratuit)</h3><p>Testez avec "Fréquence Période". Si le Top 3 sort, imaginez la suite.</p></div>
+          <div class="guide-section vip-section"><h3>💎 ÉTAPE 2 : LA PRÉCISION (VIP)</h3><p><strong>Spécialiste :</strong> L'heure exacte.</p><p><strong>Matrice :</strong> Le calcul mathématique.</p><div class="price-tag-large">10 000 FCFA / MOIS</div><button @click="showGuide = false; showPaywall = true" class="cta-btn">JE PASSE VIP</button></div>
         </div>
       </div>
     </div>
 
-    <!-- MODAL PAYWALL -->
     <div v-if="showPaywall" class="modal-overlay paywall-overlay">
       <div class="modal-box paywall-box">
         <div class="lock-icon">🔒</div>
         <h2>ACCÈS VIP REQUIS</h2>
-        <p>Débloquez la Matrice, le Spécialiste et les Prédictions IA.</p>
-        
-        <div class="pricing-card">
-          <span class="price">10 000 FCFA</span>
-          <span class="duration">/ Mois</span>
-        </div>
-
-        <div class="payment-steps">
-          <p>1. Faites un dépôt <strong>Wave</strong> ou <strong>Orange Money</strong> au :</p>
-          <div class="phone-number">+225 07 49 52 23 65</div>
-          <p>2. Cliquez sur le bouton vert pour m'envoyer la preuve sur WhatsApp.</p>
-        </div>
-
-        <button @click="contactWhatsApp" class="whatsapp-btn">
-          📞 ACTIVER MON COMPTE (WhatsApp)
-        </button>
-        
+        <p>Débloquez la Matrice, le Spécialiste et les Prédictions.</p>
+        <div class="pricing-card"><span class="price">10 000 FCFA</span>/Mois</div>
+        <div class="payment-steps"><p>Dépôt Wave/Orange :</p><div class="phone-number">+225 07 49 52 23 65</div></div>
+        <button @click="contactWhatsApp" class="whatsapp-btn">📞 ACTIVER MON COMPTE</button>
         <button @click="showPaywall = false" class="close-link">Fermer</button>
       </div>
     </div>
