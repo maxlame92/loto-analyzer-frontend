@@ -35,11 +35,10 @@ const cyclicDay = ref(1);
 const favDayName = ref('Tous');
 const favHour = ref('Toutes');
 
+// DATE UNIQUE POUR RAPPORTS (V80 RESTAUREE)
 const selectedDate = ref('');
 const startDate = ref('');
 const endDate = ref('');
-const spotStartDate = ref('');
-const spotEndDate = ref('');
 
 const selectedNumber = ref('');
 const isLoading = ref(false);
@@ -88,7 +87,7 @@ const chartData = computed(() => {
     else labels.push('?');
     counts.push(row.count || row.total_hits);
   });
-  return { labels, datasets: [{ label: 'Occurrences', backgroundColor: '#007bff', borderRadius: 4, data: counts }] };
+  return { labels, datasets: [{ label: 'Occurrences', backgroundColor: '#4361ee', borderRadius: 4, data: counts }] };
 });
 
 const chartOptions = { responsive: true, maintainAspectRatio: false };
@@ -101,13 +100,11 @@ onMounted(() => {
   const day = today.getDate().toString().padStart(2, '0');
   selectedDate.value = `${year}-${month}-${day}`;
   endDate.value = `${year}-${month}-${day}`;
-  spotEndDate.value = `${year}-${month}-${day}`;
   
   const oneMonthAgo = new Date();
   oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
   const startStr = `${oneMonthAgo.getFullYear()}-${(oneMonthAgo.getMonth()+1).toString().padStart(2,'0')}-${oneMonthAgo.getDate().toString().padStart(2,'0')}`;
   startDate.value = startStr;
-  spotStartDate.value = startStr;
 
   onAuthStateChanged(auth, async (firebaseUser) => {
     if (firebaseUser) {
@@ -176,7 +173,6 @@ function requireVip(callback) {
   if (isVip.value) { callback(); } else { showPaywall.value = true; }
 }
 
-// --- ACTIONS ---
 async function runRangeAnalysis() {
   if (!startDate.value) return;
   lastOperationType.value = 'ranking_rich';
@@ -219,16 +215,19 @@ async function runTriggerAnalysis() { requireVip(async () => {
   await callApi(url, 'standard'); 
 });}
 
+// SURLIGNAGE PÉRIODE (Logique V80 : 2 Dates)
 async function runBatchVisualAnalysis(mode) { requireVip(async () => {
   lastOperationType.value = 'visual'; 
   await callApi(`/analysis/highlight-range?start_date=${startDate.value}&end_date=${endDate.value}&mode=${mode}`, 'standard'); 
 });}
 
-async function runSpotVisualAnalysis(mode) { requireVip(async () => {
+// SURLIGNAGE JOUR UNIQUE (Logique V80 : Même date start/end)
+async function runSingleDayVisual(mode) { requireVip(async () => {
   lastOperationType.value = 'visual'; 
-  await callApi(`/analysis/highlight-range?start_date=${spotStartDate.value}&end_date=${spotEndDate.value}&mode=${mode}`, 'standard'); 
+  await callApi(`/analysis/highlight-range?start_date=${selectedDate.value}&end_date=${selectedDate.value}&mode=${mode}`, 'standard'); 
 });}
 
+// RAPPORTS AVEC DATE UNIQUE (Logique V80 Restaurée)
 async function runReport(reportType) { requireVip(async () => {
   if (reportType === 'daily-frequency') {
       lastOperationType.value = 'ranking_rich';
@@ -291,7 +290,7 @@ function contactWhatsApp() {
 
   <main v-else class="dashboard">
     <header>
-      <h1>LE GUIDE <span class="version-tag">V93</span></h1>
+      <h1>LE GUIDE <span class="version-tag">V94</span></h1>
       <div class="user-info">
         <span v-if="isVip" class="vip-badge">👑 VIP ACTIF</span>
         <span v-else class="free-badge">GRATUIT</span>
@@ -336,29 +335,24 @@ function contactWhatsApp() {
         </section>
         
         <section class="card">
-          <h2>Analyse Visuelle</h2>
+          <h2>Analyse Visuelle (Batch)</h2>
           <div class="button-group-vertical">
              <button @click="runBatchVisualAnalysis('frequency')" :disabled="isLoading||!startDate" class="visu-btn"><span v-if="!isVip">🔒 </span>Rouge/Bleu (Période)</button>
              <button @click="runBatchVisualAnalysis('kanta')" :disabled="isLoading||!startDate" class="visu-btn"><span v-if="!isVip">🔒 </span>Kanta (Période)</button>
           </div>
         </section>
         
+        <!-- RAPPORTS PONCTUELS STYLE V80 (DATE UNIQUE) -->
         <section class="card">
           <h2>Rapports Ponctuels</h2>
+          <input type="date" v-model="selectedDate"/>
           
-          <label style="font-weight:bold; font-size:0.8rem; color:#007bff;">Période Surlignage & Kanta :</label>
-          <div class="date-picker-row">
-             <input type="date" v-model="spotStartDate"/>
-             <input type="date" v-model="spotEndDate"/>
-          </div>
-          <div class="button-group-vertical" style="margin-top:5px; margin-bottom:15px;">
-             <button @click="runSpotVisualAnalysis('frequency')" :disabled="isLoading||!spotStartDate"><span v-if="!isVip">🔒 </span>🎨 Surlignage (Période)</button>
-             <button @click="runSpotVisualAnalysis('kanta')" :disabled="isLoading||!spotStartDate"><span v-if="!isVip">🔒 </span>🎨 Surlignage Kanta (Période)</button>
+          <div class="button-group-vertical" style="margin-top:10px;">
+             <button @click="runSingleDayVisual('frequency')" :disabled="isLoading||!selectedDate"><span v-if="!isVip">🔒 </span>🎨 Surlignage Jour</button>
+             <button @click="runSingleDayVisual('kanta')" :disabled="isLoading||!selectedDate"><span v-if="!isVip">🔒 </span>🎨 Surlignage Kanta</button>
           </div>
           
           <hr>
-          <label style="font-weight:bold; font-size:0.8rem;">Date Classement :</label>
-          <input type="date" v-model="selectedDate"/>
           <div class="button-group-vertical">
             <button @click="runReport('daily-frequency')" :disabled="isLoading||!selectedDate"><span v-if="!isVip">🔒 </span>Classement Jour</button>
             <button @click="runReport('weekly-frequency')" :disabled="isLoading||!selectedDate"><span v-if="!isVip">🔒 </span>Classement Semaine</button>
@@ -389,6 +383,7 @@ function contactWhatsApp() {
           </div>
         </section>
 
+        <!-- Autres résultats -->
         <div v-if="matrixResult" class="card result-spec-card" style="border-top:4px solid #ff9800;">
            <div class="spec-header"><h3>🕰️ MATRICE TEMPORELLE</h3><button @click="matrixResult=null" class="close-btn">×</button></div>
            <div v-if="matrixResult.prediction" class="prediction-tab"><div class="best-duo-box" style="background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);"><span class="duo-label">🔮 PRÉDICTION :</span><span class="duo-val">{{ matrixResult.prediction.two_short }}</span></div></div>
@@ -410,7 +405,7 @@ function contactWhatsApp() {
       </div>
     </div>
 
-    <!-- GUIDE ET PAYWALL -->
+    <!-- MODAL GUIDE -->
     <div v-if="showGuide" class="modal-overlay">
       <div class="modal-box guide-box">
         <button @click="showGuide = false" class="close-modal-btn">×</button>
@@ -423,6 +418,7 @@ function contactWhatsApp() {
       </div>
     </div>
 
+    <!-- MODAL PAYWALL -->
     <div v-if="showPaywall" class="modal-overlay paywall-overlay">
       <div class="modal-box paywall-box">
         <div class="lock-icon">🔒</div>
