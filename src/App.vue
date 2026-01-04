@@ -9,6 +9,7 @@ import { Chart as ChartJS, Title, Tooltip, Legend, BarElement, CategoryScale, Li
 ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale);
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
+const GOOGLE_SHEET_ID = "1HepqMzKcshKbRsLWwpEOOy5oO9ntK2CgdV7F_ijmjIo";
 
 const user = ref(null);
 const userRole = ref('free'); 
@@ -35,10 +36,12 @@ const cyclicDay = ref(1);
 const favDayName = ref('Tous');
 const favHour = ref('Toutes');
 
-// DATE UNIQUE POUR RAPPORTS (V80 RESTAUREE)
+// RESTAURATION DES PERIODES POUR TOUT LE MONDE
 const selectedDate = ref('');
 const startDate = ref('');
 const endDate = ref('');
+const spotStartDate = ref(''); // Pour le surlignage spécifique
+const spotEndDate = ref('');
 
 const selectedNumber = ref('');
 const isLoading = ref(false);
@@ -53,6 +56,9 @@ const isVip = computed(() => {
   const expiry = new Date(subscriptionEnd.value);
   return today <= expiry;
 });
+
+const isAdmin = computed(() => userRole.value === 'admin');
+const sheetDirectLink = computed(() => `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/edit`);
 
 const tableHeaders = computed(() => {
   if (!lastOperationType.value) return [];
@@ -100,11 +106,13 @@ onMounted(() => {
   const day = today.getDate().toString().padStart(2, '0');
   selectedDate.value = `${year}-${month}-${day}`;
   endDate.value = `${year}-${month}-${day}`;
+  spotEndDate.value = `${year}-${month}-${day}`;
   
   const oneMonthAgo = new Date();
   oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
   const startStr = `${oneMonthAgo.getFullYear()}-${(oneMonthAgo.getMonth()+1).toString().padStart(2,'0')}-${oneMonthAgo.getDate().toString().padStart(2,'0')}`;
   startDate.value = startStr;
+  spotStartDate.value = startStr;
 
   onAuthStateChanged(auth, async (firebaseUser) => {
     if (firebaseUser) {
@@ -173,6 +181,12 @@ function requireVip(callback) {
   if (isVip.value) { callback(); } else { showPaywall.value = true; }
 }
 
+// --- ADMIN ---
+async function runDataUpdate(endpoint) {
+  await callApi(`/collection/${endpoint}`, 'standard');
+}
+
+// --- ACTIONS ---
 async function runRangeAnalysis() {
   if (!startDate.value) return;
   lastOperationType.value = 'ranking_rich';
@@ -215,19 +229,17 @@ async function runTriggerAnalysis() { requireVip(async () => {
   await callApi(url, 'standard'); 
 });}
 
-// SURLIGNAGE PÉRIODE (Logique V80 : 2 Dates)
 async function runBatchVisualAnalysis(mode) { requireVip(async () => {
   lastOperationType.value = 'visual'; 
   await callApi(`/analysis/highlight-range?start_date=${startDate.value}&end_date=${endDate.value}&mode=${mode}`, 'standard'); 
 });}
 
-// SURLIGNAGE JOUR UNIQUE (Logique V80 : Même date start/end)
+// RAPPORTS AVEC DATE UNIQUE (V80 Style)
 async function runSingleDayVisual(mode) { requireVip(async () => {
   lastOperationType.value = 'visual'; 
   await callApi(`/analysis/highlight-range?start_date=${selectedDate.value}&end_date=${selectedDate.value}&mode=${mode}`, 'standard'); 
 });}
 
-// RAPPORTS AVEC DATE UNIQUE (Logique V80 Restaurée)
 async function runReport(reportType) { requireVip(async () => {
   if (reportType === 'daily-frequency') {
       lastOperationType.value = 'ranking_rich';
@@ -290,11 +302,12 @@ function contactWhatsApp() {
 
   <main v-else class="dashboard">
     <header>
-      <h1>LE GUIDE <span class="version-tag">V94</span></h1>
+      <h1>LE GUIDE <span class="version-tag">V95</span></h1>
       <div class="user-info">
         <span v-if="isVip" class="vip-badge">👑 VIP ACTIF</span>
         <span v-else class="free-badge">GRATUIT</span>
         <button @click="showGuide = true" class="guide-btn-header">📘 GUIDE & STRATÉGIES</button>
+        <a :href="sheetDirectLink" target="_blank" class="gsheet-btn-header">OUVRIR GOOGLE SHEETS</a>
         <button @click="logout" class="logout-button">Sortir</button>
       </div>
     </header>
@@ -303,11 +316,17 @@ function contactWhatsApp() {
       <!-- CONTROLS -->
       <div class="controls-column">
         
-        <section class="card free-card">
-          <div class="boss-header">
-             <h2>📊 FRÉQUENCE PÉRIODE (Top 10)</h2>
-             <span class="badge-free">GRATUIT</span>
+        <!-- SECTION ADMIN RESTAUREE -->
+        <section v-if="isAdmin" class="card data-update">
+          <h2>Maintenance (Admin)</h2>
+          <div class="button-group-horizontal">
+            <button @click="runDataUpdate('update-recent-weeks')" :disabled="isLoading">Mise à Jour Rapide</button>
+            <button @click="runDataUpdate('start-full-rebuild')" :disabled="isLoading" class="danger">Reconstruction</button>
           </div>
+        </section>
+
+        <section class="card free-card">
+          <div class="boss-header"><h2>📊 FRÉQUENCE PÉRIODE (Top 10)</h2><span class="badge-free">GRATUIT</span></div>
           <p class="small-text">Détectez les numéros en forme sur une période.</p>
           <div class="date-picker-row"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div>
           <button @click="runRangeAnalysis" :disabled="isLoading||!startDate" class="free-btn">LANCER L'ANALYSE GRATUITE</button>
@@ -317,6 +336,7 @@ function contactWhatsApp() {
           <div class="boss-header"><h2>🕰️ MATRICE TEMPORELLE</h2><span class="badge-spec">VIP</span></div>
           <div class="tabs"><button @click="matrixMode='continuous'" :class="{active: matrixMode==='continuous'}">CONTINU</button><button @click="matrixMode='cyclic'" :class="{active: matrixMode==='cyclic'}">CYCLIQUE</button></div>
           <div v-if="matrixMode==='cyclic'" style="margin-bottom:10px;"><label>Jour (1-31):</label><input type="number" v-model="cyclicDay" min="1" max="31"/></div>
+          <div class="date-picker-row"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div>
           <button @click="runTimeMatrix" :disabled="isLoading" class="spec-btn"><span v-if="!isVip">🔒 </span>ANALYSER & PRÉDIRE</button>
         </section>
         
@@ -324,34 +344,35 @@ function contactWhatsApp() {
           <div class="boss-header"><h2>📅 ANALYSTE SPÉCIALISTE</h2><span class="badge-spec">VIP</span></div>
           <label>Jour :</label><select v-model="selectedDayName"><option>Lundi</option><option>Mardi</option><option>Mercredi</option><option>Jeudi</option><option>Vendredi</option><option>Samedi</option><option>Dimanche</option></select>
           <label>Heure :</label><select v-model="selectedHour"><option>Toute la journée</option><option>01H</option><option>03H</option><option>07H</option><option>08H</option><option>10H</option><option>13H</option><option>16H</option><option>19H</option><option>21H</option><option>22H</option><option>23H</option></select>
+          <div class="date-picker-row"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div>
           <button @click="runDayAnalysis" :disabled="isLoading" class="spec-btn"><span v-if="!isVip">🔒 </span>SCANNER JOUR</button>
         </section>
         
         <section class="card">
           <h2>⭐ Mes Numéros Favoris</h2>
           <div class="favorites-input-group"><input type="text" v-model="newFavoriteInput" placeholder="Ex: 7" @keyup.enter="addFavorite"/><button @click="addFavorite" :disabled="!newFavoriteInput" class="btn-small">Ajouter</button></div>
+          <div class="date-picker-row"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div>
+          <div class="date-picker-row"><select v-model="favDayName" class="day-select"><option>Tous</option><option>Lundi</option><option>Mardi</option><option>Mercredi</option><option>Jeudi</option><option>Vendredi</option><option>Samedi</option><option>Dimanche</option></select><select v-model="favHour" class="day-select"><option>Toutes</option><option>10H</option><option>13H</option><option>16H</option><option>19H</option><option>21H</option><option>22H</option><option>23H</option></select></div>
           <div v-if="userFavorites.length>0" class="favorites-list"><div v-for="item in userFavorites" :key="item" class="favorite-chip"><span class="fav-label">{{ item }}</span><div class="fav-actions"><button @click="analyzeDeepFavorite(item)" class="icon-btn">⚡</button></div><span @click="removeFavorite(item)" class="fav-delete">×</span></div></div>
           <p v-if="!isVip" class="lock-msg">🔒 Analyse réservée aux VIP</p>
         </section>
         
         <section class="card">
-          <h2>Analyse Visuelle (Batch)</h2>
+          <h2>Analyse Visuelle</h2>
+          <div class="date-picker-row"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div>
           <div class="button-group-vertical">
              <button @click="runBatchVisualAnalysis('frequency')" :disabled="isLoading||!startDate" class="visu-btn"><span v-if="!isVip">🔒 </span>Rouge/Bleu (Période)</button>
              <button @click="runBatchVisualAnalysis('kanta')" :disabled="isLoading||!startDate" class="visu-btn"><span v-if="!isVip">🔒 </span>Kanta (Période)</button>
           </div>
         </section>
         
-        <!-- RAPPORTS PONCTUELS STYLE V80 (DATE UNIQUE) -->
         <section class="card">
           <h2>Rapports Ponctuels</h2>
           <input type="date" v-model="selectedDate"/>
-          
           <div class="button-group-vertical" style="margin-top:10px;">
              <button @click="runSingleDayVisual('frequency')" :disabled="isLoading||!selectedDate"><span v-if="!isVip">🔒 </span>🎨 Surlignage Jour</button>
              <button @click="runSingleDayVisual('kanta')" :disabled="isLoading||!selectedDate"><span v-if="!isVip">🔒 </span>🎨 Surlignage Kanta</button>
           </div>
-          
           <hr>
           <div class="button-group-vertical">
             <button @click="runReport('daily-frequency')" :disabled="isLoading||!selectedDate"><span v-if="!isVip">🔒 </span>Classement Jour</button>
@@ -365,9 +386,9 @@ function contactWhatsApp() {
           </div>
         </section>
         
-        <section class="card"><h2>Période & Profilage</h2><input type="number" v-model="profileNumber" placeholder="N° Profil"/><button @click="runProfileAnalysis" :disabled="isLoading||!startDate||!profileNumber"><span v-if="!isVip">🔒 </span>Générer Profil</button></section>
-        <section class="card prophet-card"><h2>🔮 Le Prophète</h2><input type="number" v-model="predictionNumber" placeholder="N° vu"/><button @click="runPredictionAnalysis" :disabled="isLoading||!startDate||!predictionNumber" class="prophet-btn"><span v-if="!isVip">🔒 </span>Voir Futur</button></section>
-        <section class="card"><h2>IA Avancée</h2><input type="text" v-model="triggerInput" placeholder="Cible"/><button @click="runTriggerAnalysis" :disabled="isLoading||!triggerInput"><span v-if="!isVip">🔒 </span>Déclencheurs ⚡</button></section>
+        <section class="card"><h2>Période & Profilage</h2><div class="date-picker-row"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div><input type="number" v-model="profileNumber" placeholder="N° Profil"/><button @click="runProfileAnalysis" :disabled="isLoading||!startDate||!profileNumber"><span v-if="!isVip">🔒 </span>Générer Profil</button></section>
+        <section class="card prophet-card"><h2>🔮 Le Prophète</h2><div class="date-picker-row"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div><input type="number" v-model="predictionNumber" placeholder="N° vu"/><button @click="runPredictionAnalysis" :disabled="isLoading||!startDate||!predictionNumber" class="prophet-btn"><span v-if="!isVip">🔒 </span>Voir Futur</button></section>
+        <section class="card"><h2>IA Avancée</h2><div class="date-picker-row"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div><input type="text" v-model="triggerInput" placeholder="Cible (ex: 18 ou 12-45)"/><button @click="runTriggerAnalysis" :disabled="isLoading||!triggerInput"><span v-if="!isVip">🔒 </span>Déclencheurs ⚡</button></section>
       </div>
 
       <!-- RESULTATS -->
@@ -377,35 +398,29 @@ function contactWhatsApp() {
           <div class="spec-header"><h2>Classement Top 10</h2><button @click="standardResult=null" class="close-btn">Fermer</button></div>
           <div class="ranking-list"><div v-for="(item, index) in standardResult.data" :key="item.number" class="rank-card"><div class="rank-badge">#{{ index + 1 }}</div><div class="rank-main"><span class="rank-num">{{ item.number }}</span><span class="rank-hits">{{ item.total_hits }} Sorties</span></div><div class="rank-details"><div class="detail-col"><strong>Top Jours</strong> <span v-for="(d, i) in item.top_days">{{d.val}} ({{d.count}}){{ i < item.top_days.length - 1 ? ', ' : '' }}</span></div><div class="detail-col"><strong>Top Heures</strong> <span v-for="(h, i) in item.top_hours">{{h.val}} ({{h.count}}){{ i < item.top_hours.length - 1 ? ', ' : '' }}</span></div><div class="detail-col red"><strong>Déclencheurs</strong> <span v-for="(t, i) in item.top_triggers">{{t.val}} ({{t.count}}){{ i < item.top_triggers.length - 1 ? ', ' : '' }}</span></div><div class="detail-col blue"><strong>Compagnons</strong> <span v-for="(c, i) in item.top_companions">{{c.val}} ({{c.count}}){{ i < item.top_companions.length - 1 ? ', ' : '' }}</span></div><div class="detail-col purple"><strong>Prophètes</strong> <span v-for="(p, i) in item.top_prophets">{{p.val}} ({{p.count}}){{ i < item.top_prophets.length - 1 ? ', ' : '' }}</span></div></div></div></div>
           <div v-if="!isVip" class="teaser-box">
-             <h3>🚀 VOUS VOULEZ ALLER PLUS LOIN ?</h3>
+             <h3>🚀 PASSEZ À LA VITESSE SUPÉRIEURE</h3>
              <p>Les VIP savent QUAND jouer ces numéros (Heure exacte, Duo en Or...).</p>
              <button @click="showPaywall = true" class="teaser-btn">DÉBLOQUER TOUT</button>
           </div>
         </section>
 
-        <!-- Autres résultats -->
-        <div v-if="matrixResult" class="card result-spec-card" style="border-top:4px solid #ff9800;">
-           <div class="spec-header"><h3>🕰️ MATRICE TEMPORELLE</h3><button @click="matrixResult=null" class="close-btn">×</button></div>
-           <div v-if="matrixResult.prediction" class="prediction-tab"><div class="best-duo-box" style="background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);"><span class="duo-label">🔮 PRÉDICTION :</span><span class="duo-val">{{ matrixResult.prediction.two_short }}</span></div></div>
-           <div class="table-responsive"><table class="spec-table"><thead><tr><th>Date</th><th>Base</th><th>Hits</th></tr></thead><tbody><tr v-for="(row, idx) in matrixResult.matrix_data" :key="idx"><td>{{ row.date }}</td><td class="num-cell">{{ row.base_number }}</td><td><div v-for="h in row.detailed_hits" :key="h.num"><span class="badge-hit">{{ h.num }}</span> ({{ h.time }} - {{ h.reason }})</div></td></tr></tbody></table></div>
-        </div>
-
+        <!-- Autres blocs résultats inchangés... -->
+        <div v-if="matrixResult" class="card result-spec-card" style="border-top:4px solid #ff9800;"><div class="spec-header"><h3>🕰️ MATRICE TEMPORELLE</h3><button @click="matrixResult=null" class="close-btn">×</button></div><div v-if="matrixResult.prediction" class="prediction-tab"><div class="best-duo-box" style="background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);"><span class="duo-label">🔮 PRÉDICTION :</span><span class="duo-val">{{ matrixResult.prediction.two_short }}</span></div></div><div class="table-responsive"><table class="spec-table"><thead><tr><th>Date</th><th>Base</th><th>Hits</th></tr></thead><tbody><tr v-for="(row, idx) in matrixResult.matrix_data" :key="idx"><td>{{ row.date }}</td><td class="num-cell">{{ row.base_number }}</td><td><div v-for="h in row.detailed_hits" :key="h.num"><span class="badge-hit">{{ h.num }}</span> ({{ h.time }} - {{ h.reason }})</div></td></tr></tbody></table></div></div>
         <div v-if="dayAnalysisResult" class="card result-spec-card"><div class="spec-header"><h3>📊 TOP 5 : {{ dayAnalysisResult.day_analyzed }}</h3><button @click="dayAnalysisResult=null" class="close-btn">×</button></div><div class="best-duo-box"><span class="duo-label">🔥 DUO OR :</span><span class="duo-val">{{ dayAnalysisResult.best_duo }}</span></div><div class="table-responsive"><table class="spec-table"><thead><tr><th>Stat</th><th>N°</th><th>Kanta</th><th>Compagnons</th><th>Déclencheurs</th><th>Prophète</th></tr></thead><tbody><tr v-for="row in dayAnalysisResult.recurrence_data" :key="row.number"><td style="font-size:1.2rem;">{{ row.status_icon }}</td><td class="num-cell">{{ row.number }}</td><td style="color:#d32f2f;">{{ row.kanta }}</td><td>{{ row.best_companion }}</td><td>{{ row.best_trigger }}</td><td class="proph-cell">{{ row.best_prophet }}</td></tr></tbody></table></div></div>
         <div v-if="deepFavoriteResult" class="card result-spec-card" style="border-top:4px solid #fdd835;"><div class="spec-header"><h3>⭐ SCAN PROFOND : {{ deepFavoriteResult.favorite }}</h3><button @click="deepFavoriteResult=null" class="close-btn">×</button></div><div v-if="deepFavoriteResult.data===null"><p>Jamais sorti.</p></div><div v-else><div class="summary-grid"><div class="sum-card"><h5>Top Jours</h5><ul><li v-for="x in deepFavoriteResult.summary.top_days">{{ x.val }} ({{x.count}})</li></ul></div><div class="sum-card"><h5>Top Heures</h5><ul><li v-for="x in deepFavoriteResult.summary.top_hours">{{ x.val }} ({{x.count}})</li></ul></div><div class="sum-card"><h5>Top Déclencheurs</h5><ul><li v-for="x in deepFavoriteResult.summary.top_triggers">{{ x.val }} ({{x.count}})</li></ul></div><div class="sum-card"><h5>Top Compagnons</h5><ul><li v-for="x in deepFavoriteResult.summary.top_companions">{{ x.val }} ({{x.count}})</li></ul></div><div class="sum-card"><h5>Top Prophètes</h5><ul><li v-for="x in deepFavoriteResult.summary.top_prophets">{{ x.val }} ({{x.count}})</li></ul></div></div><div class="table-responsive"><table class="spec-table"><thead><tr><th>Date</th><th>Heure</th><th>Déclencheur</th><th>Compagnons</th><th>Prophète</th></tr></thead><tbody><tr v-for="(row, idx) in deepFavoriteResult.history_table" :key="idx"><td>{{ row.date }} {{row.day}}</td><td>{{ row.time }}</td><td>{{ row.trigger }}</td><td>{{ row.companion }}</td><td>{{ row.prophet }}</td></tr></tbody></table></div></div></div>
         <div v-if="profileResult" class="card result-spec-card" style="border-top:4px solid #ab47bc;"><div class="spec-header"><h3>👤 PROFIL COMPLET : {{ profileResult.profile_data.number }}</h3><button @click="profileResult=null" class="close-btn">×</button></div><div class="stats-grid"><div class="stat-item"><strong>Sorties</strong><br>{{ profileResult.profile_data.hits }}</div><div class="stat-item"><strong>Jour</strong><br>{{ profileResult.profile_data.best_day }}</div><div class="stat-item"><strong>Heure</strong><br>{{ profileResult.profile_data.best_time }}</div></div><div class="summary-grid"><div class="sum-card"><h5>Top Jours</h5><ul><li v-for="d in profileResult.profile_data.top_days" :key="d.val">{{ d.val }} ({{ d.count }})</li></ul></div><div class="sum-card"><h5>Top Heures</h5><ul><li v-for="h in profileResult.profile_data.top_hours" :key="h.val">{{ h.val }} ({{ h.count }})</li></ul></div><div class="sum-card"><h5>Top Compagnons</h5><ul><li v-for="c in profileResult.profile_data.top_companions" :key="c.val">{{ c.val }} ({{ c.count }})</li></ul></div></div><div class="summary-grid"><div class="sum-card"><h5>Top Déclencheurs (Avant)</h5><ul><li v-for="t in profileResult.profile_data.top_triggers" :key="t.val">{{ t.val }} ({{ t.count }})</li></ul></div><div class="sum-card"><h5>Top Prophètes (Après)</h5><ul><li v-for="p in profileResult.profile_data.top_prophets" :key="p.val">{{ p.val }} ({{ p.count }})</li></ul></div></div><div class="ai-analysis"><h4>🧠 Analyse Expert :</h4><p>{{ profileResult.ai_strategic_profile }}</p></div></div>
-        
         <section v-if="standardResult && lastOperationType === 'simple'" class="card results-card fade-in"><div class="spec-header"><h2>Résultat Standard</h2><button @click="standardResult=null" class="close-btn">Fermer</button></div><div v-if="standardResult.message || standardResult.analysis_period" class="success-box large"><p>✅ {{ standardResult.message || `Analyse : ${standardResult.analysis_period}` }}</p></div><div v-if="isTableVisible && !lastOperationType.includes('visual')" class="view-controls"><button @click="viewMode = 'table'" :class="{ active: viewMode === 'table' }" class="toggle-btn">📋 Tableau</button><button @click="viewMode = 'chart'" :class="{ active: viewMode === 'chart' }" class="toggle-btn">📊 Graphique</button></div><div v-if="isTableVisible && viewMode === 'chart' && !lastOperationType.includes('visual')" class="chart-container"><Bar :data="chartData" :options="chartOptions" /></div><table v-else-if="isTableVisible" class="styled-table"><thead><tr><th v-for="h in tableHeaders" :key="h">{{ h }}</th></tr></thead><tbody><tr v-for="(row, index) in tableData" :key="index"><td v-if="lastOperationType.includes('kanta-rank')">{{ row.pair }}</td><td v-else>#{{ index + 1 }}</td><td v-if="!lastOperationType.includes('kanta-rank')">{{ row.number }}</td><td>{{ row.count }}</td></tr></tbody></table></section>
 
         <div v-if="!standardResult && !matrixResult && !isLoading" class="welcome-message">
             <h3>Bienvenue sur Le Guide</h3>
-            <p v-if="!isVip">Vous êtes en mode <strong>GRATUIT</strong>. Utilisez "Fréquence Période" pour tester.</p>
+            <p v-if="!isVip">Vous êtes en mode <strong>GRATUIT</strong>. Utilisez la fonction "Fréquence Période" pour tester la puissance de l'outil.</p>
             <p v-else>Mode <strong>VIP ACTIF</strong>. Bon gain !</p>
         </div>
         <div v-if="isLoading" class="loader">Analyse en cours...</div><div v-if="error" class="error-box">{{ error }}</div>
       </div>
     </div>
 
-    <!-- MODAL GUIDE -->
+    <!-- MODAL GUIDE & PAYWALL (CODE IDENTIQUE A V92 POUR MARKETING) -->
     <div v-if="showGuide" class="modal-overlay">
       <div class="modal-box guide-box">
         <button @click="showGuide = false" class="close-modal-btn">×</button>
@@ -418,7 +433,6 @@ function contactWhatsApp() {
       </div>
     </div>
 
-    <!-- MODAL PAYWALL -->
     <div v-if="showPaywall" class="modal-overlay paywall-overlay">
       <div class="modal-box paywall-box">
         <div class="lock-icon">🔒</div>
@@ -450,6 +464,7 @@ button { font-family: 'Poppins', sans-serif; font-weight: 600; border-radius: 10
 .vip-badge { background: #ffd700; color: #000; padding: 5px 10px; border-radius: 20px; font-weight: bold; }
 .free-badge { background: #e0e0e0; color: #666; padding: 5px 10px; border-radius: 20px; font-weight: bold; }
 .guide-btn-header { background: #fff; color: #4361ee; width: auto; margin: 0 10px; }
+.gsheet-btn-header { background: #0f9d58; color: white; padding: 5px 15px; border-radius: 20px; font-size: 0.8rem; text-decoration: none; font-weight: bold; }
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; display: flex; justify-content: center; align-items: center; }
 .modal-box { background: white; width: 90%; max-width: 600px; max-height: 80vh; overflow-y: auto; padding: 30px; border-radius: 20px; text-align: left; }
 .guide-content h3 { color: #1e293b; border-bottom: 2px solid #eee; padding-bottom: 5px; margin-top: 20px; }
