@@ -37,7 +37,7 @@ const cyclicDay = ref(1);
 const favDayName = ref('Tous');
 const favHour = ref('Toutes');
 
-const selectedDate = ref(''); // DATE UNIQUE (V80 Style)
+const selectedDate = ref(''); 
 const startDate = ref(''); 
 const endDate = ref(''); 
 
@@ -108,6 +108,11 @@ onMounted(() => {
 
   onAuthStateChanged(auth, async (firebaseUser) => {
     if (firebaseUser) {
+      // --- SÉCURITÉ : Vérifier si une session existe localement ---
+      if (!localStorage.getItem('session_id')) {
+          logout(); // Pas de session locale = Re-connexion obligatoire
+          return;
+      }
       user.value = firebaseUser;
       const docRef = doc(db, "users", firebaseUser.uid);
       try {
@@ -116,17 +121,10 @@ onMounted(() => {
           const data = docSnap.data();
           userRole.value = data.role || 'user';
           userFavorites.value = data.favorites || []; 
-        } else {
-          userRole.value = 'user';
-          userFavorites.value = [];
-          await setDoc(docRef, { role: 'user', favorites: [] }, { merge: true });
         }
-      } catch (e) { console.error("Erreur Firebase:", e); }
+      } catch (e) { console.error(e); }
     } else { 
-      user.value = null; 
-      userRole.value = ''; 
-      userFavorites.value = []; 
-      localStorage.removeItem('session_id'); // 1. Nettoyage déconnexion
+      user.value = null; userRole.value = ''; userFavorites.value = []; 
     }
     isAuthReady.value = true;
   });
@@ -134,30 +132,55 @@ onMounted(() => {
 
 const login = async () => {
   try { 
-    authError.value = ''; 
-    isLoading.value = true; 
+    authError.value = ''; isLoading.value = true; 
     const userCredential = await signInWithEmailAndPassword(auth, email.value, password.value);
     
-    // 1. GÉNÉRATION DE SESSION LORS DU LOGIN
+    // GÉNÉRATION SESSION UNIQUE
     const newSessionId = crypto.randomUUID();
     localStorage.setItem('session_id', newSessionId);
-    
-    // Mise à jour de la session dans Firebase pour validation backend
     await updateDoc(doc(db, "users", userCredential.user.uid), {
       current_session_id: newSessionId
     });
 
-  } catch (error) { 
-    authError.value = "Email ou mot de passe incorrect."; 
-  } finally { 
-    isLoading.value = false; 
-  }
+  } catch (error) { authError.value = "Identifiants incorrects."; } finally { isLoading.value = false; }
 };
 
 const logout = async () => { 
-  localStorage.removeItem('session_id'); // 1. Suppression session
+  localStorage.removeItem('session_id'); 
   await signOut(auth); 
 };
+
+async function callApi(url, targetVar = 'standard') {
+  showWelcomeMessage.value = false; isLoading.value = true; error.value = null;
+  if (targetVar === 'standard') standardResult.value = null;
+  try {
+    const token = await user.value.getIdToken();
+    const sessionId = localStorage.getItem('session_id');
+    const headers = { 'Authorization': `Bearer ${token}`, 'X-Session-ID': sessionId };
+
+    const response = await fetch(`${API_BASE_URL}${url}`, { method: 'GET', headers });
+    const data = await response.json();
+
+    if (!response.ok) {
+        if (data.detail === "SESSION_EXPIRED_ANOTHER_DEVICE") {
+            alert("⚠️ Ce compte est déjà utilisé sur un autre appareil.");
+            logout(); return;
+        }
+        throw new Error(data.detail || `Erreur ${response.status}`);
+    }
+    
+    if (targetVar === 'specialist') dayAnalysisResult.value = data;
+    else if (targetVar === 'deep') deepFavoriteResult.value = data;
+    else if (targetVar === 'profile') profileResult.value = data;
+    else if (targetVar === 'matrix') matrixResult.value = data;
+    else standardResult.value = data;
+
+    if (data.worksheet_gid) activeSheetGid.value = data.worksheet_gid;
+    viewMode.value = 'table';
+  } catch (err) { error.value = err.message; } finally { isLoading.value = false; }
+}
+
+// ... RESTE DU CODE (addFavorite, runReports, etc. - INCHANGÉ) ...
 
 async function addFavorite() {
   const input = newFavoriteInput.value.trim();
@@ -194,44 +217,6 @@ async function runTimeMatrix() {
   await callApi(url, 'matrix');
 }
 
-async function callApi(url, targetVar = 'standard') {
-  showWelcomeMessage.value = false; isLoading.value = true; error.value = null;
-  if (targetVar === 'standard') standardResult.value = null;
-  try {
-    const token = await user.value.getIdToken();
-    
-    // 2. ENVOI DE L'ID DE SESSION DANS LES HEADERS
-    const sessionId = localStorage.getItem('session_id');
-    const headers = { 
-        'Authorization': `Bearer ${token}`,
-        'X-Session-ID': sessionId 
-    };
-
-    const fullUrl = `${API_BASE_URL}${url}`;
-    const response = await fetch(fullUrl, { method: 'GET', headers });
-    const data = await response.json();
-
-    if (!response.ok) {
-        // 3. DÉCONNEXION FORCÉE SI DOUBLE CONNEXION
-        if (data.detail === "SESSION_EXPIRED_ANOTHER_DEVICE") {
-            alert("⚠️ ALERTE : Ce compte a été ouvert sur un autre appareil. Vous allez être déconnecté.");
-            logout();
-            return;
-        }
-        throw new Error(data.detail || `Erreur ${response.status}`);
-    }
-    
-    if (targetVar === 'specialist') dayAnalysisResult.value = data;
-    else if (targetVar === 'deep') deepFavoriteResult.value = data;
-    else if (targetVar === 'profile') profileResult.value = data;
-    else if (targetVar === 'matrix') matrixResult.value = data;
-    else standardResult.value = data;
-
-    if (data.worksheet_gid) activeSheetGid.value = data.worksheet_gid;
-    viewMode.value = 'table';
-  } catch (err) { error.value = err.message; } finally { isLoading.value = false; }
-}
-
 async function runDataUpdate(endpoint) { lastOperationType.value = 'update'; await callApi(`/collection/${endpoint}`, 'standard'); }
 async function runBatchVisualAnalysis(mode) { if (!startDate.value) return; lastOperationType.value = 'visual'; await callApi(`/analysis/highlight-range?start_date=${startDate.value}&end_date=${endDate.value}&mode=${mode}`, 'standard'); }
 
@@ -243,7 +228,6 @@ async function runSingleDayVisual(mode) {
 
 async function runReport(reportType) {
   if (!selectedDate.value) { alert("Sélectionnez une date."); return; }
-  
   if (reportType === 'daily-frequency') {
       lastOperationType.value = 'ranking_rich';
       await callApi(`/analysis/daily-frequency/${selectedDate.value}`, 'standard');
@@ -357,7 +341,7 @@ async function runKantaReport(reportType) {
            <div class="spec-header"><h3>🕰️ MATRICE TEMPORELLE</h3><button @click="matrixResult=null" class="close-btn">×</button></div>
            <div v-if="matrixResult.prediction" class="prediction-tab">
                <div class="best-duo-box" style="background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);"><span class="duo-label">🔮 PRÉDICTION ({{ matrixResult.prediction.target_date_label }}) :</span><span class="duo-val">{{ matrixResult.prediction.two_short }}</span></div>
-               <div class="ai-analysis" style="background:#e8eaf6; color:#1a237e;"><h4>💡 Top Formules :</h4><ul><li v-for="(f, i) in matrixResult.prediction.top_formulas_rich" :key="i"><strong>{{ f.name }}</strong> ({{ f.count }} Hits) - <em>{{ f.best_times }}</em></li></ul></div>
+               <div class="ai-analysis" style="background:#e8eaf6; color:#1a237e;"><h4>💡 Top Formules :</h4><ul><li v-for="(f, i) in matrixResult.prediction.top_formulas_rich" :key="i"><strong>{{ f.name }}</strong> ({{ f.count }} Hits)</li></ul></div>
            </div>
            <div class="table-responsive"><table class="spec-table"><thead><tr><th>Date</th><th>Base</th><th>Hits</th></tr></thead><tbody><tr v-for="(row, idx) in matrixResult.matrix_data" :key="idx"><td>{{ row.date }}</td><td class="num-cell">{{ row.base_number }}</td><td><div v-for="h in row.detailed_hits" :key="h.num"><span class="badge-hit">{{ h.num }}</span> ({{ h.time }})</div></td></tr></tbody></table></div>
         </div>
@@ -381,22 +365,17 @@ async function runKantaReport(reportType) {
           <div class="spec-header"><h3>👤 PROFIL COMPLET : {{ profileResult.profile_data.number }}</h3><button @click="profileResult=null" class="close-btn">×</button></div>
           <div class="stats-grid"><div class="stat-item"><strong>Sorties</strong><br>{{ profileResult.profile_data.hits }}</div><div class="stat-item"><strong>Jour</strong><br>{{ profileResult.profile_data.best_day }}</div><div class="stat-item"><strong>Heure</strong><br>{{ profileResult.profile_data.best_time }}</div></div>
           <div class="summary-grid"><div class="sum-card"><h5>Top Jours</h5><ul><li v-for="d in profileResult.profile_data.top_days" :key="d.val">{{ d.val }} ({{ d.count }})</li></ul></div><div class="sum-card"><h5>Top Heures</h5><ul><li v-for="h in profileResult.profile_data.top_hours" :key="h.val">{{ h.val }} ({{ h.count }})</li></ul></div><div class="sum-card"><h5>Top Compagnons</h5><ul><li v-for="c in profileResult.profile_data.top_companions" :key="c.val">{{ c.val }} ({{ c.count }})</li></ul></div></div>
-          <div class="summary-grid"><div class="sum-card"><h5>Top Déclencheurs (Avant)</h5><ul><li v-for="t in profileResult.profile_data.top_triggers" :key="t.val">{{ t.val }} ({{ t.count }})</li></ul></div><div class="sum-card"><h5>Top Prophètes (Après)</h5><ul><li v-for="p in profileResult.profile_data.top_prophets" :key="p.val">{{ p.val }} ({{ p.count }})</li></ul></div></div>
           <div class="ai-analysis"><h4>🧠 Analyse Expert :</h4><p>{{ profileResult.ai_strategic_profile }}</p></div>
         </div>
 
         <section v-if="standardResult && lastOperationType === 'ranking_rich'" class="card results-card fade-in">
-          <div class="spec-header"><h2>Classement Top 10 (Deep Context)</h2><button @click="standardResult=null" class="close-btn">Fermer</button></div>
-          <div class="ranking-list"><div v-for="(item, index) in standardResult.data" :key="item.number" class="rank-card"><div class="rank-badge">#{{ index + 1 }}</div><div class="rank-main"><span class="rank-num">{{ item.number }}</span><span class="rank-hits">{{ item.total_hits }} Sorties</span></div><div class="rank-details"><div class="detail-col"><strong>Top Jours</strong> <span v-for="(d, i) in item.top_days">{{d.val}} ({{d.count}}){{ i < item.top_days.length - 1 ? ', ' : '' }}</span></div><div class="detail-col"><strong>Top Heures</strong> <span v-for="(h, i) in item.top_hours">{{h.val}} ({{h.count}}){{ i < item.top_hours.length - 1 ? ', ' : '' }}</span></div><div class="detail-col red"><strong>Déclencheurs</strong> <span v-for="(t, i) in item.top_triggers">{{t.val}} ({{t.count}}){{ i < item.top_triggers.length - 1 ? ', ' : '' }}</span></div><div class="detail-col blue"><strong>Compagnons</strong> <span v-for="(c, i) in item.top_companions">{{c.val}} ({{c.count}}){{ i < item.top_companions.length - 1 ? ', ' : '' }}</span></div><div class="detail-col purple"><strong>Prophètes</strong> <span v-for="(p, i) in item.top_prophets">{{p.val}} ({{p.count}}){{ i < item.top_prophets.length - 1 ? ', ' : '' }}</span></div></div></div></div>
+          <div class="spec-header"><h2>Classement Top 10</h2><button @click="standardResult=null" class="close-btn">Fermer</button></div>
+          <div class="ranking-list"><div v-for="(item, index) in standardResult.data" :key="item.number" class="rank-card"><div class="rank-badge">#{{ index + 1 }}</div><div class="rank-main"><span class="rank-num">{{ item.number }}</span><span class="rank-hits">{{ item.total_hits }} Sorties</span></div><div class="rank-details"><div class="detail-col"><strong>Top Jours</strong> <span v-for="d in item.top_days">{{d.val}}, </span></div><div class="detail-col red"><strong>Déclencheurs</strong> <span v-for="t in item.top_triggers">{{t.val}}, </span></div></div></div></div>
         </section>
 
         <section v-if="standardResult && lastOperationType === 'simple'" class="card results-card fade-in">
-          <div class="spec-header"><h2>Résultat Standard</h2><button @click="standardResult=null" class="close-btn">Fermer</button></div>
-          <div v-if="standardResult.message || standardResult.analysis_period" class="success-box large"><p>✅ {{ standardResult.message || `Analyse : ${standardResult.analysis_period}` }}</p></div>
-          <div v-if="isTableVisible && !lastOperationType.includes('visual')" class="view-controls"><button @click="viewMode = 'table'" :class="{ active: viewMode === 'table' }" class="toggle-btn">📋 Tableau</button><button @click="viewMode = 'chart'" :class="{ active: viewMode === 'chart' }" class="toggle-btn">📊 Graphique</button></div>
-          <div v-if="isTableVisible && viewMode === 'chart' && !lastOperationType.includes('visual')" class="chart-container"><Bar :data="chartData" :options="chartOptions" /></div>
-          <table v-else-if="isTableVisible" class="styled-table"><thead><tr><th v-for="h in tableHeaders" :key="h">{{ h }}</th></tr></thead><tbody><tr v-for="(row, index) in tableData" :key="index"><td v-if="lastOperationType.includes('kanta-rank')">{{ row.pair }}</td><td v-else>#{{ index + 1 }}</td><td v-if="!lastOperationType.includes('kanta-rank')">{{ row.number }}</td><td>{{ row.count }}</td></tr></tbody></table>
-          <div v-if="standardResult.ai_strategic_analysis" class="ai-analysis"><h3>🧠 Stratégie</h3><p>{{ standardResult.ai_strategic_analysis }}</p></div><div v-if="standardResult.ai_trigger_analysis" class="ai-analysis"><h3>🧠 Déclencheurs</h3><p>{{ standardResult.ai_trigger_analysis }}</p></div><div v-if="standardResult.ai_prediction_analysis" class="ai-analysis prophet-analysis"><h3>🔮 Prédiction</h3><p>{{ standardResult.ai_prediction_analysis }}</p></div>
+          <div class="spec-header"><h2>Résultat</h2><button @click="standardResult=null" class="close-btn">Fermer</button></div>
+          <table v-if="isTableVisible" class="styled-table"><thead><tr><th v-for="h in tableHeaders" :key="h">{{ h }}</th></tr></thead><tbody><tr v-for="(row, index) in tableData" :key="index"><td>#{{ index + 1 }}</td><td>{{ row.number }}</td><td>{{ row.count }}</td></tr></tbody></table>
         </section>
 
         <div v-if="!dayAnalysisResult && !standardResult && !deepFavoriteResult && !profileResult && !matrixResult && !isLoading" class="welcome-message"><h3>Prêt à analyser</h3><p>Sélectionnez une fonction à gauche.</p></div>
