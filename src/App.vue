@@ -126,7 +126,7 @@ onMounted(() => {
       user.value = null; 
       userRole.value = ''; 
       userFavorites.value = []; 
-      localStorage.removeItem('session_id'); // Nettoyage session
+      localStorage.removeItem('session_id'); // 1. Nettoyage déconnexion
     }
     isAuthReady.value = true;
   });
@@ -138,10 +138,11 @@ const login = async () => {
     isLoading.value = true; 
     const userCredential = await signInWithEmailAndPassword(auth, email.value, password.value);
     
-    // SÉCURITÉ ANTI-PARTAGE V100
+    // 1. GÉNÉRATION DE SESSION LORS DU LOGIN
     const newSessionId = crypto.randomUUID();
     localStorage.setItem('session_id', newSessionId);
     
+    // Mise à jour de la session dans Firebase pour validation backend
     await updateDoc(doc(db, "users", userCredential.user.uid), {
       current_session_id: newSessionId
     });
@@ -154,7 +155,7 @@ const login = async () => {
 };
 
 const logout = async () => { 
-  localStorage.removeItem('session_id');
+  localStorage.removeItem('session_id'); // 1. Suppression session
   await signOut(auth); 
 };
 
@@ -198,11 +199,12 @@ async function callApi(url, targetVar = 'standard') {
   if (targetVar === 'standard') standardResult.value = null;
   try {
     const token = await user.value.getIdToken();
-    const sessionId = localStorage.getItem('session_id'); // Récupération session local
-
+    
+    // 2. ENVOI DE L'ID DE SESSION DANS LES HEADERS
+    const sessionId = localStorage.getItem('session_id');
     const headers = { 
-      'Authorization': `Bearer ${token}`,
-      'X-Session-ID': sessionId // Header de sécurité Anti-partage
+        'Authorization': `Bearer ${token}`,
+        'X-Session-ID': sessionId 
     };
 
     const fullUrl = `${API_BASE_URL}${url}`;
@@ -210,15 +212,11 @@ async function callApi(url, targetVar = 'standard') {
     const data = await response.json();
 
     if (!response.ok) {
-        // Détection de déconnexion forcée par le backend
+        // 3. DÉCONNEXION FORCÉE SI DOUBLE CONNEXION
         if (data.detail === "SESSION_EXPIRED_ANOTHER_DEVICE") {
-            alert("⚠️ Votre compte est utilisé sur un autre appareil. Déconnexion...");
+            alert("⚠️ ALERTE : Ce compte a été ouvert sur un autre appareil. Vous allez être déconnecté.");
             logout();
             return;
-        }
-        // Gestion du Paywall VIP
-        if (response.status === 402 || response.status === 403) {
-            throw new Error(`👑 ACCÈS VIP : ${data.detail || 'Abonnement requis.'}`);
         }
         throw new Error(data.detail || `Erreur ${response.status}`);
     }
@@ -237,15 +235,12 @@ async function callApi(url, targetVar = 'standard') {
 async function runDataUpdate(endpoint) { lastOperationType.value = 'update'; await callApi(`/collection/${endpoint}`, 'standard'); }
 async function runBatchVisualAnalysis(mode) { if (!startDate.value) return; lastOperationType.value = 'visual'; await callApi(`/analysis/highlight-range?start_date=${startDate.value}&end_date=${endDate.value}&mode=${mode}`, 'standard'); }
 
-// RESTAURATION V80 : SURLIGNAGE JOUR UNIQUE
 async function runSingleDayVisual(mode) { 
   if (!selectedDate.value) { error.value = "Date requise."; return; }
   lastOperationType.value = 'visual'; 
-  // On envoie la même date en début et fin pour cibler le jour unique
   await callApi(`/analysis/highlight-range?start_date=${selectedDate.value}&end_date=${selectedDate.value}&mode=${mode}`, 'standard'); 
 }
 
-// RESTAURATION V80 : DATE UNIQUE
 async function runReport(reportType) {
   if (!selectedDate.value) { alert("Sélectionnez une date."); return; }
   
@@ -326,25 +321,20 @@ async function runKantaReport(reportType) {
         
         <section class="card"><h2>Analyse Visuelle (Batch)</h2><div style="display:flex; gap:5px; margin-bottom:10px;"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div><div class="button-group-vertical"><button @click="runBatchVisualAnalysis('frequency')" :disabled="isLoading||!startDate" style="background:#ef5350;">Rouge/Bleu (Période)</button><button @click="runBatchVisualAnalysis('kanta')" :disabled="isLoading||!startDate" style="background:#66bb6a;">Kanta (Période)</button></div></section>
         
-        <!-- RAPPORTS PONCTUELS (VERSION V80 RESTAUREE) -->
+        <!-- RAPPORTS PONCTUELS -->
         <section class="card">
           <h2>Rapports Ponctuels</h2>
-          
           <input type="date" v-model="selectedDate"/>
-          
           <div class="button-group-vertical" style="margin-top:10px;">
              <button @click="runSingleDayVisual('frequency')" :disabled="isLoading||!selectedDate" style="border:1px solid #ef5350; background:transparent; color:#d32f2f;">🎨 Surlignage Jour</button>
              <button @click="runSingleDayVisual('kanta')" :disabled="isLoading||!selectedDate" style="border:1px solid #66bb6a; background:transparent; color:#388e3c;">🎨 Surlignage Kanta</button>
           </div>
-          
           <hr>
           <div class="button-group-vertical">
             <button @click="runReport('daily-frequency')" :disabled="isLoading||!selectedDate">Classement Jour (Top 10)</button>
             <button @click="runReport('weekly-frequency')" :disabled="isLoading||!selectedDate">Classement Semaine (Top 10)</button>
             <hr>
-            <div class="button-group-horizontal">
-                <button @click="runKantaReport('daily-rank')" :disabled="isLoading||!selectedDate">Kanta Rank</button>
-            </div>
+            <div class="button-group-horizontal"><button @click="runKantaReport('daily-rank')" :disabled="isLoading||!selectedDate">Kanta Rank</button></div>
             <div class="input-group" style="margin-top:10px;">
                 <input type="number" v-model="selectedNumber" placeholder="N° Compagnons"/>
                 <button @click="runReport('companions')" :disabled="isLoading||!selectedDate||!selectedNumber">Analyser Compagnons</button>
@@ -369,7 +359,7 @@ async function runKantaReport(reportType) {
                <div class="best-duo-box" style="background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);"><span class="duo-label">🔮 PRÉDICTION ({{ matrixResult.prediction.target_date_label }}) :</span><span class="duo-val">{{ matrixResult.prediction.two_short }}</span></div>
                <div class="ai-analysis" style="background:#e8eaf6; color:#1a237e;"><h4>💡 Top Formules :</h4><ul><li v-for="(f, i) in matrixResult.prediction.top_formulas_rich" :key="i"><strong>{{ f.name }}</strong> ({{ f.count }} Hits) - <em>{{ f.best_times }}</em></li></ul></div>
            </div>
-           <div class="table-responsive"><table class="spec-table"><thead><tr><th>Date</th><th>Base</th><th>Hits</th></tr></thead><tbody><tr v-for="(row, idx) in matrixResult.matrix_data" :key="idx"><td>{{ row.date }}</td><td class="num-cell">{{ row.base_number }}</td><td><div v-for="h in row.detailed_hits" :key="h.num"><span class="badge-hit">{{ h.num }}</span> ({{ h.time }} - {{ h.reason }})</div></td></tr></tbody></table></div>
+           <div class="table-responsive"><table class="spec-table"><thead><tr><th>Date</th><th>Base</th><th>Hits</th></tr></thead><tbody><tr v-for="(row, idx) in matrixResult.matrix_data" :key="idx"><td>{{ row.date }}</td><td class="num-cell">{{ row.base_number }}</td><td><div v-for="h in row.detailed_hits" :key="h.num"><span class="badge-hit">{{ h.num }}</span> ({{ h.time }})</div></td></tr></tbody></table></div>
         </div>
 
         <div v-if="dayAnalysisResult" class="card result-spec-card">
