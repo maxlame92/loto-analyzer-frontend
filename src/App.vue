@@ -8,8 +8,8 @@ import { Chart as ChartJS, Title, Tooltip, Legend, BarElement, CategoryScale, Li
 
 ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale);
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 const GOOGLE_SHEET_ID = "1HepqMzKcshKbRsLWwpEOOy5oO9ntK2CgdV7F_ijmjIo";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 
 // --- ÉTATS ---
 const user = ref(null);
@@ -23,8 +23,8 @@ const isLoginMode = ref(true);
 const totalUsersCount = ref(0);
 const USER_LIMIT = 50;
 
-// Blocage 3 tentatives
-const usageCounts = ref({ matrix: 0, sniper: 0, favorite: 0, visual: 0, report: 0, profile: 0, prophet: 0, trigger: 0 });
+// Compteur pour bloquage 3 tentatives
+const usageCounts = ref({ matrix: 0, sniper: 0, fav: 0, report: 0, profile: 0, prophet: 0, trigger: 0 });
 
 const userFavorites = ref([]); 
 const newFavoriteInput = ref('');
@@ -59,12 +59,12 @@ const lastOperationType = ref('');
 const isAdmin = computed(() => userRole.value === 'admin');
 const isVIP = computed(() => subscriptionEnd.value !== '' || isAdmin.value);
 const isLimitReached = computed(() => totalUsersCount.value >= USER_LIMIT);
-const sheetDirectLink = computed(() => `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/edit${activeSheetGid.value ? '#gid=' + activeSheetGid.value : ''}`);
+const sheetDirectLink = computed(() => `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/edit${activeSheetGid.value ? '#gid='+activeSheetGid.value : ''}`);
 
 function checkLimit(type) {
   if (isVIP.value) return true;
   if (usageCounts.value[type] >= 3) {
-    alert("CONTACTER L'EXPERT POUR VOUS ABONEZ : 📞 +225 0749522365 ou 📞 +225 0102275973 POUR AVOIR ACCES ET BENEFICIER DETOUT LES FONCTION - MR ABOUCHO MAX ELISER.");
+    alert("CONTACTER L'EXPERT POUR VOUS ABONEZ : 📞 +225 0749522365 ou 📞 +225 0102275973 POUR AVOIR ACCES ET BENEFICIER DETOUT LES FONCTION MR ABOUCHO MAX ELISER.");
     return false;
   }
   usageCounts.value[type]++;
@@ -76,15 +76,13 @@ function formatDate(d) { return d ? d.split('-').reverse().join('/') : ''; }
 const tableHeaders = computed(() => {
   if (!lastOperationType.value) return [];
   if (lastOperationType.value.includes('frequency')) return ['#', 'Numéro', 'Sorties', 'Détails'];
-  if (lastOperationType.value === 'companions') return ['#', 'Compagnon', 'Apparu avec'];
   if (lastOperationType.value === 'trigger') return ['#', 'N° Déclencheur', 'Fréquence'];
   if (lastOperationType.value === 'prediction') return ['#', 'Numéro Suivant', 'Fréquence']; 
-  return ['#', 'Donnée', 'Occurrences'];
+  return ['#', 'Donnée', 'Hits'];
 });
 
 const tableData = computed(() => {
   if (standardResult.value?.frequency_ranking) return standardResult.value.frequency_ranking;
-  if (standardResult.value?.companion_ranking) return standardResult.value.companion_ranking;
   if (standardResult.value?.trigger_numbers_ranking) return standardResult.value.trigger_numbers_ranking;
   if (standardResult.value?.prediction_ranking) return standardResult.value.prediction_ranking;
   if (standardResult.value?.data) return standardResult.value.data;
@@ -94,7 +92,7 @@ const tableData = computed(() => {
 const chartData = computed(() => {
   const d = tableData.value;
   if (!d || d.length === 0) return null;
-  return { labels: d.slice(0, 15).map(r => r.number || r.pair || '?'), datasets: [{ label: 'Sorties', backgroundColor: '#4361ee', data: d.slice(0, 15).map(r => r.count || r.total_hits) }] };
+  return { labels: d.slice(0, 15).map(r => r.number || '?'), datasets: [{ label: 'Occurrences', backgroundColor: '#4361ee', data: d.slice(0, 15).map(r => r.count || r.total_hits) }] };
 });
 
 onMounted(async () => {
@@ -124,8 +122,7 @@ onMounted(async () => {
 });
 
 const login = async () => {
-  try {
-    isLoading.value = true;
+  try { isLoading.value = true;
     const cred = await signInWithEmailAndPassword(auth, email.value, password.value);
     const sid = crypto.randomUUID();
     localStorage.setItem('session_id', sid);
@@ -135,8 +132,7 @@ const login = async () => {
 
 const signup = async () => {
   if (isLimitReached.value) { authError.value = "Limite atteinte."; return; }
-  try {
-    isLoading.value = true;
+  try { isLoading.value = true;
     const cred = await createUserWithEmailAndPassword(auth, email.value, password.value);
     const sid = crypto.randomUUID();
     localStorage.setItem('session_id', sid);
@@ -147,15 +143,15 @@ const signup = async () => {
 const logout = async () => { localStorage.removeItem('session_id'); await signOut(auth); };
 
 async function callApi(url, targetVar = 'standard') {
-  isLoading.value = true; error.value = null;
+  showWelcomeMessage.value = false; isLoading.value = true; error.value = null;
   try {
     const token = await user.value.getIdToken();
     const sid = localStorage.getItem('session_id');
     const res = await fetch(`${API_BASE_URL}${url}`, { headers: { 'Authorization': `Bearer ${token}`, 'X-Session-ID': sid } });
     const data = await res.json();
     if (!res.ok) {
-      if (data.detail === "SESSION_EXPIRED_ANOTHER_DEVICE") { alert("Compte ouvert ailleurs !"); logout(); return; }
-      throw new Error(data.detail || "Erreur");
+      if (data.detail === "SESSION_EXPIRED_ANOTHER_DEVICE") { alert("Compte utilisé ailleurs !"); logout(); return; }
+      throw new Error(data.detail || "Erreur serveur");
     }
     if (targetVar === 'specialist') dayAnalysisResult.value = data;
     else if (targetVar === 'deep') deepFavoriteResult.value = data;
@@ -169,25 +165,22 @@ async function callApi(url, targetVar = 'standard') {
 const runMatrix = () => { if(checkLimit('matrix')) { matrixResult.value = null; callApi(`/analysis/time-matrix?start_date=${startDate.value}&end_date=${endDate.value}&mode=${matrixMode.value}${matrixMode.value==='cyclic'?'&target_cyclic_day='+cyclicDay.value:''}`, 'matrix'); } };
 const runSniper = () => { if(checkLimit('sniper')) callApi(`/analysis/specific-day-recurrence?day_name=${selectedDayName.value}&target_hour=${selectedHour.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'specialist'); };
 const runReport = (t) => { if(checkLimit('report')) { lastOperationType.value = 'ranking_rich'; callApi(`/analysis/${t}/${selectedDate.value}`); } };
-const runRange = () => { if(checkLimit('report')) { lastOperationType.value = 'ranking_rich'; callApi(`/analysis/frequency-by-range?start_date=${startDate.value}&end_date=${endDate.value}`); } };
 const runProphet = () => { if(checkLimit('prophet')) { lastOperationType.value = 'simple'; callApi(`/analysis/predict-next?observed_number=${predictionNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`); } };
-const addFav = async () => { if(checkLimit('favorite') && newFavoriteInput.value) { await updateDoc(doc(db,"users",user.value.uid), {favorites: arrayUnion(newFavoriteInput.value)}); userFavorites.value.push(newFavoriteInput.value); newFavoriteInput.value=''; } };
-const removeFav = async (i) => { await updateDoc(doc(db,"users",user.value.uid), {favorites: arrayRemove(i)}); userFavorites.value = userFavorites.value.filter(f=>f!==i); };
-const runDeep = (i) => { if(checkLimit('favorite')) { deepFavoriteResult.value = null; callApi(`/analysis/deep-favorite?target=${i}&start_date=${startDate.value}&end_date=${endDate.value}`, 'deep'); } };
 const runBatch = (m) => { if(isAdmin.value) callApi(`/analysis/highlight-range?start_date=${startDate.value}&end_date=${endDate.value}&mode=${m}`); };
-const runSingle = (m) => { if(isAdmin.value) callApi(`/analysis/highlight-range?start_date=${selectedDate.value}&end_date=${selectedDate.value}&mode=${m}`); };
+const addFav = async () => { if(checkLimit('fav') && newFavoriteInput.value) { await updateDoc(doc(db,"users",user.value.uid), {favorites: arrayUnion(newFavoriteInput.value)}); userFavorites.value.push(newFavoriteInput.value); newFavoriteInput.value=''; } };
+const removeFav = async (i) => { await updateDoc(doc(db,"users",user.value.uid), {favorites: arrayRemove(i)}); userFavorites.value = userFavorites.value.filter(f=>f!==i); };
 </script>
 
 <template>
-  <div v-if="!isAuthReady" class="loading-screen"><p>Chargement Fourcaster PRO...</p></div>
+  <div v-if="!isAuthReady" class="loading-screen"><p>Initialisation Premium...</p></div>
   <div v-else-if="!user" class="login-wrapper">
     <div class="login-box">
       <h2>LE GUIDE DES FOURCASTER</h2>
-      <p style="color:#64748b; margin-bottom:15px;">{{ isLoginMode ? 'Connectez-vous' : 'Inscription Gratuite (Places: ' + (USER_LIMIT - totalUsersCount) + ')' }}</p>
+      <p style="color:#64748b; margin-bottom:15px;">{{ isLoginMode ? 'Connexion' : 'Inscription Gratuite (Limite 50)' }}</p>
       <form @submit.prevent="isLoginMode ? login() : signup()">
         <div class="input-group"><label>Email</label><input type="email" v-model="email" required /></div>
         <div class="input-group"><label>Mot de passe</label><input type="password" v-model="password" required /></div>
-        <button type="submit" class="login-button">{{ isLoading ? '...' : (isLoginMode ? 'CONNEXION' : 'S\'INSCRIRE') }}</button>
+        <button type="submit" class="login-button">{{ isLoginMode ? 'CONNEXION' : 'S\'INSCRIRE' }}</button>
         <p v-if="authError" class="auth-error">{{ authError }}</p>
         <p class="toggle-auth" @click="isLoginMode = !isLoginMode">{{ isLoginMode ? 'S\'inscrire' : 'Se connecter' }}</p>
       </form>
@@ -198,10 +191,10 @@ const runSingle = (m) => { if(isAdmin.value) callApi(`/analysis/highlight-range?
     <header class="prem-header">
       <h1>LE GUIDE <span class="version-tag">V100 PRO</span></h1>
       <div class="vip-zone">
-        <div class="u-data">
+        <div class="u-meta">
           <span class="u-mail">{{ user.email }}</span>
           <span v-if="subscriptionEnd" class="u-vip">💎 VIP: {{ formatDate(subscriptionEnd) }}</span>
-          <span v-else class="u-free">❄️ MODE ESSAI</span>
+          <span v-else class="u-free">❄️ MODE ESSAI (3 CLICS)</span>
         </div>
         <button @click="logout" class="logout-btn">Quitter</button>
       </div>
@@ -214,35 +207,31 @@ const runSingle = (m) => { if(isAdmin.value) callApi(`/analysis/highlight-range?
     <div class="main-layout">
       <div class="controls-column">
         <section v-if="isAdmin" class="card admin-card">
-          <h2>🛠️ ADMIN</h2>
-          <a :href="sheetDirectLink" target="_blank" class="gsheet-btn">📂 GOOGLE SHEETS</a>
+          <h2>🛠️ ADMIN (STRICT)</h2>
+          <a :href="sheetDirectLink" target="_blank" class="gsheet-btn">📂 GOOGLE SHEETS DB</a>
           <hr>
           <div class="date-picker-row"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div>
           <button @click="runBatch('frequency')" style="background:red">Batch Fréq</button>
           <button @click="runBatch('kanta')" style="background:green">Batch Kanta</button>
-          <hr>
-          <input type="date" v-model="selectedDate"/>
-          <button @click="runSingle('frequency')" style="border:1px solid red; color:red; background:none">🎨 Surligner Jour</button>
         </section>
 
         <section class="card matrix-card">
           <div class="card-head"><h2>🕰️ MATRICE</h2><span class="v-badge">VIP</span></div>
           <div class="tabs"><button @click="matrixMode='continuous'" :class="{active: matrixMode==='continuous'}">CONTINU</button><button @click="matrixMode='cyclic'" :class="{active: matrixMode==='cyclic'}">CYCLIQUE</button></div>
-          <input v-if="matrixMode==='cyclic'" type="number" v-model="cyclicDay" placeholder="Jour (1-31)"/>
           <div class="date-picker-row"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div>
-          <button @click="runMatrix" class="act-btn orange">PRÉDICTIONS MATRICE</button>
+          <button @click="runMatrix" class="act-btn orange">ANALYSER MATRICE</button>
         </section>
 
-        <section class="card sniper-card">
+        <section class="card spec-card">
           <div class="card-head"><h2>📅 SNIPER</h2><span class="v-badge">VIP</span></div>
           <select v-model="selectedDayName"><option v-for="d in ['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche']" :key="d">{{d}}</option></select>
           <button @click="runSniper" class="act-btn blue">SCANNER JOUR</button>
         </section>
 
         <section class="card">
-          <h2>⭐ FAVORIS</h2>
+          <h2>⭐ MES FAVORIS</h2>
           <div class="fav-box"><input type="text" v-model="newFavoriteInput" placeholder="N°"/><button @click="addFav">+</button></div>
-          <div class="fav-chips"><div v-for="f in userFavorites" :key="f" class="chip">{{ f }} <span @click="runDeep(f)">⚡</span><b @click="removeFav(f)">×</b></div></div>
+          <div class="fav-chips"><div v-for="f in userFavorites" :key="f" class="chip">{{ f }} <span @click="callApi('/analysis/deep-favorite?target='+f+'&start_date='+startDate+'&end_date='+endDate,'deep')">⚡</span><b @click="removeFav(f)">×</b></div></div>
         </section>
 
         <section class="card">
@@ -251,18 +240,18 @@ const runSingle = (m) => { if(isAdmin.value) callApi(`/analysis/highlight-range?
         </section>
 
         <section class="card prophet-card">
-          <h2>🔮 PROPHÈTE</h2>
+          <h2>🔮 LE PROPHÈTE</h2>
           <input type="number" v-model="predictionNumber" placeholder="N° vu"/><button @click="runProphet" class="proph-btn">VOIR FUTUR</button>
         </section>
         
         <section class="card">
           <h2>🔍 PROFILAGE</h2>
-          <input type="number" v-model="profileNumber" placeholder="N°"/><button @click="callApi(`/analysis/number-profile?target_number=${profileNumber}&start_date=${startDate}&end_date=${endDate}`, 'profile')">PROFIL</button>
+          <input type="number" v-model="profileNumber" placeholder="N°"/><button @click="callApi('/analysis/number-profile?target_number='+profileNumber+'&start_date='+startDate+'&end_date='+endDate,'profile')">PROFIL</button>
         </section>
       </div>
 
       <div class="results-column">
-        <div v-if="isLoading" class="loader-box"><div class="spin"></div><p>Analyse...</p></div>
+        <div v-if="isLoading" class="loader-box"><div class="spin"></div><p>Traitement stratégique...</p></div>
         <div v-if="error" class="err-msg">⚠️ {{ error }}</div>
 
         <div v-if="matrixResult" class="card res-card">
@@ -274,7 +263,7 @@ const runSingle = (m) => { if(isAdmin.value) callApi(`/analysis/highlight-range?
         <div v-if="dayAnalysisResult" class="card res-card">
           <h3>📊 Sniper : {{ dayAnalysisResult.day_analyzed }}</h3>
           <div class="duo-or">DUO D'OR : {{ dayAnalysisResult.best_duo }}</div>
-          <table class="prem-table"><thead><tr><th>N°</th><th>Kanta</th><th>Compagnons</th><th>Déclencheurs</th></tr></thead><tbody><tr v-for="r in dayAnalysisResult.recurrence_data" :key="r.number"><td class="bold">{{r.number}}</td><td class="red">{{r.kanta}}</td><td>{{r.best_companion}}</td><td>{{r.best_trigger}}</td></tr></tbody></table>
+          <table class="prem-table"><thead><tr><th>N°</th><th>Kanta</th><th>Compagnons</th><th>Déclencheurs</th></tr></thead><tbody><tr v-for="r in dayAnalysisResult.recurrence_data" :key="r.number"><td class="bold">{{r.number}}</td><td style="color:red">{{r.kanta}}</td><td>{{r.best_companion}}</td><td>{{r.best_trigger}}</td></tr></tbody></table>
         </div>
 
         <section v-if="standardResult && lastOperationType === 'ranking_rich'" class="card res-card">
@@ -295,8 +284,8 @@ body { font-family: 'Poppins', sans-serif; background: #f0f2f5; margin: 0; }
 .dashboard { max-width: 1450px; margin: 0 auto; padding: 10px; }
 .prem-header { background: linear-gradient(135deg, #1e293b 0%, #334155 100%); color: white; padding: 1.2rem 2rem; border-radius: 15px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 10px 20px rgba(0,0,0,0.2); margin-bottom: 10px; }
 .version-tag { background: #f72585; padding: 4px 10px; border-radius: 20px; font-size: 0.7rem; }
+.u-meta { display: flex; flex-direction: column; text-align: right; margin-right: 20px; }
 .u-vip { color: #4cc9f0; font-size: 0.8rem; font-weight: bold; }
-.u-free { color: #cbd5e1; font-size: 0.8rem; }
 .logout-btn { background: rgba(255,255,255,0.1); border: 1px solid white; color: white; padding: 5px 15px; border-radius: 8px; cursor: pointer; }
 .contact-banner { background: #fff3e0; color: #e65100; padding: 12px; text-align: center; border-radius: 10px; margin-bottom: 20px; font-weight: bold; border: 1px solid #ff9800; }
 .contact-banner span { color: #d32f2f; margin: 0 5px; text-decoration: underline; }
@@ -320,7 +309,6 @@ input, select { width: 100%; padding: 12px; border: 2px solid #e2e8f0; border-ra
 .prem-table th { background: #f8fafc; padding: 12px; font-size: 0.75rem; color: #64748b; }
 .prem-table td { padding: 12px; text-align: center; border-bottom: 1px solid #f1f5f9; }
 .bold { font-weight: 800; font-size: 1.2rem; }
-.red { color: #d32f2f; font-weight: bold; }
 .hit { background: #fff3e0; color: #e65100; padding: 3px 8px; border-radius: 5px; margin: 2px; font-weight: bold; }
 .chip { background: #e0f2f1; padding: 5px 12px; border-radius: 20px; font-weight: bold; display: inline-flex; align-items: center; gap: 10px; margin: 3px; }
 .chip b { color: red; cursor: pointer; }
