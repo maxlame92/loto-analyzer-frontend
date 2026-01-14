@@ -23,8 +23,8 @@ const isLoginMode = ref(true);
 const totalUsersCount = ref(0);
 const USER_LIMIT = 50;
 
-// Système de crédit (3 utilisations gratuites)
-const usageCounts = ref({ matrix: 0, sniper: 0, favorite: 0, report: 0, profile: 0, prophet: 0, trigger: 0 });
+// Compteur pour blocage (3 essais/fonction)
+const usageCounts = ref({ matrix: 0, sniper: 0, favorite: 0, visual: 0, report: 0, profile: 0, prophet: 0, trigger: 0 });
 
 const userFavorites = ref([]); 
 const newFavoriteInput = ref('');
@@ -52,6 +52,7 @@ const selectedNumber = ref('');
 const isLoading = ref(false);
 const error = ref(null);
 const activeSheetGid = ref(null);
+const showWelcomeMessage = ref(true);
 const viewMode = ref('table');
 const lastOperationType = ref('');
 
@@ -61,7 +62,7 @@ const isVIP = computed(() => subscriptionEnd.value !== '' || isAdmin.value);
 const isLimitReached = computed(() => totalUsersCount.value >= USER_LIMIT);
 const sheetDirectLink = computed(() => `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/edit${activeSheetGid.value ? '#gid=' + activeSheetGid.value : ''}`);
 
-function checkAndCount(type) {
+function checkLimit(type) {
   if (isVIP.value) return true;
   if (usageCounts.value[type] >= 3) {
     alert("CONTACTER L'EXPERT POUR VOUS ABONEZ : 📞 +225 0749522365 ou 📞 +225 0102275973 POUR AVOIR ACCES ET BENEFICIER DETOUT LES FONCTION - MR ABOUCHO MAX ELISER.");
@@ -78,7 +79,7 @@ const tableHeaders = computed(() => {
   if (lastOperationType.value.includes('frequency')) return ['#', 'Numéro', 'Sorties', 'Détails'];
   if (lastOperationType.value === 'companions') return ['#', 'Compagnon', 'Apparu avec'];
   if (lastOperationType.value === 'trigger') return ['#', 'N° Déclencheur', 'Fréquence'];
-  if (lastOperationType.value === 'prediction') return ['#', 'Numéro Suivant', 'Fréquence']; 
+  if (lastOperationType.value === 'prediction') return ['#', 'Numéro Suivant (Probable)', 'Fréquence']; 
   if (lastOperationType.value.includes('kanta-rank')) return ['Paire Kanta', 'Apparitions'];
   return [];
 });
@@ -93,16 +94,19 @@ const tableData = computed(() => {
   return [];
 });
 
+const chartOptions = { responsive: true, maintainAspectRatio: false };
 const chartData = computed(() => {
   const data = tableData.value;
   if (!data || data.length === 0) return null;
-  return { labels: data.slice(0, 15).map(r => r.number || r.pair || '?'), datasets: [{ label: 'Occurrences', backgroundColor: '#4361ee', data: data.slice(0, 15).map(r => r.count || r.total_hits) }] };
+  const labels = data.slice(0, 20).map(row => row.pair || row.number || row.companion || '?');
+  const counts = data.slice(0, 20).map(row => row.count || row.total_hits);
+  return { labels, datasets: [{ label: 'Occurrences', backgroundColor: '#007bff', borderRadius: 4, data: counts }] };
 });
 
-// --- INIT & AUTH ---
+// --- INITIALISATION ---
 onMounted(async () => {
-  const now = new Date();
-  selectedDate.value = now.toISOString().split('T')[0];
+  const today = new Date();
+  selectedDate.value = today.toISOString().split('T')[0];
   endDate.value = selectedDate.value;
   const lastM = new Date(); lastM.setMonth(lastM.getMonth() - 1);
   startDate.value = lastM.toISOString().split('T')[0];
@@ -110,24 +114,25 @@ onMounted(async () => {
   try {
     const snap = await getDocs(query(collection(db, "users"), limit(100)));
     totalUsersCount.value = snap.size;
-  } catch (e) { console.warn("Erreur permission compteur."); }
+  } catch (e) { }
 
   onAuthStateChanged(auth, async (fUser) => {
     if (fUser) {
       if (!localStorage.getItem('session_id')) { logout(); return; }
       user.value = fUser;
-      const docSnap = await getDoc(doc(db, "users", fUser.uid));
-      if (docSnap.exists()) {
-        const d = docSnap.data();
+      const snap = await getDoc(doc(db, "users", fUser.uid));
+      if (snap.exists()) {
+        const d = snap.data();
         userRole.value = d.role || 'user';
         userFavorites.value = d.favorites || [];
         subscriptionEnd.value = d.subscription_end || '';
       }
-    } else { user.value = null; userRole.value = ''; subscriptionEnd.value = ''; }
+    } else { user.value = null; userRole.value = ''; userFavorites.value = []; subscriptionEnd.value = ''; localStorage.removeItem('session_id'); }
     isAuthReady.value = true;
   });
 });
 
+// --- AUTH ---
 const login = async () => {
   try { isLoading.value = true; authError.value = '';
     const cred = await signInWithEmailAndPassword(auth, email.value, password.value);
@@ -138,20 +143,21 @@ const login = async () => {
 };
 
 const signup = async () => {
-  if (isLimitReached.value) { authError.value = "Limite atteinte (50/50)."; return; }
+  if (isLimitReached.value) { authError.value = "Limite d'inscriptions (50) atteinte."; return; }
   try { isLoading.value = true; authError.value = '';
     const cred = await createUserWithEmailAndPassword(auth, email.value, password.value);
     const sid = crypto.randomUUID();
     localStorage.setItem('session_id', sid);
     await setDoc(doc(db, "users", cred.user.uid), { email: email.value, role: 'user', favorites: [], subscription_end: null, current_session_id: sid, created_at: new Date().toISOString() });
-  } catch (e) { authError.value = "Erreur inscription."; } finally { isLoading.value = false; }
+  } catch (e) { authError.value = "Erreur lors de l'inscription."; } finally { isLoading.value = false; }
 };
 
 const logout = async () => { localStorage.removeItem('session_id'); await signOut(auth); };
 
-// --- API ---
+// --- API ENGINE ---
 async function callApi(url, targetVar = 'standard') {
   showWelcomeMessage.value = false; isLoading.value = true; error.value = null;
+  if (targetVar === 'standard') standardResult.value = null;
   try {
     const token = await user.value.getIdToken();
     const sid = localStorage.getItem('session_id');
@@ -172,23 +178,23 @@ async function callApi(url, targetVar = 'standard') {
   } catch (err) { error.value = err.message; } finally { isLoading.value = false; }
 }
 
-// --- FONCTIONS ACTIONS V86 ---
-async function runTimeMatrix() { if(!checkAndCount('matrix')) return; matrixResult.value = null; await callApi(`/analysis/time-matrix?start_date=${startDate.value}&end_date=${endDate.value}&mode=${matrixMode.value}${matrixMode.value==='cyclic'?'&target_cyclic_day='+cyclicDay.value:''}`, 'matrix'); }
-async function runDayAnalysis() { if(!checkAndCount('sniper')) return; await callApi(`/analysis/specific-day-recurrence?day_name=${selectedDayName.value}&target_hour=${selectedHour.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'specialist'); }
+// --- ACTIONS ---
+async function runTimeMatrix() { if(!checkLimit('matrix')) return; matrixResult.value = null; await callApi(`/analysis/time-matrix?start_date=${startDate.value}&end_date=${endDate.value}&mode=${matrixMode.value}${matrixMode.value==='cyclic'?'&target_cyclic_day='+cyclicDay.value:''}`, 'matrix'); }
+async function runDayAnalysis() { if(!checkLimit('sniper')) return; await callApi(`/analysis/specific-day-recurrence?day_name=${selectedDayName.value}&target_hour=${selectedHour.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'specialist'); }
 async function runReport(type) {
-  if(!checkAndCount('report')) return;
+  if(!checkLimit('report')) return;
   if (type === 'daily-frequency') { lastOperationType.value = 'ranking_rich'; await callApi(`/analysis/daily-frequency/${selectedDate.value}`, 'standard'); }
   else if (type === 'weekly-frequency') { lastOperationType.value = 'ranking_rich'; await callApi(`/analysis/weekly-frequency/${selectedDate.value}`, 'standard'); }
   else if (type === 'companions') { lastOperationType.value = 'simple'; await callApi(`/analysis/companions/${selectedNumber.value}?week_date_str=${selectedDate.value}`, 'standard'); }
 }
-async function runRange() { if(!checkAndCount('report')) return; lastOperationType.value = 'ranking_rich'; await callApi(`/analysis/frequency-by-range?start_date=${startDate.value}&end_date=${endDate.value}`, 'standard'); }
-async function runProfile() { if(!checkAndCount('profile')) return; lastOperationType.value = 'profile'; await callApi(`/analysis/number-profile?target_number=${profileNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'profile'); }
-async function runTrigger() { if(!checkAndCount('trigger')) return; lastOperationType.value = 'simple'; const p = triggerInput.value.split(' '); await callApi(`/analysis/trigger-numbers?target_number=${p[0]}&start_date=${startDate.value}&end_date=${endDate.value}`, 'standard'); }
-async function runPrediction() { if(!checkAndCount('prophet')) return; lastOperationType.value = 'simple'; await callApi(`/analysis/predict-next?observed_number=${predictionNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}${predictionCompanion.value?'&observed_companion='+predictionCompanion.value:''}`, 'standard'); }
-async function runKantaReport() { if(!checkAndCount('report')) return; lastOperationType.value = 'simple'; await callApi(`/analysis/kanta-daily-rank?date_str=${selectedDate.value}`, 'standard'); }
-async function addFav() { if(!checkAndCount('favorite')) return; if(newFavoriteInput.value) { await updateDoc(doc(db,"users",user.value.uid), {favorites: arrayUnion(newFavoriteInput.value)}); userFavorites.value.push(newFavoriteInput.value); newFavoriteInput.value=''; } }
+async function runRange() { if(!checkLimit('report')) return; lastOperationType.value = 'ranking_rich'; await callApi(`/analysis/frequency-by-range?start_date=${startDate.value}&end_date=${endDate.value}`, 'standard'); }
+async function runProfile() { if(!checkLimit('profile')) return; lastOperationType.value = 'profile'; await callApi(`/analysis/number-profile?target_number=${profileNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'profile'); }
+async function runTrigger() { if(!checkLimit('trigger')) return; lastOperationType.value = 'simple'; const p = triggerInput.value.split(' '); await callApi(`/analysis/trigger-numbers?target_number=${p[0]}&start_date=${startDate.value}&end_date=${endDate.value}`, 'standard'); }
+async function runPrediction() { if(!checkLimit('prophet')) return; lastOperationType.value = 'simple'; await callApi(`/analysis/predict-next?observed_number=${predictionNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}${predictionCompanion.value?'&observed_companion='+predictionCompanion.value:''}`, 'standard'); }
+async function runKantaReport() { if(!checkLimit('report')) return; lastOperationType.value = 'simple'; await callApi(`/analysis/kanta-daily-rank?date_str=${selectedDate.value}`, 'standard'); }
+async function addFav() { if(!checkLimit('favorite')) return; if(newFavoriteInput.value) { await updateDoc(doc(db,"users",user.value.uid), {favorites: arrayUnion(newFavoriteInput.value)}); userFavorites.value.push(newFavoriteInput.value); newFavoriteInput.value=''; } }
 async function removeFav(i) { await updateDoc(doc(db,"users",user.value.uid), {favorites: arrayRemove(i)}); userFavorites.value = userFavorites.value.filter(f=>f!==i); }
-async function runDeep(i) { if(!checkAndCount('favorite')) return; deepFavoriteResult.value = null; await callApi(`/analysis/deep-favorite?target=${i}&start_date=${startDate.value}&end_date=${endDate.value}&context_day=${favDayName.value}&context_hour=${favHour.value}`, 'deep'); }
+async function runDeep(i) { if(!checkLimit('favorite')) return; deepFavoriteResult.value = null; await callApi(`/analysis/deep-favorite?target=${i}&start_date=${startDate.value}&end_date=${endDate.value}&context_day=${favDayName.value}&context_hour=${favHour.value}`, 'deep'); }
 
 // ADMIN ONLY
 async function runBatch(m) { if(!isAdmin.value) return; await callApi(`/analysis/highlight-range?start_date=${startDate.value}&end_date=${endDate.value}&mode=${m}`, 'standard'); }
@@ -196,11 +202,11 @@ async function runSingle(m) { if(!isAdmin.value) return; await callApi(`/analysi
 </script>
 
 <template>
-  <div v-if="!isAuthReady" class="loading-screen"><p>Initialisation Premium V100 PRO...</p></div>
+  <div v-if="!isAuthReady" class="loading-screen"><p>Chargement Premium...</p></div>
   <div v-else-if="!user" class="login-wrapper">
     <div class="login-box">
       <h2>LE GUIDE DES FOURCASTER</h2>
-      <p style="color:#64748b; margin-bottom:15px;">{{ isLoginMode ? 'Veuillez vous connecter' : 'Inscription Gratuite (Limite 50)' }}</p>
+      <p style="color:#64748b; margin-bottom:15px;">{{ isLoginMode ? 'Veuillez vous connecter' : 'Inscription Libre (Limitée à 50)' }}</p>
       <form @submit.prevent="isLoginMode ? login() : signup()">
         <div class="input-group"><label>Email</label><input type="email" v-model="email" required /></div>
         <div class="input-group"><label>Mot de passe</label><input type="password" v-model="password" required /></div>
@@ -213,33 +219,33 @@ async function runSingle(m) { if(!isAdmin.value) return; await callApi(`/analysi
 
   <main v-else class="dashboard">
     <header class="prem-header">
-      <h1>LE GUIDE <span class="version-tag">V100 PRO</span></h1>
+      <h1>LE GUIDE DES FOURCASTER <span class="version-tag">V100 PRO</span></h1>
       <div class="vip-zone">
         <div class="u-meta">
           <span class="u-mail">{{ user.email }}</span>
           <span v-if="subscriptionEnd" class="u-vip">💎 VIP: {{ formatDate(subscriptionEnd) }}</span>
-          <span v-else class="u-free">❄️ MODE ESSAI (3 clics/fonc)</span>
+          <span v-else class="u-free">❄️ MODE ESSAI (3 essais)</span>
         </div>
         <button @click="logout" class="logout-btn">Quitter</button>
       </div>
     </header>
 
-    <div class="contact-banner">
-      📢 POUR VOUS ABONNER : <span>📞 +225 0749522365</span> / <span>📞 +225 0102275973</span> - <strong>MR ABOUCHO MAX ELISER</strong>
+    <div class="contact-strip">
+       📢 POUR VOUS ABONNER, CONTACTEZ : <span>+225 0749522365</span> / <span>+225 0102275973</span> - <strong>MR ABOUCHO MAX ELISER</strong>
     </div>
 
     <div class="main-layout">
       <!-- SIDEBAR SCROLLABLE -->
       <div class="controls-column">
         
-        <!-- ADMIN AREA -->
+        <!-- ADMIN AREA (TOTALEMENT MASQUÉE POUR LES CLIENTS) -->
         <section v-if="isAdmin" class="card admin-card">
-          <h2>🛠️ ADMINISTRATION (STRICT)</h2>
-          <a :href="sheetDirectLink" target="_blank" class="gsheet-btn">📂 OUVRIR GOOGLE SHEETS DB</a>
+          <h2>🛠️ ADMINISTRATION (STRICT ADMIN)</h2>
+          <div class="quick-link-box"><a :href="sheetDirectLink" target="_blank" class="gsheet-btn">📂 OUVRIR GOOGLE SHEETS DB</a></div>
           <hr>
-          <label>Batch Couleurs :</label>
+          <label>Batch Visuel (Couleurs) :</label>
           <div class="date-picker-row"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div>
-          <button @click="runBatch('frequency')" style="background:#ef5350;">Batch Fréquence</button>
+          <button @click="runBatch('frequency')" style="background:#ef5350;">Batch Rouge/Bleu</button>
           <button @click="runBatch('kanta')" style="background:#66bb6a;">Batch Kanta</button>
           <hr>
           <input type="date" v-model="selectedDate"/>
@@ -273,7 +279,7 @@ async function runSingle(m) { if(!isAdmin.value) return; await callApi(`/analysi
           <input type="date" v-model="selectedDate"/>
           <div class="btn-group"><button @click="runReport('daily-frequency')">Top 10 Jour</button><button @click="runReport('weekly-frequency')">Top 10 Semaine</button><button @click="runKantaReport">Kanta Rank</button></div>
           <hr>
-          <div class="fav-box"><input type="number" v-model="selectedNumber" placeholder="N° Compagnons"/><button @click="runReport('companions')" style="font-size:0.7rem;">ANALYSER</button></div>
+          <div class="fav-box"><input type="number" v-model="selectedNumber" placeholder="N°"/><button @click="runReport('companions')" style="font-size:0.7rem;">COMPAGNONS</button></div>
         </section>
 
         <section class="card">
@@ -295,7 +301,7 @@ async function runSingle(m) { if(!isAdmin.value) return; await callApi(`/analysi
         <section class="card"><h2>⚡ DÉCLENCHEURS</h2><input type="text" v-model="triggerInput" placeholder="N° cible"/><button @click="runTrigger">ANALYSER AMONT</button></section>
       </div>
 
-      <!-- RESULTS AREA -->
+      <!-- RESULTS AREA (V86 INTEGRAL) -->
       <div class="results-column">
         <div v-if="isLoading" class="loader-box"><div class="spin"></div><p>Intelligence décisionnelle en cours...</p></div>
         <div v-if="error" class="err-msg">⚠️ {{ error }}</div>
@@ -304,17 +310,17 @@ async function runSingle(m) { if(!isAdmin.value) return; await callApi(`/analysi
         <div v-if="matrixResult" class="card res-card">
           <h3>🕰️ Résultats Matrice : {{ matrixResult.mode }}</h3>
           <div v-if="matrixResult.prediction" class="pred-box"><span>🔮 SUGGESTION :</span><strong>{{ matrixResult.prediction.two_short }}</strong></div>
-          <table class="prem-table"><thead><tr><th>Date</th><th>Base</th><th>Hits</th></tr></thead><tbody><tr v-for="r in matrixResult.matrix_data" :key="r.date"><td>{{r.date}}</td><td class="bold">{{r.base_number}}</td><td><span v-for="h in r.detailed_hits" :key="h.num" class="hit">{{h.num}}</span></td></tr></tbody></table>
+          <div class="table-scroll"><table class="prem-table"><thead><tr><th>Date</th><th>Base</th><th>Hits</th></tr></thead><tbody><tr v-for="r in matrixResult.matrix_data" :key="r.date"><td>{{r.date}}</td><td class="bold">{{r.base_number}}</td><td><span v-for="h in r.detailed_hits" :key="h.num" class="hit">{{h.num}}</span></td></tr></tbody></table></div>
         </div>
 
-        <!-- SNIPER -->
+        <!-- SNIPER (Toutes les colonnes V86) -->
         <div v-if="dayAnalysisResult" class="card res-card">
           <h3>📊 Sniper : {{ dayAnalysisResult.day_analyzed }}</h3>
           <div class="duo-or">DUO D'OR : {{ dayAnalysisResult.best_duo }}</div>
           <table class="prem-table"><thead><tr><th>Stat</th><th>N°</th><th>Kanta</th><th>Compagnons</th><th>Déclencheurs</th><th>Prophète</th></tr></thead><tbody><tr v-for="r in dayAnalysisResult.recurrence_data" :key="r.number"><td>{{r.status_icon}}</td><td class="bold">{{r.number}}</td><td class="red">{{r.kanta}}</td><td>{{r.best_companion}}</td><td>{{r.best_trigger}}</td><td>{{r.best_prophet}}</td></tr></tbody></table>
         </div>
 
-        <!-- DEEP FAV -->
+        <!-- DEEP FAVORITE -->
         <div v-if="deepFavoriteResult" class="card res-card">
           <h3>⭐ Scan Favori : {{ deepFavoriteResult.favorite }}</h3>
           <div class="summary-grid">
@@ -327,14 +333,20 @@ async function runSingle(m) { if(!isAdmin.value) return; await callApi(`/analysi
           <table class="prem-table"><thead><tr><th>Date</th><th>Heure</th><th>Déclencheur</th><th>Compagnons</th><th>Prophète</th></tr></thead><tbody><tr v-for="row in deepFavoriteResult.history_table"><td>{{row.date}}</td><td>{{row.time}}</td><td>{{row.trigger}}</td><td>{{row.companion}}</td><td>{{row.prophet}}</td></tr></tbody></table>
         </div>
 
-        <!-- LISTS -->
+        <!-- PROFILE -->
+        <div v-if="profileResult" class="card res-card">
+          <h3>👤 Profil Complet : {{ profileResult.profile_data.number }}</h3>
+          <div class="ai-box"><h4>🧠 Analyse Expert :</h4><p>{{ profileResult.ai_strategic_profile }}</p></div>
+        </div>
+
+        <!-- RANKING -->
         <section v-if="standardResult && lastOperationType === 'ranking_rich'" class="card res-card">
           <h3>🏆 Classement Top 10 Contextuel</h3>
           <div v-if="viewMode==='chart'" class="graph"><Bar :data="chartData" :options="chartOptions"/></div>
           <div class="list"><div v-for="(item, i) in standardResult.data" :key="i" class="li-item"><span class="idx">#{{i+1}}</span><span class="num">{{item.number}}</span><span class="hits">{{item.total_hits}} Sorties</span></div></div>
         </section>
 
-        <div v-if="!matrixResult && !dayAnalysisResult && !standardResult && !isLoading" class="welcome">🎯 Sélectionnez une fonction à gauche pour commencer l'analyse.</div>
+        <div v-if="!matrixResult && !dayAnalysisResult && !standardResult && !isLoading" class="welcome">🎯 Sélectionnez une fonction à gauche.</div>
       </div>
     </div>
   </main>
@@ -346,23 +358,22 @@ async function runSingle(m) { if(!isAdmin.value) return; await callApi(`/analysi
 body { font-family: 'Poppins', sans-serif; background: #f0f2f5; margin: 0; }
 .dashboard { max-width: 1450px; margin: 0 auto; padding: 10px; }
 
-/* HEADER */
-.prem-header { 
+/* HEADER PREMIUM */
+header.prem-header { 
   background: linear-gradient(135deg, #1e293b 0%, #334155 100%); color: white; 
   padding: 1.2rem 2rem; border-radius: 15px; display: flex; justify-content: space-between; align-items: center;
   margin-bottom: 10px; box-shadow: 0 10px 20px rgba(0,0,0,0.2);
 }
 .version-tag { background: #f72585; padding: 4px 10px; border-radius: 20px; font-size: 0.7rem; }
-.u-meta { display: flex; flex-direction: column; text-align: right; margin-right: 20px; }
 .u-vip { color: #4cc9f0; font-size: 0.8rem; font-weight: bold; }
 .u-free { color: #cbd5e1; font-size: 0.8rem; }
 .logout-btn { background: rgba(255,255,255,0.1); border: 1px solid white; color: white; padding: 5px 15px; border-radius: 8px; cursor: pointer; }
 
-/* CONTACT */
-.contact-banner { background: #fff3e0; color: #e65100; padding: 12px; text-align: center; border-radius: 10px; margin-bottom: 20px; font-weight: bold; border: 1px solid #ff9800; }
-.contact-banner span { color: #d32f2f; margin: 0 5px; text-decoration: underline; }
+/* CONTACT BANNER */
+.contact-strip { background: #fff3e0; color: #e65100; padding: 12px; text-align: center; border-radius: 10px; margin-bottom: 20px; font-weight: bold; border: 1px solid #ff9800; }
+.contact-strip span { color: #d32f2f; margin: 0 5px; text-decoration: underline; }
 
-/* LAYOUT SIDEBAR SCROLL */
+/* LAYOUT & SIDEBAR SCROLL */
 .main-layout { display: grid; grid-template-columns: 360px 1fr; gap: 25px; height: 85vh; }
 .controls-column { overflow-y: auto; padding-right: 15px; }
 .controls-column::-webkit-scrollbar { width: 6px; }
@@ -381,27 +392,27 @@ button { font-family: 'Poppins', sans-serif; font-weight: 600; border: none; bor
 .blue { background: #00b4d8; }
 .gsheet-btn { background: #0f9d58; color: white; padding: 10px 20px; border-radius: 30px; text-decoration: none; font-weight: bold; display: block; text-align: center; margin-bottom: 10px; }
 
-/* RESULTS */
+/* RESULTS TABLES */
 .res-card { border-top: 5px solid var(--p); }
 .pred-box { background: linear-gradient(to right, #4361ee, #4cc9f0); color: white; padding: 15px; border-radius: 12px; display: flex; justify-content: space-between; margin-bottom: 20px; }
 .duo-or { background: #e3f2fd; color: #0d47a1; padding: 15px; border-radius: 10px; text-align: center; font-weight: 800; margin-bottom: 15px; }
 .prem-table { width: 100%; border-collapse: collapse; }
-.prem-table th { background: #f8fafc; padding: 12px; font-size: 0.75rem; color: #64748b; }
+.prem-table th { background: #f8fafc; padding: 12px; font-size: 0.75rem; color: #64748b; text-align: center; }
 .prem-table td { padding: 12px; text-align: center; border-bottom: 1px solid #f1f5f9; }
 .bold { font-weight: 800; font-size: 1.2rem; }
 .red { color: #d32f2f; font-weight: bold; }
 .hit { background: #fff3e0; color: #e65100; padding: 3px 8px; border-radius: 5px; margin: 2px; font-weight: bold; }
 
-/* FAV */
+/* CHIPS & MISC */
 .fav-chips { display: flex; flex-wrap: wrap; gap: 5px; }
 .chip { background: #e0f2f1; padding: 5px 12px; border-radius: 20px; font-weight: bold; display: flex; align-items: center; gap: 10px; }
 .chip b { color: red; cursor: pointer; }
-
 .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 15px; }
 .sum-card { background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0; }
 .sum-card h5 { margin: 0 0 5px 0; font-size: 0.75rem; color: #64748b; text-transform: uppercase; }
 .sum-card ul { padding: 0; margin: 0; list-style: none; font-size: 0.85rem; font-weight: bold; }
 
+/* AUTH BOX */
 .login-wrapper { background: #0f172a; height: 100vh; display: flex; align-items: center; justify-content: center; }
 .login-box { background: white; padding: 3rem; border-radius: 25px; width: 400px; text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
 .toggle-auth { color: var(--p); cursor: pointer; margin-top: 15px; font-weight: bold; text-decoration: underline; }
@@ -410,4 +421,5 @@ button { font-family: 'Poppins', sans-serif; font-weight: 600; border: none; bor
 @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 .li-item { display: flex; align-items: center; gap: 15px; padding: 12px; border-bottom: 1px solid #eee; }
 .idx { background: var(--p); color: white; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+.ai-box { background: #fff; border-left: 5px solid #f72585; padding: 20px; border-radius: 0 10px 10px 0; font-family: 'Roboto', sans-serif; line-height: 1.6; margin-top: 15px; box-shadow: 0 5px 15px rgba(0,0,0,0.05); }
 </style>
