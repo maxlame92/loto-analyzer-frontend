@@ -23,7 +23,7 @@ const isLoginMode = ref(true);
 const totalUsersCount = ref(0);
 const USER_LIMIT = 50;
 
-// Compteur pour blocage (3 essais/fonction)
+// Compteur pour blocage (3 essais par fonction)
 const usageCounts = ref({ matrix: 0, sniper: 0, favorite: 0, visual: 0, report: 0, profile: 0, prophet: 0, trigger: 0 });
 
 const userFavorites = ref([]); 
@@ -33,14 +33,14 @@ const predictionCompanion = ref('');
 const profileNumber = ref('');
 const triggerInput = ref(''); 
 
+const selectedDayName = ref('Mercredi');
+const selectedHour = ref('Toute la journée'); 
 const dayAnalysisResult = ref(null); 
 const standardResult = ref(null);
 const deepFavoriteResult = ref(null);
 const profileResult = ref(null);
 const matrixResult = ref(null);
 
-const selectedDayName = ref('Mercredi');
-const selectedHour = ref('Toute la journée'); 
 const matrixMode = ref('continuous'); 
 const cyclicDay = ref(1);
 const favDayName = ref('Tous');
@@ -62,7 +62,8 @@ const isVIP = computed(() => subscriptionEnd.value !== '' || isAdmin.value);
 const isLimitReached = computed(() => totalUsersCount.value >= USER_LIMIT);
 const sheetDirectLink = computed(() => `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/edit${activeSheetGid.value ? '#gid=' + activeSheetGid.value : ''}`);
 
-function checkLimit(type) {
+// --- SÉCURITÉ : LIMITE 3 CLICS ---
+function checkUsage(type) {
   if (isVIP.value) return true;
   if (usageCounts.value[type] >= 3) {
     alert("CONTACTER L'EXPERT POUR VOUS ABONEZ : 📞 +225 0749522365 ou 📞 +225 0102275973 POUR AVOIR ACCES ET BENEFICIER DETOUT LES FONCTION - MR ABOUCHO MAX ELISER.");
@@ -72,14 +73,18 @@ function checkLimit(type) {
   return true;
 }
 
-function formatDate(d) { return d ? d.split('-').reverse().join('/') : ''; }
+function formatDate(dateStr) {
+  if (!dateStr) return '';
+  const parts = dateStr.split('-');
+  return `${parts[2]}/${parts[1]}/${parts[0]}`;
+}
 
 const tableHeaders = computed(() => {
   if (!lastOperationType.value) return [];
   if (lastOperationType.value.includes('frequency')) return ['#', 'Numéro', 'Sorties', 'Détails'];
   if (lastOperationType.value === 'companions') return ['#', 'Compagnon', 'Apparu avec'];
   if (lastOperationType.value === 'trigger') return ['#', 'N° Déclencheur', 'Fréquence'];
-  if (lastOperationType.value === 'prediction') return ['#', 'Numéro Suivant (Probable)', 'Fréquence']; 
+  if (lastOperationType.value === 'prediction') return ['#', 'Numéro Suivant', 'Fréquence']; 
   if (lastOperationType.value.includes('kanta-rank')) return ['Paire Kanta', 'Apparitions'];
   return [];
 });
@@ -93,13 +98,21 @@ const tableData = computed(() => {
   if (standardResult.value?.data) return standardResult.value.data;
   return [];
 });
+const isTableVisible = computed(() => tableData.value.length > 0);
 
 const chartOptions = { responsive: true, maintainAspectRatio: false };
 const chartData = computed(() => {
   const data = tableData.value;
   if (!data || data.length === 0) return null;
-  const labels = data.slice(0, 20).map(row => row.pair || row.number || row.companion || '?');
-  const counts = data.slice(0, 20).map(row => row.count || row.total_hits);
+  const limitedData = data.slice(0, 20);
+  let labels = [], counts = [];
+  limitedData.forEach(row => {
+    if (row.pair) labels.push(row.pair);
+    else if (row.number) labels.push(row.number.toString());
+    else if (row.companion) labels.push(row.companion.toString());
+    else labels.push('?');
+    counts.push(row.count || row.total_hits);
+  });
   return { labels, datasets: [{ label: 'Occurrences', backgroundColor: '#007bff', borderRadius: 4, data: counts }] };
 });
 
@@ -114,42 +127,52 @@ onMounted(async () => {
   try {
     const snap = await getDocs(query(collection(db, "users"), limit(100)));
     totalUsersCount.value = snap.size;
-  } catch (e) { }
+  } catch (e) { console.warn("Err compteur"); }
 
-  onAuthStateChanged(auth, async (fUser) => {
-    if (fUser) {
+  onAuthStateChanged(auth, async (firebaseUser) => {
+    if (firebaseUser) {
       if (!localStorage.getItem('session_id')) { logout(); return; }
-      user.value = fUser;
-      const snap = await getDoc(doc(db, "users", fUser.uid));
-      if (snap.exists()) {
-        const d = snap.data();
-        userRole.value = d.role || 'user';
-        userFavorites.value = d.favorites || [];
-        subscriptionEnd.value = d.subscription_end || '';
-      }
-    } else { user.value = null; userRole.value = ''; userFavorites.value = []; subscriptionEnd.value = ''; localStorage.removeItem('session_id'); }
+      user.value = firebaseUser;
+      const docRef = doc(db, "users", firebaseUser.uid);
+      try {
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          userRole.value = data.role || 'user';
+          userFavorites.value = data.favorites || []; 
+          subscriptionEnd.value = data.subscription_end || '';
+        }
+      } catch (e) { console.error(e); }
+    } else { 
+        user.value = null; userRole.value = ''; userFavorites.value = []; subscriptionEnd.value = '';
+        localStorage.removeItem('session_id'); 
+    }
     isAuthReady.value = true;
   });
 });
 
 // --- AUTH ---
 const login = async () => {
-  try { isLoading.value = true; authError.value = '';
+  try {
+    isLoading.value = true; authError.value = '';
     const cred = await signInWithEmailAndPassword(auth, email.value, password.value);
     const sid = crypto.randomUUID();
     localStorage.setItem('session_id', sid);
     await updateDoc(doc(db, "users", cred.user.uid), { current_session_id: sid });
-  } catch (e) { authError.value = "Identifiants incorrects."; } finally { isLoading.value = false; }
+  } catch (error) { authError.value = "Email ou mot de passe incorrect."; } finally { isLoading.value = false; }
 };
 
 const signup = async () => {
-  if (isLimitReached.value) { authError.value = "Limite d'inscriptions (50) atteinte."; return; }
-  try { isLoading.value = true; authError.value = '';
+  if (isLimitReached.value) { authError.value = "Limite de 50 atteinte."; return; }
+  try {
+    isLoading.value = true; authError.value = '';
     const cred = await createUserWithEmailAndPassword(auth, email.value, password.value);
     const sid = crypto.randomUUID();
     localStorage.setItem('session_id', sid);
-    await setDoc(doc(db, "users", cred.user.uid), { email: email.value, role: 'user', favorites: [], subscription_end: null, current_session_id: sid, created_at: new Date().toISOString() });
-  } catch (e) { authError.value = "Erreur lors de l'inscription."; } finally { isLoading.value = false; }
+    await setDoc(doc(db, "users", cred.user.uid), {
+      email: email.value, role: 'user', favorites: [], subscription_end: null, current_session_id: sid, created_at: new Date().toISOString()
+    });
+  } catch (error) { authError.value = "Erreur lors de l'inscription."; } finally { isLoading.value = false; }
 };
 
 const logout = async () => { localStorage.removeItem('session_id'); await signOut(auth); };
@@ -157,7 +180,6 @@ const logout = async () => { localStorage.removeItem('session_id'); await signOu
 // --- API ENGINE ---
 async function callApi(url, targetVar = 'standard') {
   showWelcomeMessage.value = false; isLoading.value = true; error.value = null;
-  if (targetVar === 'standard') standardResult.value = null;
   try {
     const token = await user.value.getIdToken();
     const sid = localStorage.getItem('session_id');
@@ -165,8 +187,8 @@ async function callApi(url, targetVar = 'standard') {
     const res = await fetch(`${API_BASE_URL}${url}`, { method: 'GET', headers });
     const data = await res.json();
     if (!res.ok) {
-      if (data.detail === "SESSION_EXPIRED_ANOTHER_DEVICE") { alert("Compte ouvert ailleurs !"); logout(); return; }
-      throw new Error(data.detail || "Erreur serveur");
+        if (data.detail === "SESSION_EXPIRED_ANOTHER_DEVICE") { alert("⚠️ Compte utilisé ailleurs !"); logout(); return; }
+        throw new Error(data.detail || "Erreur serveur");
     }
     if (targetVar === 'specialist') dayAnalysisResult.value = data;
     else if (targetVar === 'deep') deepFavoriteResult.value = data;
@@ -178,25 +200,25 @@ async function callApi(url, targetVar = 'standard') {
   } catch (err) { error.value = err.message; } finally { isLoading.value = false; }
 }
 
-// --- ACTIONS ---
-async function runTimeMatrix() { if(!checkLimit('matrix')) return; matrixResult.value = null; await callApi(`/analysis/time-matrix?start_date=${startDate.value}&end_date=${endDate.value}&mode=${matrixMode.value}${matrixMode.value==='cyclic'?'&target_cyclic_day='+cyclicDay.value:''}`, 'matrix'); }
-async function runDayAnalysis() { if(!checkLimit('sniper')) return; await callApi(`/analysis/specific-day-recurrence?day_name=${selectedDayName.value}&target_hour=${selectedHour.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'specialist'); }
+// --- FONCTIONS ACTIONS V86 ---
+async function runTimeMatrix() { if(!checkUsage('matrix')) return; matrixResult.value = null; await callApi(`/analysis/time-matrix?start_date=${startDate.value}&end_date=${endDate.value}&mode=${matrixMode.value}${matrixMode.value==='cyclic'?'&target_cyclic_day='+cyclicDay.value:''}`, 'matrix'); }
+async function runDayAnalysis() { if(!checkUsage('sniper')) return; await callApi(`/analysis/specific-day-recurrence?day_name=${selectedDayName.value}&target_hour=${selectedHour.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'specialist'); }
 async function runReport(type) {
-  if(!checkLimit('report')) return;
+  if(!checkUsage('report')) return;
   if (type === 'daily-frequency') { lastOperationType.value = 'ranking_rich'; await callApi(`/analysis/daily-frequency/${selectedDate.value}`, 'standard'); }
   else if (type === 'weekly-frequency') { lastOperationType.value = 'ranking_rich'; await callApi(`/analysis/weekly-frequency/${selectedDate.value}`, 'standard'); }
   else if (type === 'companions') { lastOperationType.value = 'simple'; await callApi(`/analysis/companions/${selectedNumber.value}?week_date_str=${selectedDate.value}`, 'standard'); }
 }
-async function runRange() { if(!checkLimit('report')) return; lastOperationType.value = 'ranking_rich'; await callApi(`/analysis/frequency-by-range?start_date=${startDate.value}&end_date=${endDate.value}`, 'standard'); }
-async function runProfile() { if(!checkLimit('profile')) return; lastOperationType.value = 'profile'; await callApi(`/analysis/number-profile?target_number=${profileNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'profile'); }
-async function runTrigger() { if(!checkLimit('trigger')) return; lastOperationType.value = 'simple'; const p = triggerInput.value.split(' '); await callApi(`/analysis/trigger-numbers?target_number=${p[0]}&start_date=${startDate.value}&end_date=${endDate.value}`, 'standard'); }
-async function runPrediction() { if(!checkLimit('prophet')) return; lastOperationType.value = 'simple'; await callApi(`/analysis/predict-next?observed_number=${predictionNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}${predictionCompanion.value?'&observed_companion='+predictionCompanion.value:''}`, 'standard'); }
-async function runKantaReport() { if(!checkLimit('report')) return; lastOperationType.value = 'simple'; await callApi(`/analysis/kanta-daily-rank?date_str=${selectedDate.value}`, 'standard'); }
-async function addFav() { if(!checkLimit('favorite')) return; if(newFavoriteInput.value) { await updateDoc(doc(db,"users",user.value.uid), {favorites: arrayUnion(newFavoriteInput.value)}); userFavorites.value.push(newFavoriteInput.value); newFavoriteInput.value=''; } }
-async function removeFav(i) { await updateDoc(doc(db,"users",user.value.uid), {favorites: arrayRemove(i)}); userFavorites.value = userFavorites.value.filter(f=>f!==i); }
-async function runDeep(i) { if(!checkLimit('favorite')) return; deepFavoriteResult.value = null; await callApi(`/analysis/deep-favorite?target=${i}&start_date=${startDate.value}&end_date=${endDate.value}&context_day=${favDayName.value}&context_hour=${favHour.value}`, 'deep'); }
+async function runRange() { if(!checkUsage('report')) return; lastOperationType.value = 'ranking_rich'; await callApi(`/analysis/frequency-by-range?start_date=${startDate.value}&end_date=${endDate.value}`, 'standard'); }
+async function runProfile() { if(!checkUsage('profile')) return; lastOperationType.value = 'profile'; await callApi(`/analysis/number-profile?target_number=${profileNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}`, 'profile'); }
+async function runTrigger() { if(!checkUsage('trigger')) return; lastOperationType.value = 'simple'; const parts = triggerInput.value.split(' '); await callApi(`/analysis/trigger-numbers?target_number=${parts[0]}&start_date=${startDate.value}&end_date=${endDate.value}`, 'standard'); }
+async function runPrediction() { if(!checkUsage('prophet')) return; lastOperationType.value = 'simple'; await callApi(`/analysis/predict-next?observed_number=${predictionNumber.value}&start_date=${startDate.value}&end_date=${endDate.value}${predictionCompanion.value?'&observed_companion='+predictionCompanion.value:''}`, 'standard'); }
+async function runKantaReport() { if(!checkUsage('report')) return; lastOperationType.value = 'simple'; await callApi(`/analysis/kanta-daily-rank?date_str=${selectedDate.value}`, 'standard'); }
+async function addFavorite() { if(!checkUsage('favorite')) return; if(newFavoriteInput.value) { await updateDoc(doc(db,"users",user.value.uid),{favorites:arrayUnion(newFavoriteInput.value)}); userFavorites.value.push(newFavoriteInput.value); newFavoriteInput.value=''; } }
+async function removeFavorite(i) { await updateDoc(doc(db,"users",user.value.uid),{favorites:arrayRemove(i)}); userFavorites.value=userFavorites.value.filter(f=>f!==i); }
+async function analyzeDeepFavorite(i) { if(!checkUsage('favorite')) return; deepFavoriteResult.value=null; await callApi(`/analysis/deep-favorite?target=${i}&start_date=${startDate.value}&end_date=${endDate.value}&context_day=${favDayName.value}&context_hour=${favHour.value}`, 'deep'); }
 
-// ADMIN ONLY
+// ADMIN SEULEMENT
 async function runBatch(m) { if(!isAdmin.value) return; await callApi(`/analysis/highlight-range?start_date=${startDate.value}&end_date=${endDate.value}&mode=${m}`, 'standard'); }
 async function runSingle(m) { if(!isAdmin.value) return; await callApi(`/analysis/highlight-range?start_date=${selectedDate.value}&end_date=${selectedDate.value}&mode=${m}`, 'standard'); }
 </script>
@@ -206,46 +228,46 @@ async function runSingle(m) { if(!isAdmin.value) return; await callApi(`/analysi
   <div v-else-if="!user" class="login-wrapper">
     <div class="login-box">
       <h2>LE GUIDE DES FOURCASTER</h2>
-      <p style="color:#64748b; margin-bottom:15px;">{{ isLoginMode ? 'Veuillez vous connecter' : 'Inscription Libre (Limitée à 50)' }}</p>
+      <p style="color:#64748b; margin-bottom:15px;">{{ isLoginMode ? 'Connexion Membre' : 'Inscription Libre (Limitée à 50)' }}</p>
       <form @submit.prevent="isLoginMode ? login() : signup()">
         <div class="input-group"><label>Email</label><input type="email" v-model="email" required /></div>
         <div class="input-group"><label>Mot de passe</label><input type="password" v-model="password" required /></div>
-        <button type="submit" class="login-button">{{ isLoading ? '...' : (isLoginMode ? 'CONNEXION' : 'S\'INSCRIRE') }}</button>
+        <button type="submit" class="login-button" :disabled="isLoading">{{ isLoading ? '...' : (isLoginMode ? 'CONNEXION' : 'S\'INSCRIRE') }}</button>
         <p v-if="authError" class="auth-error">{{ authError }}</p>
-        <p class="toggle-auth" @click="isLoginMode = !isLoginMode">{{ isLoginMode ? 'S\'inscrire' : 'Se connecter' }}</p>
+        <p class="toggle-auth" @click="isLoginMode = !isLoginMode">{{ isLoginMode ? 'Pas de compte ? S\'inscrire' : 'Déjà membre ? Se connecter' }}</p>
       </form>
     </div>
   </div>
 
   <main v-else class="dashboard">
-    <header class="prem-header">
+    <header>
       <h1>LE GUIDE DES FOURCASTER <span class="version-tag">V100 PRO</span></h1>
-      <div class="vip-zone">
-        <div class="u-meta">
-          <span class="u-mail">{{ user.email }}</span>
-          <span v-if="subscriptionEnd" class="u-vip">💎 VIP: {{ formatDate(subscriptionEnd) }}</span>
-          <span v-else class="u-free">❄️ MODE ESSAI (3 essais)</span>
+      <div class="user-info">
+        <div class="sub-status">
+            <span class="user-email">{{ user.email }}</span>
+            <span v-if="subscriptionEnd" class="expiry-text">💎 VIP jusqu'au: {{ formatDate(subscriptionEnd) }}</span>
+            <span v-else class="free-text">❄️ MODE ESSAI (3 essais)</span>
         </div>
-        <button @click="logout" class="logout-btn">Quitter</button>
+        <button @click="logout" class="logout-button">Déconnexion</button>
       </div>
     </header>
 
-    <div class="contact-strip">
-       📢 POUR VOUS ABONNER, CONTACTEZ : <span>+225 0749522365</span> / <span>+225 0102275973</span> - <strong>MR ABOUCHO MAX ELISER</strong>
+    <div class="contact-banner">
+        🚀 POUR VOUS ABONNER, CONTACTEZ : <span>📞 +225 0749522365</span> / <span>📞 +225 0102275973</span> - <strong>MR ABOUCHO MAX ELISER</strong>
     </div>
 
     <div class="main-layout">
       <!-- SIDEBAR SCROLLABLE -->
       <div class="controls-column">
         
-        <!-- ADMIN AREA (TOTALEMENT MASQUÉE POUR LES CLIENTS) -->
+        <!-- ADMIN AREA -->
         <section v-if="isAdmin" class="card admin-card">
-          <h2>🛠️ ADMINISTRATION (STRICT ADMIN)</h2>
-          <div class="quick-link-box"><a :href="sheetDirectLink" target="_blank" class="gsheet-btn">📂 OUVRIR GOOGLE SHEETS DB</a></div>
+          <h2>🛠️ ADMINISTRATION (STRICT)</h2>
+          <a :href="sheetDirectLink" target="_blank" class="gsheet-btn">📂 OUVRIR GOOGLE SHEETS DB</a>
           <hr>
-          <label>Batch Visuel (Couleurs) :</label>
+          <label>Batch Couleurs :</label>
           <div class="date-picker-row"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div>
-          <button @click="runBatch('frequency')" style="background:#ef5350;">Batch Rouge/Bleu</button>
+          <button @click="runBatch('frequency')" style="background:#ef5350;">Batch Fréquence</button>
           <button @click="runBatch('kanta')" style="background:#66bb6a;">Batch Kanta</button>
           <hr>
           <input type="date" v-model="selectedDate"/>
@@ -253,33 +275,36 @@ async function runSingle(m) { if(!isAdmin.value) return; await callApi(`/analysi
         </section>
 
         <section class="card matrix-card">
-          <div class="card-head"><h2>🕰️ MATRICE TEMPORELLE</h2><span class="v-badge">VIP</span></div>
+          <div class="boss-header"><h2>🕰️ MATRICE TEMPORELLE</h2><span class="badge-spec">VIP</span></div>
           <div class="tabs"><button @click="matrixMode='continuous'" :class="{active: matrixMode==='continuous'}">CONTINU</button><button @click="matrixMode='cyclic'" :class="{active: matrixMode==='cyclic'}">CYCLIQUE</button></div>
           <div v-if="matrixMode==='cyclic'"><input type="number" v-model="cyclicDay" placeholder="Jour (1-31)"/></div>
           <div class="date-picker-row"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div>
-          <button @click="runTimeMatrix" class="act-btn orange">VOIR PRÉDICTIONS</button>
+          <button @click="runTimeMatrix" class="spec-btn orange">VOIR PRÉDICTIONS</button>
         </section>
         
         <section class="card spec-card">
-          <div class="card-head"><h2>📅 ANALYSTE SPÉCIALISTE</h2><span class="v-badge">VIP</span></div>
+          <div class="boss-header"><h2>📅 ANALYSTE SPÉCIALISTE</h2><span class="badge-spec">VIP</span></div>
           <select v-model="selectedDayName"><option v-for="d in ['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche']" :key="d">{{d}}</option></select>
-          <select v-model="selectedHour"><option>Toute la journée</option><option v-for="h in ['07H','10H','13H','16H','19H','21H','22H','23H']" :key="h">{{h}}</option></select>
-          <div class="date-picker-row"><input type="date" v-model="startDate"/><input type="date" v-model="endDate"/></div>
-          <button @click="runDayAnalysis" class="act-btn blue">SCANNER LE JOUR</button>
+          <select v-model="selectedHour"><option>Toute la journée</option><option v-for="h in ['07H','08H','10H','13H','16H','19H','21H','22H','23H']" :key="h">{{h}}</option></select>
+          <button @click="runDayAnalysis" class="spec-btn blue">SCANNER LE JOUR</button>
         </section>
         
         <section class="card">
           <h2>⭐ MES FAVORIS</h2>
-          <div class="fav-box"><input type="text" v-model="newFavoriteInput" placeholder="N° ou Paire"/><button @click="addFav">+</button></div>
-          <div class="fav-chips"><div v-for="f in userFavorites" :key="f" class="chip">{{ f }} <span @click="runDeep(f)">⚡</span><b @click="removeFav(f)">×</b></div></div>
+          <div class="favorites-input-group"><input type="text" v-model="newFavoriteInput" placeholder="N°"/><button @click="addFavorite" class="btn-small">+</button></div>
+          <div class="favorites-list"><div v-for="item in userFavorites" :key="item" class="favorite-chip">{{ item }} <span @click="analyzeDeepFavorite(item)">⚡</span><b @click="removeFavorite(item)">×</b></div></div>
         </section>
         
         <section class="card">
           <h2>📊 RAPPORTS PONCTUELS</h2>
           <input type="date" v-model="selectedDate"/>
-          <div class="btn-group"><button @click="runReport('daily-frequency')">Top 10 Jour</button><button @click="runReport('weekly-frequency')">Top 10 Semaine</button><button @click="runKantaReport">Kanta Rank</button></div>
+          <div class="button-group-vertical">
+            <button @click="runReport('daily-frequency')">Top 10 Jour</button>
+            <button @click="runReport('weekly-frequency')">Top 10 Semaine</button>
+            <button @click="runKantaReport">Kanta Rank</button>
+          </div>
           <hr>
-          <div class="fav-box"><input type="number" v-model="selectedNumber" placeholder="N°"/><button @click="runReport('companions')" style="font-size:0.7rem;">COMPAGNONS</button></div>
+          <div class="favorites-input-group"><input type="number" v-model="selectedNumber" placeholder="N° Compagnons"/><button @click="runReport('companions')" style="font-size:0.7rem;">ANALYSER</button></div>
         </section>
 
         <section class="card">
@@ -301,28 +326,30 @@ async function runSingle(m) { if(!isAdmin.value) return; await callApi(`/analysi
         <section class="card"><h2>⚡ DÉCLENCHEURS</h2><input type="text" v-model="triggerInput" placeholder="N° cible"/><button @click="runTrigger">ANALYSER AMONT</button></section>
       </div>
 
-      <!-- RESULTS AREA (V86 INTEGRAL) -->
+      <!-- RESULTS COLUMN -->
       <div class="results-column">
-        <div v-if="isLoading" class="loader-box"><div class="spin"></div><p>Intelligence décisionnelle en cours...</p></div>
-        <div v-if="error" class="err-msg">⚠️ {{ error }}</div>
+        <div v-if="isLoading" class="loader">Calculs stratégiques en cours...</div>
+        <div v-if="error" class="error-box">⚠️ {{ error }}</div>
 
         <!-- MATRIX -->
-        <div v-if="matrixResult" class="card res-card">
-          <h3>🕰️ Résultats Matrice : {{ matrixResult.mode }}</h3>
-          <div v-if="matrixResult.prediction" class="pred-box"><span>🔮 SUGGESTION :</span><strong>{{ matrixResult.prediction.two_short }}</strong></div>
-          <div class="table-scroll"><table class="prem-table"><thead><tr><th>Date</th><th>Base</th><th>Hits</th></tr></thead><tbody><tr v-for="r in matrixResult.matrix_data" :key="r.date"><td>{{r.date}}</td><td class="bold">{{r.base_number}}</td><td><span v-for="h in r.detailed_hits" :key="h.num" class="hit">{{h.num}}</span></td></tr></tbody></table></div>
+        <div v-if="matrixResult" class="card result-spec-card" style="border-top:4px solid #ff9800;">
+           <div class="spec-header"><h3>🕰️ RÉSULTATS MATRICE : {{ matrixResult.mode }}</h3><button @click="matrixResult=null">×</button></div>
+           <div v-if="matrixResult.prediction" class="prediction-tab">
+               <div class="best-duo-box" style="background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);"><span>🔮 SUGGESTION :</span><span class="duo-val">{{ matrixResult.prediction.two_short }}</span></div>
+           </div>
+           <table class="spec-table"><thead><tr><th>Date</th><th>Base</th><th>Hits</th></tr></thead><tbody><tr v-for="row in matrixResult.matrix_data" :key="row.date"><td>{{ row.date }}</td><td class="num-cell">{{ row.base_number }}</td><td><span v-for="h in row.detailed_hits" :key="h.num" class="badge-hit">{{ h.num }}</span></td></tr></tbody></table>
         </div>
 
-        <!-- SNIPER (Toutes les colonnes V86) -->
-        <div v-if="dayAnalysisResult" class="card res-card">
-          <h3>📊 Sniper : {{ dayAnalysisResult.day_analyzed }}</h3>
-          <div class="duo-or">DUO D'OR : {{ dayAnalysisResult.best_duo }}</div>
-          <table class="prem-table"><thead><tr><th>Stat</th><th>N°</th><th>Kanta</th><th>Compagnons</th><th>Déclencheurs</th><th>Prophète</th></tr></thead><tbody><tr v-for="r in dayAnalysisResult.recurrence_data" :key="r.number"><td>{{r.status_icon}}</td><td class="bold">{{r.number}}</td><td class="red">{{r.kanta}}</td><td>{{r.best_companion}}</td><td>{{r.best_trigger}}</td><td>{{r.best_prophet}}</td></tr></tbody></table>
+        <!-- SNIPER (V86 INTEGRAL) -->
+        <div v-if="dayAnalysisResult" class="card result-spec-card">
+          <div class="spec-header"><h3>📊 Sniper : {{ dayAnalysisResult.day_analyzed }}</h3><button @click="dayAnalysisResult=null">×</button></div>
+          <div class="best-duo-box"><span class="duo-label">🔥 DUO D'OR :</span><span class="duo-val">{{ dayAnalysisResult.best_duo }}</span></div>
+          <table class="spec-table"><thead><tr><th>Stat</th><th>N°</th><th>Kanta</th><th>Compagnons</th><th>Déclencheurs</th><th>Prophète</th></tr></thead><tbody><tr v-for="row in dayAnalysisResult.recurrence_data" :key="row.number"><td>{{ row.status_icon }}</td><td class="num-cell">{{ row.number }}</td><td style="color:#d32f2f;">{{ row.kanta }}</td><td>{{ row.best_companion }}</td><td>{{ row.best_trigger }}</td><td>{{ row.best_prophet }}</td></tr></tbody></table>
         </div>
 
         <!-- DEEP FAVORITE -->
-        <div v-if="deepFavoriteResult" class="card res-card">
-          <h3>⭐ Scan Favori : {{ deepFavoriteResult.favorite }}</h3>
+        <div v-if="deepFavoriteResult" class="card result-spec-card" style="border-top:4px solid #fdd835;">
+          <div class="spec-header"><h3>⭐ Scan Favori : {{ deepFavoriteResult.favorite }}</h3><button @click="deepFavoriteResult=null">×</button></div>
           <div class="summary-grid">
               <div class="sum-card"><h5>Top Jours</h5><ul><li v-for="x in deepFavoriteResult.summary.top_days">{{x.val}} ({{x.count}})</li></ul></div>
               <div class="sum-card"><h5>Top Heures</h5><ul><li v-for="x in deepFavoriteResult.summary.top_hours">{{x.val}} ({{x.count}})</li></ul></div>
@@ -330,61 +357,48 @@ async function runSingle(m) { if(!isAdmin.value) return; await callApi(`/analysi
               <div class="sum-card"><h5>Top Compagnons</h5><ul><li v-for="x in deepFavoriteResult.summary.top_companions">{{x.val}} ({{x.count}})</li></ul></div>
               <div class="sum-card"><h5>Top Prophètes</h5><ul><li v-for="x in deepFavoriteResult.summary.top_prophets">{{x.val}} ({{x.count}})</li></ul></div>
           </div>
-          <table class="prem-table"><thead><tr><th>Date</th><th>Heure</th><th>Déclencheur</th><th>Compagnons</th><th>Prophète</th></tr></thead><tbody><tr v-for="row in deepFavoriteResult.history_table"><td>{{row.date}}</td><td>{{row.time}}</td><td>{{row.trigger}}</td><td>{{row.companion}}</td><td>{{row.prophet}}</td></tr></tbody></table>
-        </div>
-
-        <!-- PROFILE -->
-        <div v-if="profileResult" class="card res-card">
-          <h3>👤 Profil Complet : {{ profileResult.profile_data.number }}</h3>
-          <div class="ai-box"><h4>🧠 Analyse Expert :</h4><p>{{ profileResult.ai_strategic_profile }}</p></div>
+          <table class="spec-table"><thead><tr><th>Date</th><th>Heure</th><th>Déclencheur</th><th>Compagnons</th><th>Prophète</th></tr></thead><tbody><tr v-for="row in deepFavoriteResult.history_table"><td>{{ row.date }}</td><td>{{ row.time }}</td><td>{{ row.trigger }}</td><td>{{ row.companion }}</td><td>{{ row.prophet }}</td></tr></tbody></table>
         </div>
 
         <!-- RANKING -->
-        <section v-if="standardResult && lastOperationType === 'ranking_rich'" class="card res-card">
+        <section v-if="standardResult && lastOperationType === 'ranking_rich'" class="card results-card fade-in">
           <h3>🏆 Classement Top 10 Contextuel</h3>
-          <div v-if="viewMode==='chart'" class="graph"><Bar :data="chartData" :options="chartOptions"/></div>
-          <div class="list"><div v-for="(item, i) in standardResult.data" :key="i" class="li-item"><span class="idx">#{{i+1}}</span><span class="num">{{item.number}}</span><span class="hits">{{item.total_hits}} Sorties</span></div></div>
+          <div v-if="viewMode === 'chart'" class="chart-container"><Bar :data="chartData" :options="chartOptions" /></div>
+          <div class="ranking-list"><div v-for="(item, index) in standardResult.data" :key="item.number" class="rank-card"><div class="rank-badge">#{{ index + 1 }}</div><div class="rank-main"><span class="rank-num">{{ item.number }}</span><span class="rank-hits">{{ item.total_hits }} Sorties</span></div></div></div>
         </section>
 
-        <div v-if="!matrixResult && !dayAnalysisResult && !standardResult && !isLoading" class="welcome">🎯 Sélectionnez une fonction à gauche.</div>
+        <div v-if="!dayAnalysisResult && !matrixResult && !standardResult && !isLoading" class="welcome-message">🎯 Sélectionnez une fonction à gauche.</div>
       </div>
     </div>
   </main>
 </template>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;800&family=Roboto:wght@400;700&display=swap');
-:root { --p: #4361ee; --s: #3f37c9; --error: #ef4444; }
-body { font-family: 'Poppins', sans-serif; background: #f0f2f5; margin: 0; }
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;800&family=Roboto:wght@400;500;700&display=swap');
+:root { --primary: #4361ee; --secondary: #3f37c9; --error: #ef4444; }
+body { font-family: 'Poppins', sans-serif; background-color: #f0f2f5; margin: 0; }
 .dashboard { max-width: 1450px; margin: 0 auto; padding: 10px; }
 
-/* HEADER PREMIUM */
-header.prem-header { 
-  background: linear-gradient(135deg, #1e293b 0%, #334155 100%); color: white; 
-  padding: 1.2rem 2rem; border-radius: 15px; display: flex; justify-content: space-between; align-items: center;
-  margin-bottom: 10px; box-shadow: 0 10px 20px rgba(0,0,0,0.2);
-}
+header { background: linear-gradient(135deg, #1e293b 0%, #334155 100%); color: white; padding: 1.2rem 2rem; border-radius: 15px; margin-bottom: 1.5rem; box-shadow: 0 10px 20px rgba(0,0,0,0.2); display: flex; justify-content: space-between; align-items: center; }
 .version-tag { background: #f72585; padding: 4px 10px; border-radius: 20px; font-size: 0.7rem; }
 .u-vip { color: #4cc9f0; font-size: 0.8rem; font-weight: bold; }
 .u-free { color: #cbd5e1; font-size: 0.8rem; }
-.logout-btn { background: rgba(255,255,255,0.1); border: 1px solid white; color: white; padding: 5px 15px; border-radius: 8px; cursor: pointer; }
+.logout-button { background: rgba(255,255,255,0.1); border: 1px solid white; color: white; padding: 5px 15px; border-radius: 8px; cursor: pointer; }
 
-/* CONTACT BANNER */
-.contact-strip { background: #fff3e0; color: #e65100; padding: 12px; text-align: center; border-radius: 10px; margin-bottom: 20px; font-weight: bold; border: 1px solid #ff9800; }
-.contact-strip span { color: #d32f2f; margin: 0 5px; text-decoration: underline; }
+.contact-banner { background: #fff3e0; color: #e65100; padding: 12px; text-align: center; border-radius: 10px; margin-bottom: 20px; font-weight: bold; border: 1px solid #ff9800; }
+.contact-banner span { color: #d32f2f; margin: 0 5px; text-decoration: underline; }
 
-/* LAYOUT & SIDEBAR SCROLL */
 .main-layout { display: grid; grid-template-columns: 360px 1fr; gap: 25px; height: 85vh; }
+
+/* SIDEBAR SCROLLABLE */
 .controls-column { overflow-y: auto; padding-right: 15px; }
 .controls-column::-webkit-scrollbar { width: 6px; }
-.controls-column::-webkit-scrollbar-thumb { background: var(--p); border-radius: 10px; }
+.controls-column::-webkit-scrollbar-thumb { background: var(--primary); border-radius: 10px; }
 
-/* CARDS */
 .card { background: white; border-radius: 18px; padding: 1.5rem; margin-bottom: 20px; box-shadow: 0 5px 15px rgba(0,0,0,0.05); }
 .card h2 { font-size: 0.9rem; color: #64748b; text-transform: uppercase; margin-top: 0; }
 .v-badge { background: #ff9800; color: white; font-size: 0.6rem; padding: 3px 7px; border-radius: 5px; font-weight: bold; }
 
-/* INPUTS & BTNS */
 input, select { width: 100%; padding: 12px; border: 2px solid #e2e8f0; border-radius: 10px; margin-bottom: 10px; font-family: 'Roboto'; }
 .date-picker-row { display: flex; gap: 10px; }
 button { font-family: 'Poppins', sans-serif; font-weight: 600; border: none; border-radius: 10px; padding: 12px; cursor: pointer; transition: all 0.3s; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 100%; margin-top: 5px; color: white; background: #4361ee; text-transform: uppercase; }
@@ -392,34 +406,20 @@ button { font-family: 'Poppins', sans-serif; font-weight: 600; border: none; bor
 .blue { background: #00b4d8; }
 .gsheet-btn { background: #0f9d58; color: white; padding: 10px 20px; border-radius: 30px; text-decoration: none; font-weight: bold; display: block; text-align: center; margin-bottom: 10px; }
 
-/* RESULTS TABLES */
-.res-card { border-top: 5px solid var(--p); }
-.pred-box { background: linear-gradient(to right, #4361ee, #4cc9f0); color: white; padding: 15px; border-radius: 12px; display: flex; justify-content: space-between; margin-bottom: 20px; }
-.duo-or { background: #e3f2fd; color: #0d47a1; padding: 15px; border-radius: 10px; text-align: center; font-weight: 800; margin-bottom: 15px; }
-.prem-table { width: 100%; border-collapse: collapse; }
-.prem-table th { background: #f8fafc; padding: 12px; font-size: 0.75rem; color: #64748b; text-align: center; }
-.prem-table td { padding: 12px; text-align: center; border-bottom: 1px solid #f1f5f9; }
-.bold { font-weight: 800; font-size: 1.2rem; }
-.red { color: #d32f2f; font-weight: bold; }
-.hit { background: #fff3e0; color: #e65100; padding: 3px 8px; border-radius: 5px; margin: 2px; font-weight: bold; }
+.spec-table { width: 100%; border-collapse: collapse; }
+.spec-table th { background: #f1f5f9; padding: 15px; text-align: center; font-size: 0.8rem; }
+.spec-table td { padding: 15px; border-bottom: 1px solid #f1f5f9; text-align: center; font-weight: 800; }
+.num-cell { font-size: 1.5rem; color: #1e293b; }
+.badge-hit { background: #ff9800; color: white; padding: 3px 8px; border-radius: 5px; margin-right: 5px; }
 
-/* CHIPS & MISC */
-.fav-chips { display: flex; flex-wrap: wrap; gap: 5px; }
-.chip { background: #e0f2f1; padding: 5px 12px; border-radius: 20px; font-weight: bold; display: flex; align-items: center; gap: 10px; }
-.chip b { color: red; cursor: pointer; }
+.login-wrapper { display: flex; align-items: center; justify-content: center; height: 100vh; background: #1e293b; }
+.login-box { background: white; padding: 3rem; border-radius: 25px; width: 400px; text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
+.toggle-auth { color: var(--primary); cursor: pointer; margin-top: 15px; font-weight: bold; }
+.favorite-chip { background: #e0f2f1; padding: 6px 12px; border-radius: 20px; font-weight: bold; display: inline-flex; align-items: center; gap: 10px; margin: 3px; }
+.favorite-chip b { color: red; cursor: pointer; }
+
 .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 15px; }
 .sum-card { background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0; }
 .sum-card h5 { margin: 0 0 5px 0; font-size: 0.75rem; color: #64748b; text-transform: uppercase; }
 .sum-card ul { padding: 0; margin: 0; list-style: none; font-size: 0.85rem; font-weight: bold; }
-
-/* AUTH BOX */
-.login-wrapper { background: #0f172a; height: 100vh; display: flex; align-items: center; justify-content: center; }
-.login-box { background: white; padding: 3rem; border-radius: 25px; width: 400px; text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
-.toggle-auth { color: var(--p); cursor: pointer; margin-top: 15px; font-weight: bold; text-decoration: underline; }
-.loader-box { text-align: center; padding: 50px; }
-.spin { border: 4px solid #f3f3f3; border-top: 4px solid var(--p); border-radius: 50%; width: 35px; height: 35px; animation: spin 1s linear infinite; margin: 0 auto 10px; }
-@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-.li-item { display: flex; align-items: center; gap: 15px; padding: 12px; border-bottom: 1px solid #eee; }
-.idx { background: var(--p); color: white; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
-.ai-box { background: #fff; border-left: 5px solid #f72585; padding: 20px; border-radius: 0 10px 10px 0; font-family: 'Roboto', sans-serif; line-height: 1.6; margin-top: 15px; box-shadow: 0 5px 15px rgba(0,0,0,0.05); }
 </style>
